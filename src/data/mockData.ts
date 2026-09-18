@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'manager' | 'sales' | 'telesales';
+]export type Role = 'admin' | 'manager' | 'sales' | 'telesales';
 
 export type LeadStatus =
   | 'New'

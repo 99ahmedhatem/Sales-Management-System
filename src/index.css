@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+@import 'tailwindcss';
+
+@theme inline {
+  --color-background: #0c0c0c;
+  --color-foreground: #f0f0f0;
+  --color-card: #161616;
+  --color-card-foreground: #f0f0f0;
+  --color-primary: #dfff03;
+  --color-primary-foreground: #0c0c0c;
+  --color-secondary: #1e1e1e;
+  --color-secondary-foreground: #a0a0a0;
+  --color-muted: #1a1a1a;
+  --color-muted-foreground: #6b6b6b;
+  --color-accent: #dfff03;
+  --color-accent-foreground: #0c0c0c;
+  --color-border: #262626;
+  --color-ring: #dfff03;
+  --color-destructive: #ff4444;
+  --radius: 0.5rem;
+  --font-sans: 'DM Sans', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+}
+
+:root {
+  --background: #0c0c0c;
+  --foreground: #f0f0f0;
+  --card: #161616;
+  --card-foreground: #f0f0f0;
+  --primary: #dfff03;
+  --primary-foreground: #0c0c0c;
+  --secondary: #1e1e1e;
+  --secondary-foreground: #a0a0a0;
+  --muted: #1a1a1a;
+  --muted-foreground: #6b6b6b;
+  --accent: #dfff03;
+  --accent-foreground: #0c0c0c;
+  --border: #262626;
+  --ring: #dfff03;
+  --destructive: #ff4444;
+  --radius: 0.5rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: 'DM Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+
+/* Custom utilities */
+.accent-glow {
+  box-shadow: 0 0 20px rgba(223, 255, 3, 0.15);
+}
+
+.status-new { background: rgba(100, 149, 237, 0.15); color: #6495ed; }
+.status-assigned { background: rgba(223, 255, 3, 0.12); color: #dfff03; }
+.status-contacted { background: rgba(100, 200, 255, 0.12); color: #64c8ff; }
+.status-interested { background: rgba(100, 220, 120, 0.15); color: #64dc78; }
+.status-not-interested { background: rgba(255, 68, 68, 0.12); color: #ff6464; }
+.status-converted { background: rgba(150, 255, 100, 0.15); color: #96ff64; }
+.status-callback { background: rgba(255, 200, 50, 0.12); color: #ffc832; }
+.status-no-answer { background: rgba(150, 150, 150, 0.15); color: #969696; }
+
+.meeting-won { background: rgba(100, 220, 120, 0.15); color: #64dc78; }
+.meeting-lost { background: rgba(255, 68, 68, 0.12); color: #ff6464; }
+.meeting-scheduled { background: rgba(223, 255, 3, 0.12); color: #dfff03; }
+.meeting-noshow { background: rgba(150, 150, 150, 0.15); color: #969696; }
+.meeting-rescheduled { background: rgba(255, 200, 50, 0.12); color: #ffc832; }

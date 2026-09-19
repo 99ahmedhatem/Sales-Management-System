@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { MEETINGS, Lead, LeadStatus, User } from '../../data/mockData';
 import { Avatar, Button, Card, KpiCard, Modal, Pagination, Select, StatusBadge, Table, Td, Tr } from '../ui';
+import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
 interface Props {
   userId: string;
@@ -40,7 +41,8 @@ export default function ManagerDashboard({ userId }: Props) {
   const [editingCustomerNumber, setEditingCustomerNumber] = useState('');
   const [leadPage, setLeadPage] = useState(0);
   const [totalTeamLeads, setTotalTeamLeads] = useState(0);
-  const pageSize = 500;
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const pageSize = 100;
   useEffect(() => {
     async function loadManagerData() {
       setLoading(true);
@@ -65,6 +67,8 @@ export default function ManagerDashboard({ userId }: Props) {
         setAllLeads((leadsRes.data ?? []).map(row => ({
           id: row.id,
           customerNumber: row.customer_number ?? undefined,
+          website: row.website ?? undefined,
+          quantity: row.quantity ?? 0,
           clientCode: row.client_code,
           name: row.name,
           phone: row.phone,
@@ -86,7 +90,9 @@ export default function ManagerDashboard({ userId }: Props) {
       setLoading(false);
     }
     loadManagerData();
-  }, [leadPage]);
+  }, [leadPage, refreshVersion]);
+
+  useRealtimeRefresh(['leads', 'users'], () => setRefreshVersion(version => version + 1));
 
   const agentStats = telesalesTeam.map(agent => {
     const leads = myLeads.filter(l => l.assignedTo === agent.id);

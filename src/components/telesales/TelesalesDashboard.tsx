@@ -3,6 +3,7 @@ import { supabase } from '../../supabaseClient';
 import { Lead, LeadStatus, CallLog, ClientComment, User } from '../../data/mockData';
 import { addClientComment, loadClientComments } from '../../data/clientComments';
 import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
+import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
 const CALL_STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: 'No Answer', label: 'No Answer' },
@@ -30,7 +31,8 @@ export default function TelesalesDashboard({ userId }: Props) {
   const [loadError, setLoadError] = useState('');
   const [page, setPage] = useState(0);
   const [totalLeads, setTotalLeads] = useState(0);
-  const pageSize = 500;
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const pageSize = 100;
 
   useEffect(() => {
     async function loadQueue() {
@@ -44,7 +46,6 @@ export default function TelesalesDashboard({ userId }: Props) {
       } else {
         setUsers((userRes.data ?? []).map(row => ({
           id: row.id,
-          customerNumber: row.customer_number ?? undefined,
           username: row.username,
           fullName: row.full_name,
           role: row.role,
@@ -55,6 +56,9 @@ export default function TelesalesDashboard({ userId }: Props) {
         })));
         setLeads((leadRes.data ?? []).map(row => ({
           id: row.id,
+          customerNumber: row.customer_number ?? undefined,
+          website: row.website ?? undefined,
+          quantity: row.quantity ?? 0,
           clientCode: row.client_code,
           name: row.name,
           phone: row.phone,
@@ -76,7 +80,9 @@ export default function TelesalesDashboard({ userId }: Props) {
       setLoading(false);
     }
     loadQueue();
-  }, [userId, page]);
+  }, [userId, page, refreshVersion]);
+
+  useRealtimeRefresh(['leads', 'users'], () => setRefreshVersion(version => version + 1));
 
   const activeLeads = leads.filter(l => !['Subscribed', 'Converted', 'Did Not Subscribe'].includes(l.status));
   const doneLeads = leads.filter(l => ['Subscribed', 'Converted', 'Did Not Subscribe'].includes(l.status));

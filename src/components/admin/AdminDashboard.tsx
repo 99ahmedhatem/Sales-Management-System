@@ -1,39 +1,14 @@
-import { LEADS, MEETINGS, USERS, NOTIFICATIONS } from '../../data/mockData';
+import { LEADS, MEETINGS } from '../../data/mockData';
 import { KpiCard, Card, StatusBadge, Avatar } from '../ui';
 
 export default function AdminDashboard() {
   const totalLeads = LEADS.length;
-  const assignedLeads = LEADS.filter(l => l.assignedTo).length;
-  const convertedLeads = LEADS.filter(l => l.status === 'Converted').length;
-  const activeUsers = USERS.filter(u => u.status === 'active').length;
-  const scheduledMeetings = MEETINGS.filter(m => m.outcome === 'Scheduled').length;
-  const wonDeals = MEETINGS.filter(m => m.outcome === 'Deal Closed – Won').length;
-  const lostDeals = MEETINGS.filter(m => m.outcome === 'Deal Lost').length;
-
-  const telesalesUsers = USERS.filter(u => u.role === 'telesales');
-  const agentStats = telesalesUsers.map(agent => {
-    const myLeads = LEADS.filter(l => l.assignedTo === agent.id);
-    const contacted = myLeads.filter(l => ['Contacted', 'Interested', 'Not Interested', 'Converted', 'Call Back Later', 'No Answer'].includes(l.status)).length;
-    const converted = myLeads.filter(l => l.status === 'Converted').length;
-    const convRate = myLeads.length > 0 ? Math.round((converted / myLeads.length) * 100) : 0;
-    return { agent, total: myLeads.length, contacted, converted, convRate };
-  });
-
-  const recentActivities = [
-    { time: '09:32 AM', text: 'Sara Hassan forwarded Hassan Al-Rashid to Diana Reeves', type: 'conversion' },
-    { time: '09:15 AM', text: 'Admin imported 20 leads — Import Batch C', type: 'import' },
-    { time: '08:50 AM', text: 'James Carter logged call with Layla Ibrahim — Interested', type: 'call' },
-    { time: '08:30 AM', text: 'Diana Reeves updated meeting outcome: Khalid Al-Farsi — Deal Won', type: 'deal' },
-    { time: 'Yesterday', text: 'Admin assigned 30 leads to James Carter', type: 'assignment' },
-  ];
-
-  const typeIcon = (t: string) => {
-    if (t === 'conversion') return '🔁';
-    if (t === 'import') return '📥';
-    if (t === 'call') return '📞';
-    if (t === 'deal') return '🏆';
-    return '📋';
-  };
+  const assignedLeads = LEADS.filter((l: any) => l.assignedTo).length;
+  const convertedLeads = LEADS.filter((l: any) => l.status === 'Converted').length;
+  const scheduledMeetings = MEETINGS.filter((m: any) => m.outcome === 'Scheduled').length;
+  const wonDeals = MEETINGS.filter((m: any) => m.outcome === 'Deal Closed – Won').length;
+  const lostDeals = MEETINGS.filter((m: any) => m.outcome === 'Deal Lost').length;
+  const conversionRate = totalLeads > 0 ? Math.round((convertedLeads / totalLeads) * 100) : 0;
 
   return (
     <div className="p-6 space-y-6">
@@ -45,9 +20,8 @@ export default function AdminDashboard() {
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard label="Total Leads" value={totalLeads} sub={`${assignedLeads} assigned`} />
-        <KpiCard label="Converted" value={convertedLeads} sub={`${Math.round(convertedLeads/totalLeads*100)}% conversion rate`} accent />
+        <KpiCard label="Converted" value={convertedLeads} sub={`${conversionRate}% conversion rate`} accent />
         <KpiCard label="Active Meetings" value={scheduledMeetings} sub={`${wonDeals} won · ${lostDeals} lost`} />
-        <KpiCard label="Active Users" value={activeUsers} sub="Sales & Telesales" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -70,7 +44,7 @@ export default function AdminDashboard() {
               <div className="h-1.5 bg-[#1e1e1e] rounded-full">
                 <div
                   className="h-full rounded-full transition-all"
-                  style={{ width: `${Math.max(4, (row.count / totalLeads) * 100)}%`, background: row.color }}
+                  style={{ width: `${totalLeads > 0 ? Math.max(4, (row.count / totalLeads) * 100) : 0}%`, background: row.color }}
                 />
               </div>
             </div>
@@ -80,7 +54,7 @@ export default function AdminDashboard() {
         {/* Agent Performance */}
         <Card className="p-5 col-span-1 lg:col-span-2">
           <h3 className="text-white font-semibold mb-4">Telesales Performance</h3>
-          <div className="space-y-3">
+          {/* <div className="space-y-3">
             {agentStats.map(({ agent, total, contacted, converted, convRate }) => (
               <div key={agent.id} className="flex items-center gap-4 p-3 bg-[#1a1a1a] rounded-lg">
                 <Avatar name={agent.fullName} size="md" />
@@ -97,30 +71,22 @@ export default function AdminDashboard() {
                 </div>
               </div>
             ))}
-          </div>
+          </div> */}
         </Card>
       </div>
 
       {/* Recent Activity */}
       <Card className="p-5">
         <h3 className="text-white font-semibold mb-4">Recent Activity</h3>
-        <div className="space-y-1">
-          {recentActivities.map((a, i) => (
-            <div key={i} className="flex items-start gap-3 py-2.5 border-b border-[#1e1e1e] last:border-0">
-              <span className="text-base mt-0.5">{typeIcon(a.type)}</span>
-              <div className="flex-1">
-                <p className="text-[#d0d0d0] text-sm">{a.text}</p>
-              </div>
-              <span className="text-[#4a4a4a] text-xs font-mono whitespace-nowrap">{a.time}</span>
-            </div>
-          ))}
+        <div className="py-6 text-center text-[#4a4a4a] text-sm">
+          No activity yet
         </div>
       </Card>
 
       {/* Upcoming Meetings */}
       <Card className="p-5">
         <h3 className="text-white font-semibold mb-4">Upcoming Meetings</h3>
-        <div className="space-y-2">
+        {/* <div className="space-y-2">
           {MEETINGS.filter(m => m.outcome === 'Scheduled').map(m => {
             const salesUser = USERS.find(u => u.id === m.assignedSalesId);
             return (
@@ -142,7 +108,7 @@ export default function AdminDashboard() {
               </div>
             );
           })}
-        </div>
+        </div> */}
       </Card>
     </div>
   );

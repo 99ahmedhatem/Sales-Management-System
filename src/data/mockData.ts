@@ -13,6 +13,8 @@ export type LeadStatus =
   | 'Did Not Subscribe'
   | 'Converted';
 
+export type LeadDataQuality = 'high' | 'medium' | 'normal';
+
 export type MeetingOutcome =
   | 'Scheduled'
   | 'Deal Closed – Won'
@@ -48,6 +50,8 @@ export interface Lead {
   company?: string;
   region?: string;
   source?: string;
+  isSallaStore?: boolean;
+  dataQuality?: LeadDataQuality;
   status: LeadStatus;
   assignedTo?: string; // user id (telesales or manager)
   importBatch?: string;
@@ -121,6 +125,13 @@ export interface Notification {
   message: string;
   read: boolean;
   createdAt: string;
+}
+
+export function generateCode(prefix: 'EMP' | 'CLT'): string {
+  const uniquePart = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID().split('-')[0]
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return `${prefix}-${uniquePart.toUpperCase()}`;
 }
 
 const makeCode = (n: number) => `CLT-${String(n).padStart(4, '0')}`;

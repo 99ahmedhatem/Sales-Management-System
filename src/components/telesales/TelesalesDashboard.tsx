@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { LEADS, USERS, CALL_LOGS, Lead, LeadStatus, CallLog, ClientComment } from '../../data/mockData';
+import { useEffect, useState } from 'react';
+import { supabase } from '../../supabaseClient';
+import { Lead, LeadStatus, CallLog, ClientComment, User } from '../../data/mockData';
+import { addClientComment, loadClientComments } from '../../data/clientComments';
 import { Avatar, Button, Card, KpiCard, Modal, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
 
 const CALL_STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
@@ -19,10 +21,57 @@ interface Props {
 }
 
 export default function TelesalesDashboard({ userId }: Props) {
-  const me = USERS.find(u => u.id === userId)!;
+  const [users, setUsers] = useState<User[]>([]);
+  const me = users.find(u => u.id === userId);
 
-  const [leads, setLeads] = useState<Lead[]>(LEADS.filter(l => l.assignedTo === userId));
-  const [callLogs, setCallLogs] = useState<CallLog[]>(CALL_LOGS.filter(c => c.agentId === userId));
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [callLogs, setCallLogs] = useState<CallLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    async function loadQueue() {
+      setLoading(true);
+      const [userRes, leadRes] = await Promise.all([
+        supabase.from('users').select('*'),
+        supabase.from('leads').select('*').eq('assigned_to', userId).order('created_at', { ascending: false }),
+      ]);
+      if (userRes.error || leadRes.error) {
+        setLoadError(userRes.error?.message || leadRes.error?.message || 'Could not load your queue.');
+      } else {
+        setUsers((userRes.data ?? []).map(row => ({
+          id: row.id,
+          username: row.username,
+          fullName: row.full_name,
+          role: row.role,
+          status: row.status,
+          email: row.email,
+          lastLogin: row.last_login,
+          managerId: row.manager_id ?? undefined,
+        })));
+        setLeads((leadRes.data ?? []).map(row => ({
+          id: row.id,
+          clientCode: row.client_code,
+          name: row.name,
+          phone: row.phone,
+          company: row.company ?? undefined,
+          region: row.region ?? undefined,
+          source: row.source ?? undefined,
+          isSallaStore: row.is_salla_store ?? false,
+          dataQuality: row.data_quality ?? 'normal',
+          status: row.status,
+          assignedTo: row.assigned_to ?? undefined,
+          notes: row.notes ?? undefined,
+          callbackDate: row.callback_date ?? undefined,
+          freeTrialEndDate: row.free_trial_end_date ?? undefined,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        })));
+      }
+      setLoading(false);
+    }
+    loadQueue();
+  }, [userId]);
 
   const activeLeads = leads.filter(l => !['Subscribed', 'Converted', 'Did Not Subscribe'].includes(l.status));
   const doneLeads = leads.filter(l => ['Subscribed', 'Converted', 'Did Not Subscribe'].includes(l.status));
@@ -45,7 +94,20 @@ export default function TelesalesDashboard({ userId }: Props) {
   const [meetingDate, setMeetingDate] = useState('');
   const [newComment, setNewComment] = useState('');
 
-  const salesUsers = USERS.filter(u => u.role === 'sales' && u.status === 'active');
+  const salesUsers = users.filter(u => u.role === 'sales' && u.status === 'active');
+
+  if (loading) {
+    return <div className="p-6 text-[#a0a0a0] text-sm">Loading your queue…</div>;
+  }
+
+  useEffect(() => {
+    if (!commentModal) return;
+    loadClientComments(commentModal.id).then(({ data, error }) => {
+      if (error) return;
+      setLeads(prev => prev.map(lead => lead.id === commentModal.id ? { ...lead, comments: data } : lead));
+      setCommentModal(prev => prev ? { ...prev, comments: data } : null);
+    });
+  }, [commentModal?.id]);
 
   const filtered = (tab === 'queue' ? activeLeads : doneLeads).filter(l => {
     const q = search.toLowerCase();
@@ -89,16 +151,18 @@ export default function TelesalesDashboard({ userId }: Props) {
     setMeetingDate('');
   };
 
-  const addComment = () => {
+  const addComment = async () => {
     if (!commentModal || !newComment.trim()) return;
-    const comment: ClientComment = {
-      id: `cm${Date.now()}`,
+    const { data: comment, error } = await addClientComment({
       leadId: commentModal.id,
       authorId: userId,
-      authorName: me.fullName,
+      authorName: me?.fullName || 'Telesales',
       text: newComment.trim(),
-      createdAt: new Date().toLocaleString(),
-    };
+    });
+    if (error || !comment) {
+      window.alert(error || 'Could not save the comment. Run supabase-setup.sql first.');
+      return;
+    }
     const updated = leads.map(l => l.id === commentModal.id
       ? { ...l, comments: [...(l.comments || []), comment] }
       : l
@@ -115,9 +179,10 @@ export default function TelesalesDashboard({ userId }: Props) {
 
   return (
     <div className="p-6 space-y-6">
+      {loadError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3">{loadError}</div>}
       <div>
         <h1 className="text-white text-2xl font-bold">My Queue</h1>
-        <p className="text-[#6b6b6b] text-sm mt-0.5">Welcome back, {me.fullName}</p>
+        <p className="text-[#6b6b6b] text-sm mt-0.5">Welcome back, {me?.fullName || 'Telesales'}</p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

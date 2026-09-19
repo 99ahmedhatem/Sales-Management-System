@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CONTRACTS, USERS, Contract } from '../../data/mockData';
+import { CONTRACTS, generateCode, USERS, Contract } from '../../data/mockData';
 import { Button, Card, KpiCard, Modal, StatusBadge, Table, Td, Tr } from '../ui';
 
 const PRODUCT_TYPES = ['E-commerce Platform', 'SaaS Platform', 'Mobile App', 'ERP System', 'Custom Solution'];
@@ -41,7 +41,6 @@ export default function ContractsModule({ userId, role, managerId }: Props) {
   const finalized = visible.filter(c => c.isFinalized).length;
 
   const [form, setForm] = useState({
-    clientCode: '',
     clientName: '',
     clientPhone: '',
     email: '',
@@ -70,6 +69,7 @@ export default function ContractsModule({ userId, role, managerId }: Props) {
     const contract: Contract = {
       id: `con${Date.now()}`,
       leadId: '',
+      clientCode: generateCode('CLT'),
       ...form,
       totalPaid: totalCalc,
       remainingAmount: Math.max(0, form.totalContractValue - totalCalc),
@@ -245,7 +245,6 @@ export default function ContractsModule({ userId, role, managerId }: Props) {
         <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: 'Client Code', key: 'clientCode', placeholder: 'CLT-0001' },
               { label: 'Client Name *', key: 'clientName', placeholder: 'Hassan Al-Rashid' },
               { label: 'Phone *', key: 'clientPhone', placeholder: '+971 50 123 4567' },
               { label: 'Email', key: 'email', placeholder: 'client@example.com' },

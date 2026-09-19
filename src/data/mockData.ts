@@ -44,6 +44,9 @@ export interface ClientComment {
 
 export interface Lead {
   id: string;
+  customerNumber?: number;
+  website?: string;
+  quantity?: number;
   clientCode: string;
   name: string;
   phone: string;

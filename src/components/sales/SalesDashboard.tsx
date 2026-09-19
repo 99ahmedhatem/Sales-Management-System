@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { supabase } from '../../supabaseClient';
 import { MEETINGS, LEADS, USERS, Meeting, MeetingOutcome, ClientComment, LeadStatus } from '../../data/mockData';
 import { addClientComment, loadClientComments } from '../../data/clientComments';
 import { Avatar, Button, Card, KpiCard, Modal, StatusBadge, Table, Td, Tr } from '../ui';
@@ -31,6 +32,9 @@ export default function SalesDashboard({ userId }: Props) {
   const [tab, setTab] = useState<'upcoming' | 'all'>('upcoming');
   const [commentModal, setCommentModal] = useState<{ meetingId: string; leadId: string; leadName: string } | null>(null);
   const [newComment, setNewComment] = useState('');
+  const [customerNumber, setCustomerNumber] = useState<number | undefined>();
+  const [editingCustomerNumber, setEditingCustomerNumber] = useState(false);
+  const [customerNumberInput, setCustomerNumberInput] = useState('');
   const [leadComments, setLeadComments] = useState<Record<string, ClientComment[]>>({});
 
   useEffect(() => {
@@ -39,6 +43,25 @@ export default function SalesDashboard({ userId }: Props) {
       setLeadComments(prev => ({ ...prev, [commentModal.leadId]: data }));
     });
   }, [commentModal?.leadId]);
+
+  useEffect(() => {
+    if (!detail) return;
+    supabase.from('leads').select('customer_number').eq('id', detail.leadId).maybeSingle().then(({ data }) => {
+      setCustomerNumber(data?.customer_number ?? undefined);
+      setCustomerNumberInput(data?.customer_number ? String(data.customer_number) : '');
+    });
+  }, [detail?.leadId]);
+
+  const saveCustomerNumber = async () => {
+    const value = customerNumberInput.trim();
+    const number = value ? Number(value) : null;
+    if (number !== null && (!Number.isSafeInteger(number) || number <= 0)) return;
+    const { error } = await supabase.rpc('set_lead_customer_number', { target_lead_id: detail?.leadId, new_customer_number: number });
+    if (!error) {
+      setCustomerNumber(number ?? undefined);
+      setEditingCustomerNumber(false);
+    }
+  };
 
   const upcoming = meetings.filter(m => m.outcome === 'Scheduled');
   const wonCount = meetings.filter(m => m.outcome === 'Deal Closed – Won').length;
@@ -199,6 +222,14 @@ export default function SalesDashboard({ userId }: Props) {
                   <div className="text-white text-sm font-medium">{v}</div>
                 </div>
               ))}
+            </div>
+            <div className="bg-[#1a1a1a] rounded p-3">
+              <div className="text-[#6b6b6b] text-xs mb-1">Customer Number</div>
+              {editingCustomerNumber ? (
+                <input autoFocus type="number" min="1" value={customerNumberInput} onChange={e => setCustomerNumberInput(e.target.value)} onBlur={saveCustomerNumber} onKeyDown={e => { if (e.key === 'Enter') saveCustomerNumber(); if (e.key === 'Escape') setEditingCustomerNumber(false); }} className="w-28 bg-[#0e0e0e] border border-[#dfff03] rounded px-2 py-1 text-sm text-white" />
+              ) : (
+                <button onDoubleClick={() => setEditingCustomerNumber(true)} className="text-white text-sm font-medium cursor-text">{customerNumber ?? '—'}</button>
+              )}
             </div>
             <div className="bg-[#1a1a1a] rounded p-3">
               <div className="text-[#6b6b6b] text-xs mb-1">Telesales Qualifying Notes</div>

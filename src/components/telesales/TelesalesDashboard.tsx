@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { Lead, LeadStatus, CallLog, ClientComment, User } from '../../data/mockData';
 import { addClientComment, loadClientComments } from '../../data/clientComments';
-import { Avatar, Button, Card, KpiCard, Modal, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
+import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
 
 const CALL_STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: 'No Answer', label: 'No Answer' },
@@ -28,19 +28,23 @@ export default function TelesalesDashboard({ userId }: Props) {
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [page, setPage] = useState(0);
+  const [totalLeads, setTotalLeads] = useState(0);
+  const pageSize = 500;
 
   useEffect(() => {
     async function loadQueue() {
       setLoading(true);
       const [userRes, leadRes] = await Promise.all([
         supabase.from('users').select('*'),
-        supabase.from('leads').select('*').eq('assigned_to', userId).order('created_at', { ascending: false }),
+        supabase.from('leads').select('*', { count: 'exact' }).eq('assigned_to', userId).order('created_at', { ascending: false }).range(page * pageSize, (page + 1) * pageSize - 1),
       ]);
       if (userRes.error || leadRes.error) {
         setLoadError(userRes.error?.message || leadRes.error?.message || 'Could not load your queue.');
       } else {
         setUsers((userRes.data ?? []).map(row => ({
           id: row.id,
+          customerNumber: row.customer_number ?? undefined,
           username: row.username,
           fullName: row.full_name,
           role: row.role,
@@ -67,11 +71,12 @@ export default function TelesalesDashboard({ userId }: Props) {
           createdAt: row.created_at,
           updatedAt: row.updated_at,
         })));
+        setTotalLeads(leadRes.count ?? 0);
       }
       setLoading(false);
     }
     loadQueue();
-  }, [userId]);
+  }, [userId, page]);
 
   const activeLeads = leads.filter(l => !['Subscribed', 'Converted', 'Did Not Subscribe'].includes(l.status));
   const doneLeads = leads.filter(l => ['Subscribed', 'Converted', 'Did Not Subscribe'].includes(l.status));
@@ -85,6 +90,8 @@ export default function TelesalesDashboard({ userId }: Props) {
   const [forwardModal, setForwardModal] = useState<Lead | null>(null);
   const [commentModal, setCommentModal] = useState<Lead | null>(null);
   const [detailModal, setDetailModal] = useState<Lead | null>(null);
+  const [editingCustomerNumberId, setEditingCustomerNumberId] = useState<string | null>(null);
+  const [editingCustomerNumber, setEditingCustomerNumber] = useState('');
 
   const [callStatus, setCallStatus] = useState<LeadStatus>('Contacted');
   const [callNotes, setCallNotes] = useState('');
@@ -95,6 +102,20 @@ export default function TelesalesDashboard({ userId }: Props) {
   const [newComment, setNewComment] = useState('');
 
   const salesUsers = users.filter(u => u.role === 'sales' && u.status === 'active');
+
+  const saveCustomerNumber = async (leadId: string) => {
+    const value = editingCustomerNumber.trim();
+    const number = value ? Number(value) : null;
+    if (number !== null && (!Number.isSafeInteger(number) || number <= 0)) {
+      setLoadError('Customer number must be a positive whole number.');
+      setEditingCustomerNumberId(null);
+      return;
+    }
+    const { error } = await supabase.rpc('set_lead_customer_number', { target_lead_id: leadId, new_customer_number: number });
+    if (error) { setLoadError(error.message); return; }
+    setLeads(prev => prev.map(lead => lead.id === leadId ? { ...lead, customerNumber: number ?? undefined } : lead));
+    setEditingCustomerNumberId(null);
+  };
 
   if (loading) {
     return <div className="p-6 text-[#a0a0a0] text-sm">Loading your queue…</div>;
@@ -247,9 +268,16 @@ export default function TelesalesDashboard({ userId }: Props) {
       </div>
 
       <Card>
-        <Table headers={['Code', 'Lead', 'Phone', 'Status', 'Notes', 'Due', 'Actions']}>
+        <Table headers={['No.', 'Code', 'Lead', 'Phone', 'Status', 'Notes', 'Due', 'Actions']}>
           {filtered.map(lead => (
             <Tr key={lead.id} onClick={() => setDetailModal(lead)}>
+              <Td>
+                <div onDoubleClick={e => { e.stopPropagation(); setEditingCustomerNumberId(lead.id); setEditingCustomerNumber(String(lead.customerNumber ?? '')); }}>
+                  {editingCustomerNumberId === lead.id ? (
+                    <input autoFocus type="number" min="1" value={editingCustomerNumber} onChange={e => setEditingCustomerNumber(e.target.value)} onBlur={() => saveCustomerNumber(lead.id)} onKeyDown={e => { if (e.key === 'Enter') saveCustomerNumber(lead.id); if (e.key === 'Escape') setEditingCustomerNumberId(null); }} onClick={e => e.stopPropagation()} className="w-20 bg-[#1a1a1a] border border-[#dfff03] rounded px-2 py-1 text-xs text-white" />
+                  ) : <span className="font-mono text-xs text-[#a0a0a0] cursor-text">{lead.customerNumber ?? '—'}</span>}
+                </div>
+              </Td>
               <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
               <Td><span className="font-medium text-white">{lead.name}</span></Td>
               <Td><span className="font-mono text-xs">{lead.phone}</span></Td>
@@ -281,6 +309,7 @@ export default function TelesalesDashboard({ userId }: Props) {
             </Tr>
           ))}
         </Table>
+        <Pagination page={page} pageSize={pageSize} total={totalLeads} onChange={setPage} />
       </Card>
 
       {/* Lead Detail Modal */}

@@ -187,6 +187,20 @@ export function SearchInput({ value, onChange, placeholder }: { value: string; o
   );
 }
 
+export function Pagination({ page, pageSize, total, onChange }: { page: number; pageSize: number; total: number; onChange: (page: number) => void }) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  if (pageCount <= 1) return null;
+  return (
+    <div className="flex items-center justify-between border-t border-[#262626] px-4 py-3">
+      <span className="text-xs text-[#6b6b6b]">Page {page + 1} of {pageCount} · {total.toLocaleString()} records</span>
+      <div className="flex gap-2">
+        <button disabled={page === 0} onClick={() => onChange(page - 1)} className="rounded border border-[#2a2a2a] px-3 py-1.5 text-xs text-[#a0a0a0] disabled:cursor-not-allowed disabled:opacity-30 hover:border-[#dfff03]">Previous</button>
+        <button disabled={page >= pageCount - 1} onClick={() => onChange(page + 1)} className="rounded border border-[#2a2a2a] px-3 py-1.5 text-xs text-[#a0a0a0] disabled:cursor-not-allowed disabled:opacity-30 hover:border-[#dfff03]">Next</button>
+      </div>
+    </div>
+  );
+}
+
 export function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
   const initials = name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
   const sizeMap = { sm: 'w-7 h-7 text-xs', md: 'w-9 h-9 text-sm', lg: 'w-11 h-11 text-base' };

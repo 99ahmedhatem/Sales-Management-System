@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { MEETINGS, Lead, LeadStatus, User } from '../../data/mockData';
-import { Avatar, Button, Card, KpiCard, Modal, Select, StatusBadge, Table, Td, Tr } from '../ui';
+import { Avatar, Button, Card, KpiCard, Modal, Pagination, Select, StatusBadge, Table, Td, Tr } from '../ui';
 
 interface Props {
   userId: string;
@@ -36,13 +36,18 @@ export default function ManagerDashboard({ userId }: Props) {
   const [assignLeads, setAssignLeads] = useState<string[]>([]);
   const [assignTo, setAssignTo] = useState('');
   const [selectedPoolLeads, setSelectedPoolLeads] = useState<string[]>([]);
+  const [editingCustomerNumberId, setEditingCustomerNumberId] = useState<string | null>(null);
+  const [editingCustomerNumber, setEditingCustomerNumber] = useState('');
+  const [leadPage, setLeadPage] = useState(0);
+  const [totalTeamLeads, setTotalTeamLeads] = useState(0);
+  const pageSize = 500;
   useEffect(() => {
     async function loadManagerData() {
       setLoading(true);
       setErrorMsg('');
       const [usersRes, leadsRes] = await Promise.all([
         supabase.from('users').select('*'),
-        supabase.from('leads').select('*').order('created_at', { ascending: false }),
+        supabase.from('leads').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(leadPage * pageSize, (leadPage + 1) * pageSize - 1),
       ]);
       if (usersRes.error || leadsRes.error) {
         setErrorMsg(usersRes.error?.message || leadsRes.error?.message || 'Could not load manager data.');
@@ -59,6 +64,7 @@ export default function ManagerDashboard({ userId }: Props) {
         })));
         setAllLeads((leadsRes.data ?? []).map(row => ({
           id: row.id,
+          customerNumber: row.customer_number ?? undefined,
           clientCode: row.client_code,
           name: row.name,
           phone: row.phone,
@@ -75,11 +81,12 @@ export default function ManagerDashboard({ userId }: Props) {
           createdAt: row.created_at,
           updatedAt: row.updated_at,
         })));
+        setTotalTeamLeads(leadsRes.count ?? 0);
       }
       setLoading(false);
     }
     loadManagerData();
-  }, []);
+  }, [leadPage]);
 
   const agentStats = telesalesTeam.map(agent => {
     const leads = myLeads.filter(l => l.assignedTo === agent.id);
@@ -108,6 +115,20 @@ export default function ManagerDashboard({ userId }: Props) {
     setAssignLeads([]);
     setAssignTo('');
     setSelectedPoolLeads([]);
+  };
+
+  const saveCustomerNumber = async (leadId: string) => {
+    const value = editingCustomerNumber.trim();
+    const number = value ? Number(value) : null;
+    if (number !== null && (!Number.isSafeInteger(number) || number <= 0)) {
+      setErrorMsg('Customer number must be a positive whole number.');
+      setEditingCustomerNumberId(null);
+      return;
+    }
+    const { error } = await supabase.rpc('set_lead_customer_number', { target_lead_id: leadId, new_customer_number: number });
+    if (error) { setErrorMsg(error.message); return; }
+    setAllLeads(prev => prev.map(lead => lead.id === leadId ? { ...lead, customerNumber: number ?? undefined } : lead));
+    setEditingCustomerNumberId(null);
   };
 
   const unassignedToMe = allLeads.filter(l => l.assignedTo === userId);
@@ -213,11 +234,19 @@ export default function ManagerDashboard({ userId }: Props) {
         {unassignedToMe.length === 0 ? (
           <p className="text-[#4a4a4a] text-sm py-4">All leads have been distributed to your team members.</p>
         ) : (
-          <Table headers={['', 'Code', 'Name', 'Phone', 'Company', 'Status', '']}>
-            {unassignedToMe.map(l => (
-              <Tr key={l.id}>
+          <div>
+            <Table headers={['', 'No.', 'Code', 'Name', 'Phone', 'Company', 'Status', '']}>
+              {unassignedToMe.map(l => (
+                <Tr key={l.id}>
                 <Td>
                   <input type="checkbox" checked={selectedPoolLeads.includes(l.id)} onChange={() => togglePoolLead(l.id)} className="accent-[#dfff03]" />
+                </Td>
+                <Td>
+                  <div onDoubleClick={e => { e.stopPropagation(); setEditingCustomerNumberId(l.id); setEditingCustomerNumber(String(l.customerNumber ?? '')); }}>
+                    {editingCustomerNumberId === l.id ? (
+                      <input autoFocus type="number" min="1" value={editingCustomerNumber} onChange={e => setEditingCustomerNumber(e.target.value)} onBlur={() => saveCustomerNumber(l.id)} onKeyDown={e => { if (e.key === 'Enter') saveCustomerNumber(l.id); if (e.key === 'Escape') setEditingCustomerNumberId(null); }} onClick={e => e.stopPropagation()} className="w-20 bg-[#1a1a1a] border border-[#dfff03] rounded px-2 py-1 text-xs text-white" />
+                    ) : <span className="font-mono text-xs text-[#a0a0a0] cursor-text">{l.customerNumber ?? '—'}</span>}
+                  </div>
                 </Td>
                 <Td><span className="font-mono text-xs text-[#dfff03]">{l.clientCode}</span></Td>
                 <Td><span className="text-white font-medium">{l.name}</span></Td>
@@ -232,9 +261,11 @@ export default function ManagerDashboard({ userId }: Props) {
                     Assign
                   </button>
                 </Td>
-              </Tr>
-            ))}
-          </Table>
+                </Tr>
+              ))}
+            </Table>
+            <Pagination page={leadPage} pageSize={pageSize} total={totalTeamLeads} onChange={nextPage => { setSelectedPoolLeads([]); setLeadPage(nextPage); }} />
+          </div>
         )}
       </Card>
 

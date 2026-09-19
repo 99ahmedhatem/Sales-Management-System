@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../../supabaseClient';
 import { addClientComment, loadClientComments } from '../../data/clientComments';
 import { generateCode, Lead, LeadDataQuality, LeadStatus, User } from '../../data/mockData';
-import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card } from '../ui';
+import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Pagination } from '../ui';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -154,24 +154,29 @@ export default function AdminLeads() {
   const [duplicateImportCount, setDuplicateImportCount] = useState(0);
   const [editingCustomerNumberId, setEditingCustomerNumberId] = useState<string | null>(null);
   const [editingCustomerNumber, setEditingCustomerNumber] = useState('');
+  const [page, setPage] = useState(0);
+  const [totalLeads, setTotalLeads] = useState(0);
+  const pageSize = 500;
 
-  async function loadData() {
+  async function loadData(nextPage = page) {
     setLoading(true);
     setErrorMsg('');
+    let leadsQuery = supabase.from('leads').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(nextPage * pageSize, (nextPage + 1) * pageSize - 1);
+    if (search.trim()) leadsQuery = leadsQuery.or(`name.ilike.%${search.trim()}%,phone.ilike.%${search.trim()}%,company.ilike.%${search.trim()}%`);
+    if (statusFilter) leadsQuery = leadsQuery.eq('status', statusFilter);
+    if (regionFilter) leadsQuery = leadsQuery.eq('region', regionFilter);
     const [leadsRes, usersRes] = await Promise.all([
-      supabase.from('leads').select('*').order('created_at', { ascending: false }),
+      leadsQuery,
       supabase.from('users').select('*'),
     ]);
     if (leadsRes.error) setErrorMsg(leadsRes.error.message);
-    else setLeads((leadsRes.data ?? []).map(mapLead));
+    else { setLeads((leadsRes.data ?? []).map(mapLead)); setTotalLeads(leadsRes.count ?? 0); setPage(nextPage); }
     if (usersRes.error) setErrorMsg(usersRes.error.message);
     else setUsers((usersRes.data ?? []).map(mapUser));
     setLoading(false);
   }
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(0); }, [search, statusFilter, regionFilter]);
 
   useEffect(() => {
     if (!detailLead) return;
@@ -185,14 +190,7 @@ export default function AdminLeads() {
 
   const filtered = leads.filter(l => {
     const q = search.toLowerCase();
-    const matchQ =
-      !q ||
-      l.name.toLowerCase().includes(q) ||
-      l.phone.includes(q) ||
-      (l.company || '').toLowerCase().includes(q);
-    const matchS = !statusFilter || l.status === statusFilter;
-    const matchR = !regionFilter || l.region === regionFilter;
-    return matchQ && matchS && matchR;
+    return !q || l.name.toLowerCase().includes(q) || l.phone.includes(q) || (l.company || '').toLowerCase().includes(q);
   });
 
   const toggleSelect = (id: string) => {
@@ -213,7 +211,7 @@ export default function AdminLeads() {
       setErrorMsg(error.message);
       return;
     }
-    await loadData();
+    await loadData(page);
     setSelected([]);
     setAssignModal(false);
     setAssignTo('');
@@ -232,7 +230,7 @@ export default function AdminLeads() {
     }
     setLeads(prev => prev.filter(lead => !selected.includes(lead.id)));
     setSelected([]);
-    await loadData();
+    await loadData(page);
   };
 
   const saveCustomerNumber = async (leadId: string) => {
@@ -273,7 +271,7 @@ export default function AdminLeads() {
       setErrorMsg(error.message);
       return;
     }
-    await loadData();
+    await loadData(page);
     setNewLead({ name: '', phone: '', company: '', region: '', source: '', isSallaStore: false, dataQuality: 'normal', quantity: 0 });
     setAddModal(false);
   };
@@ -517,6 +515,7 @@ export default function AdminLeads() {
             );
           })}
         </Table>
+        <Pagination page={page} pageSize={pageSize} total={totalLeads} onChange={nextPage => loadData(nextPage)} />
       </Card>
 
       {/* Lead Detail Modal */}

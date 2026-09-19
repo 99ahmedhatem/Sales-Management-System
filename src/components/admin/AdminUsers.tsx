@@ -1,31 +1,114 @@
-import { useState } from 'react';
-import { USERS, User, Role } from '../../data/mockData';
+import { useState, useEffect } from 'react';
+import { supabase } from '../../supabaseClient';
+import { generateCode, User, Role } from '../../data/mockData';
 import { Avatar, Badge, Button, Card, Modal, StatusBadge, Table, Td, Tr } from '../ui';
 
+function mapUser(row: any): User {
+  return {
+    id: row.id,
+    username: row.username,
+    fullName: row.full_name,
+    role: row.role,
+    status: row.status,
+    email: row.email,
+    lastLogin: row.last_login ?? undefined,
+    managerId: row.manager_id ?? undefined,
+  };
+}
+
 export default function AdminUsers() {
-  const [users, setUsers] = useState<User[]>(USERS.filter(u => u.role !== 'admin'));
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
   const [addModal, setAddModal] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState<{ username: string; email: string; password: string } | null>(null);
+  const [detailUser, setDetailUser] = useState<User | null>(null);
+  const [resetMessage, setResetMessage] = useState('');
   const [tab, setTab] = useState<'all' | 'manager' | 'telesales' | 'sales'>('all');
-  const [newUser, setNewUser] = useState({ fullName: '', username: '', email: '', role: 'telesales' as Role, password: '', managerId: '' });
+  const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'telesales' as Role, managerId: '' });
+
+  async function loadUsers() {
+    setLoading(true);
+    setErrorMsg('');
+    const { data, error } = await supabase.from('users').select('*').neq('role', 'admin').order('full_name');
+    if (error) setErrorMsg(error.message);
+    else setUsers((data ?? []).map(mapUser));
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
 
   const managers = users.filter(u => u.role === 'manager');
   const filtered = users.filter(u => tab === 'all' || u.role === tab);
 
-  const handleAdd = () => {
-    if (!newUser.fullName || !newUser.username) return;
-    const u: User = {
-      id: `u${Date.now()}`,
-      ...newUser,
+  const handleAdd = async () => {
+    if (!newUser.fullName || !newUser.email || newUser.password.length < 8) return;
+    setErrorMsg('');
+    const employeeCode = generateCode('EMP');
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: newUser.email.trim(),
+      password: newUser.password,
+      options: {
+        data: {
+          employee_code: employeeCode,
+          full_name: newUser.fullName,
+        },
+      },
+    });
+    if (authError || !authData.user) {
+      setErrorMsg(authError?.message || 'Could not create the login account.');
+      return;
+    }
+
+    const { error } = await supabase.from('users').insert({
+      id: authData.user.id,
+      full_name: newUser.fullName,
+      username: employeeCode,
+      email: newUser.email || null,
+      role: newUser.role,
       status: 'active',
-      lastLogin: 'Never',
-    };
-    setUsers(prev => [...prev, u]);
-    setNewUser({ fullName: '', username: '', email: '', role: 'telesales', password: '', managerId: '' });
+      manager_id: ['sales', 'telesales'].includes(newUser.role) && newUser.managerId ? newUser.managerId : null,
+    });
+    if (error) {
+      setErrorMsg(error.message);
+      return;
+    }
+    await loadUsers();
+    setCreatedCredentials({ username: employeeCode, email: newUser.email.trim(), password: newUser.password });
+    setNewUser({ fullName: '', email: '', password: '', role: 'telesales', managerId: '' });
     setAddModal(false);
   };
 
-  const toggleStatus = (id: string) => {
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' } : u));
+  const sendPasswordReset = async (u: User) => {
+    if (!u.email) return;
+    setResetMessage('');
+    const { error } = await supabase.auth.resetPasswordForEmail(u.email, {
+      redirectTo: window.location.origin,
+    });
+    setResetMessage(error ? error.message : `A password reset link was sent to ${u.email}.`);
+  };
+
+  const toggleStatus = async (u: User) => {
+    const newStatus = u.status === 'active' ? 'inactive' : 'active';
+    const { error } = await supabase.from('users').update({ status: newStatus }).eq('id', u.id);
+    if (error) {
+      setErrorMsg(error.message);
+      return;
+    }
+    await loadUsers();
+  };
+
+  const deleteUser = async (u: User) => {
+    if (!window.confirm(`Delete ${u.fullName}? This also removes their login account and cannot be undone.`)) return;
+    setErrorMsg('');
+    const { error } = await supabase.rpc('delete_user_account', { target_user_id: u.id });
+    if (error) {
+      setErrorMsg(`${error.message}. Run supabase-setup.sql in Supabase SQL Editor, then refresh the page.`);
+      return;
+    }
+    await loadUsers();
   };
 
   const roleLabel: Record<Role, string> = { admin: 'Admin', manager: 'Manager', telesales: 'Telesales', sales: 'Sales' };
@@ -36,8 +119,17 @@ export default function AdminUsers() {
     sales: 'bg-blue-500/10 text-blue-300',
   };
 
+  if (loading) {
+    return <div className="p-6 text-[#a0a0a0] text-sm">Loading users…</div>;
+  }
+
   return (
     <div className="p-6 space-y-4">
+      {errorMsg && (
+        <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3">
+          {errorMsg}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-white text-2xl font-bold">Users</h1>
@@ -60,9 +152,9 @@ export default function AdminUsers() {
       </div>
 
       <Card>
-        <Table headers={['User', 'Username', 'Role', 'Team / Manager', 'Status', 'Last Login', 'Actions']}>
+        <Table headers={['User', 'Username', 'Role', 'Password', 'Team / Manager', 'Status', 'Last Login', 'Actions']}>
           {filtered.map(u => (
-            <Tr key={u.id}>
+            <Tr key={u.id} onClick={() => setDetailUser(u)}>
               <Td>
                 <div className="flex items-center gap-3">
                   <Avatar name={u.fullName} />
@@ -77,6 +169,9 @@ export default function AdminUsers() {
                 <Badge className={roleColor[u.role]}>{roleLabel[u.role]}</Badge>
               </Td>
               <Td>
+                <span className="text-[#6b6b6b] text-xs">Hidden for security</span>
+              </Td>
+              <Td>
                 {u.role === 'manager' ? (
                   <span className="text-[#6b6b6b] text-xs">{users.filter(x => x.managerId === u.id).length} team members</span>
                 ) : u.managerId ? (
@@ -86,13 +181,14 @@ export default function AdminUsers() {
                 )}
               </Td>
               <Td><StatusBadge status={u.status} /></Td>
-              <Td><span className="font-mono text-xs text-[#6b6b6b]">{u.lastLogin}</span></Td>
+              <Td><span className="font-mono text-xs text-[#6b6b6b]">{u.lastLogin ? u.lastLogin.slice(0, 10) : 'Never'}</span></Td>
               <Td>
                 <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => toggleStatus(u.id)}>
+                  <Button variant="ghost" size="sm" onClick={() => toggleStatus(u)}>
                     {u.status === 'active' ? 'Deactivate' : 'Activate'}
                   </Button>
-                  <Button variant="ghost" size="sm">Reset PW</Button>
+                  <Button variant="ghost" size="sm" onClick={() => sendPasswordReset(u)}>Change Password</Button>
+                  <Button variant="ghost" size="sm" onClick={() => deleteUser(u)}>Delete</Button>
                 </div>
               </Td>
             </Tr>
@@ -111,27 +207,32 @@ export default function AdminUsers() {
           <div>
             <div className="text-white text-sm font-medium mb-1">Role-Based Access Control</div>
             <div className="text-[#6b6b6b] text-xs leading-relaxed">
-              Telesales users see only their assigned leads. Sales users see only their meetings. Admins have full access to all data, users, imports, and reports.
+              Telesales users see only their assigned leads. Sales users see only their meetings. Managers see their own team's data. Admins have full access to all data, users, imports, and reports.
+            </div>
+            <div className="text-[#6b6b6b] text-xs leading-relaxed mt-2">
+              Passwords cannot be read from Supabase. Use Change Password to send a secure reset link, or copy the temporary password shown once after creating a user.
             </div>
           </div>
         </div>
       </Card>
 
       {/* Add User Modal */}
-      <Modal open={addModal} onClose={() => setAddModal(false)} title="Create New User">
+      <Modal open={addModal} onClose={() => setAddModal(false)} title="Register a Team Member">
         <div className="space-y-3">
+          <div className="bg-[#1a1a1a] rounded p-3 text-xs text-[#a0a0a0] leading-relaxed">
+            Set the password for this account. Use at least 8 characters and share it with the employee through a secure channel.
+          </div>
           {[
             { label: 'Full Name *', key: 'fullName', placeholder: 'Diana Reeves' },
-            { label: 'Username *', key: 'username', placeholder: 'diana.sales' },
             { label: 'Email', key: 'email', placeholder: 'diana@company.com' },
-            { label: 'Initial Password *', key: 'password', placeholder: 'Min. 8 characters', type: 'password' },
+            { label: 'Password * (min. 8 characters)', key: 'password', placeholder: 'Create a password', type: 'password' },
           ].map(f => (
             <div key={f.key}>
               <label className="block text-xs text-[#a0a0a0] mb-1">{f.label}</label>
               <input
-                type={f.type || 'text'}
                 value={(newUser as any)[f.key]}
                 onChange={e => setNewUser(prev => ({ ...prev, [f.key]: e.target.value }))}
+                type={f.type || 'text'}
                 placeholder={f.placeholder}
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60"
               />
@@ -162,15 +263,69 @@ export default function AdminUsers() {
               </select>
             </div>
           )}
-          <div className="bg-[#1a1a1a] rounded p-3 text-xs text-[#6b6b6b]">
-            Share credentials with the user out-of-band (verbally or via secure message).
-          </div>
           <div className="flex gap-2 pt-2">
-            <Button variant="primary" disabled={!newUser.fullName || !newUser.username} onClick={handleAdd}>Create User</Button>
+            <Button variant="primary" disabled={!newUser.email || !newUser.fullName || newUser.password.length < 8} onClick={handleAdd}>Register User</Button>
             <Button variant="ghost" onClick={() => setAddModal(false)}>Cancel</Button>
           </div>
         </div>
       </Modal>
+
+      <Modal open={!!createdCredentials} onClose={() => setCreatedCredentials(null)} title="User Created Successfully">
+        {createdCredentials && (
+          <div className="space-y-4">
+            <div className="bg-[#dfff03]/10 border border-[#dfff03]/30 rounded-lg p-3 text-[#dfff03] text-sm">
+              Save or send these credentials now. The temporary password will not be shown again.
+            </div>
+            <div className="space-y-3">
+              {[
+                ['Username', createdCredentials.username],
+                ['Email', createdCredentials.email],
+                ['Temporary Password', createdCredentials.password],
+              ].map(([label, value]) => (
+                <div key={label} className="bg-[#1a1a1a] rounded p-3">
+                  <div className="text-[#6b6b6b] text-xs mb-1">{label}</div>
+                  <div className="text-white font-mono text-sm break-all select-all">{value}</div>
+                </div>
+              ))}
+            </div>
+            <Button variant="primary" onClick={() => setCreatedCredentials(null)}>Done</Button>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={!!detailUser} onClose={() => setDetailUser(null)} title="User Login Details">
+        {detailUser && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-[#1a1a1a] rounded p-3">
+                <div className="text-[#6b6b6b] text-xs mb-1">Username</div>
+                <div className="text-white font-mono text-sm select-all">{detailUser.username}</div>
+              </div>
+              <div className="bg-[#1a1a1a] rounded p-3">
+                <div className="text-[#6b6b6b] text-xs mb-1">Email</div>
+                <div className="text-white text-sm break-all select-all">{detailUser.email}</div>
+              </div>
+            </div>
+            <div className="bg-[#1a1a1a] rounded p-3">
+              <div className="text-[#6b6b6b] text-xs mb-1">Password</div>
+              <div className="text-[#6b6b6b] text-sm">Not readable or stored in plain text</div>
+            </div>
+            <p className="text-[#a0a0a0] text-xs leading-relaxed">
+              To give this user access, send a password reset link or use the temporary password shown immediately after creating a new account.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="primary" onClick={() => sendPasswordReset(detailUser)}>Send Password Reset</Button>
+              <Button variant="ghost" onClick={() => setDetailUser(null)}>Close</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {resetMessage && (
+        <div className="fixed bottom-5 right-5 z-50 max-w-sm bg-[#161616] border border-[#2a2a2a] rounded-lg px-4 py-3 text-sm text-[#dfff03] shadow-xl">
+          {resetMessage}
+        </div>
+      )}
     </div>
   );
 }

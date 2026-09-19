@@ -1,5 +1,5 @@
 import { useState, ReactNode } from 'react';
-import { Role, NOTIFICATIONS, USERS } from '../data/mockData';
+import { Role, NOTIFICATIONS } from '../data/mockData';
 import { Avatar, Badge } from './ui';
 
 type AdminPage = 'dashboard' | 'leads' | 'users' | 'meetings' | 'reports';
@@ -93,7 +93,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const me = USERS.find(u => u.id === userId);
+
   const myNotifs = NOTIFICATIONS.filter(n => n.userId === userId);
   const unreadCount = myNotifs.filter(n => !n.read).length;
 
@@ -109,19 +109,17 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
 
       {/* Sidebar */}
       <aside className={`fixed lg:static inset-y-0 left-0 z-30 w-56 bg-[#0e0e0e] border-r border-[#1e1e1e] flex flex-col transition-transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
-        {/* Logo */}
+        {/* Brand */}
         <div className="p-4 border-b border-[#1e1e1e]">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-[#dfff03] rounded-lg flex items-center justify-center flex-shrink-0">
-              <svg className="w-4 h-4 text-black" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
-              </svg>
+            <div className="w-7 h-7 bg-[#dfff03] rounded-md flex items-center justify-center flex-shrink-0 overflow-hidden">
+              <span className="text-black font-black text-lg leading-none tracking-[-0.15em]">N</span>
             </div>
-            <span className="text-white font-bold text-base tracking-tight">SalesCRM</span>
+            <span className="text-white font-bold text-base tracking-tight lowercase">intillaq system</span>
           </div>
         </div>
 
-        {/* User info */}
+        {/* User info
         <div className="p-4 border-b border-[#1e1e1e]">
           <div className="flex items-center gap-2.5">
             <Avatar name={me?.fullName || 'User'} size="md" />
@@ -130,7 +128,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
               <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${roleBadgeColor}`}>{roleLabel}</span>
             </div>
           </div>
-        </div>
+        </div> */}
 
         {/* Nav */}
         <nav className="flex-1 p-3 space-y-0.5">

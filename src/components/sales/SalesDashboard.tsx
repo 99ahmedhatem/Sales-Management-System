@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MEETINGS, LEADS, USERS, Meeting, MeetingOutcome, ClientComment, LeadStatus } from '../../data/mockData';
+import { addClientComment, loadClientComments } from '../../data/clientComments';
 import { Avatar, Button, Card, KpiCard, Modal, StatusBadge, Table, Td, Tr } from '../ui';
 
 const CLIENT_STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
@@ -32,6 +33,13 @@ export default function SalesDashboard({ userId }: Props) {
   const [newComment, setNewComment] = useState('');
   const [leadComments, setLeadComments] = useState<Record<string, ClientComment[]>>({});
 
+  useEffect(() => {
+    if (!commentModal) return;
+    loadClientComments(commentModal.leadId).then(({ data }) => {
+      setLeadComments(prev => ({ ...prev, [commentModal.leadId]: data }));
+    });
+  }, [commentModal?.leadId]);
+
   const upcoming = meetings.filter(m => m.outcome === 'Scheduled');
   const wonCount = meetings.filter(m => m.outcome === 'Deal Closed – Won').length;
   const lostCount = meetings.filter(m => m.outcome === 'Deal Lost').length;
@@ -41,16 +49,18 @@ export default function SalesDashboard({ userId }: Props) {
     if (detail?.id === id) setDetail(prev => prev ? { ...prev, outcome } : null);
   };
 
-  const addComment = () => {
+  const addComment = async () => {
     if (!commentModal || !newComment.trim()) return;
-    const comment: ClientComment = {
-      id: `cm${Date.now()}`,
+    const { data: comment, error } = await addClientComment({
       leadId: commentModal.leadId,
       authorId: userId,
       authorName: me?.fullName || 'Sales',
       text: newComment.trim(),
-      createdAt: new Date().toLocaleString(),
-    };
+    });
+    if (error || !comment) {
+      window.alert(error || 'Could not save the comment. Run supabase-setup.sql first.');
+      return;
+    }
     setLeadComments(prev => ({ ...prev, [commentModal.leadId]: [...(prev[commentModal.leadId] || []), comment] }));
     setNewComment('');
   };

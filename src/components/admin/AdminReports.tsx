@@ -4,6 +4,7 @@ import { Card, KpiCard } from '../ui';
 export default function AdminReports() {
   const totalLeads = LEADS.length;
   const convertedLeads = LEADS.filter(l => l.status === 'Converted').length;
+  const conversionRate = totalLeads > 0 ? ((convertedLeads / totalLeads) * 100).toFixed(1) : '0.0';
   const wonDeals = MEETINGS.filter(m => m.outcome === 'Deal Closed – Won').length;
   const lostDeals = MEETINGS.filter(m => m.outcome === 'Deal Lost').length;
 
@@ -51,7 +52,7 @@ export default function AdminReports() {
       {/* Summary KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard label="Total Leads" value={totalLeads} sub="All batches" />
-        <KpiCard label="Conversion Rate" value={`${((convertedLeads / totalLeads) * 100).toFixed(1)}%`} sub={`${convertedLeads} converted`} accent />
+        <KpiCard label="Conversion Rate" value={`${conversionRate}%`} sub={`${convertedLeads} converted`} accent />
         <KpiCard label="Deals Won" value={wonDeals} sub={`${lostDeals} lost`} />
         <KpiCard label="Win Rate" value={`${wonDeals + lostDeals > 0 ? ((wonDeals / (wonDeals + lostDeals)) * 100).toFixed(1) : 0}%`} sub="Meetings to close" />
       </div>
@@ -66,7 +67,7 @@ export default function AdminReports() {
               <div className="flex-1 h-2 bg-[#1e1e1e] rounded-full overflow-hidden">
                 <div
                   className="h-full bg-[#dfff03] rounded-full"
-                  style={{ width: `${(s.count / totalLeads) * 100}%` }}
+                  style={{ width: `${totalLeads > 0 ? (s.count / totalLeads) * 100 : 0}%` }}
                 />
               </div>
               <div className="w-20 text-right">
@@ -153,7 +154,7 @@ export default function AdminReports() {
               <div
                 className="w-full rounded-t transition-all"
                 style={{
-                  height: `${Math.max(8, (s.value / totalLeads) * 100)}px`,
+                  height: `${totalLeads > 0 ? Math.max(8, (s.value / totalLeads) * 100) : 8}px`,
                   background: s.color,
                   opacity: 0.85,
                 }}

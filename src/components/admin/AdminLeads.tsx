@@ -70,15 +70,13 @@ function parseQuantity(value: string): number {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
 }
 
-function normalizeWebsite(value: string): string | undefined {
-  const input = value.trim();
-  if (!input) return undefined;
-  try {
-    const url = new URL(input.includes('://') ? input : `https://${input}`);
-    return url.hostname.toLowerCase().replace(/^www\./, '').replace(/\.$/, '') || undefined;
-  } catch {
-    return input.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[/?#]/)[0] || undefined;
-  }
+function normalizeWebsite(url: string): string {
+  return url
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\/(www\.)?/, '')
+    .replace(/[?#].*$/, '')
+    .replace(/\/+$/, '');
 }
 
 function mapLead(row: any): Lead {
@@ -137,6 +135,7 @@ export default function AdminLeads() {
     name: '',
     phone: '',
     company: '',
+    website: '',
     region: '',
     source: '',
     isSallaStore: false,
@@ -255,24 +254,26 @@ export default function AdminLeads() {
 
   const handleAddLead = async () => {
     if (!newLead.name || !newLead.phone) return;
-    const { error } = await supabase.from('leads').insert({
+    const { error } = await supabase.from('leads').upsert({
       client_code: generateCode('CLT'),
       name: newLead.name,
       phone: newLead.phone,
       company: newLead.company || null,
+      website: newLead.website || null,
+      website_key: normalizeWebsite(newLead.website || '') || null,
       region: newLead.region || null,
       source: newLead.source || 'Manual',
       quantity: newLead.quantity,
       is_salla_store: newLead.isSallaStore,
       data_quality: newLead.dataQuality,
       status: 'New',
-    });
+    }, { onConflict: 'website_key', ignoreDuplicates: true });
     if (error) {
       setErrorMsg(error.message);
       return;
     }
     await loadData(page);
-    setNewLead({ name: '', phone: '', company: '', region: '', source: '', isSallaStore: false, dataQuality: 'normal', quantity: 0 });
+    setNewLead({ name: '', phone: '', company: '', website: '', region: '', source: '', isSallaStore: false, dataQuality: 'normal', quantity: 0 });
     setAddModal(false);
   };
 
@@ -343,10 +344,19 @@ export default function AdminLeads() {
     setImportProgress(0);
     const batchSize = 500;
     let quantitySupported = true;
-    for (let start = 0; start < importRows.length; start += batchSize) {
-      const batch = importRows.slice(start, start + batchSize).map(row => ({
+    const seen = new Set<string>();
+    const uniqueRows = importRows.filter(row => {
+      const key = normalizeWebsite(row.website || '');
+      if (!key) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    for (let start = 0; start < uniqueRows.length; start += batchSize) {
+      const batch = uniqueRows.slice(start, start + batchSize).map(row => ({
         ...(row.customerNumber ? { customer_number: row.customerNumber } : {}),
-        ...(row.websiteKey ? { website: row.website || null, website_key: row.websiteKey } : {}),
+        website: row.website || null,
+        website_key: normalizeWebsite(row.website || '') || null,
         client_code: generateCode('CLT'),
         name: row.name,
         phone: row.phone,
@@ -374,7 +384,7 @@ export default function AdminLeads() {
         setImporting(false);
         return;
       }
-      setImportProgress(Math.round(((start + batch.length) / importRows.length) * 100));
+      setImportProgress(Math.round(((start + batch.length) / uniqueRows.length) * 100));
     }
     setImporting(false);
     await loadData();
@@ -617,6 +627,7 @@ export default function AdminLeads() {
             { label: 'Full Name *', key: 'name', placeholder: 'e.g. Ahmed Al-Rashid' },
             { label: 'Phone Number *', key: 'phone', placeholder: '+971 50 000 0000' },
             { label: 'Company', key: 'company', placeholder: 'Company name' },
+            { label: 'Website', key: 'website', placeholder: 'example.com' },
           ].map(f => (
             <div key={f.key}>
               <label className="block text-xs text-[#a0a0a0] mb-1">{f.label}</label>

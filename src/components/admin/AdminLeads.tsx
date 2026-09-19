@@ -344,6 +344,7 @@ export default function AdminLeads() {
     setImportError('');
     setImportProgress(0);
     const batchSize = 500;
+    let quantitySupported = true;
     for (let start = 0; start < importRows.length; start += batchSize) {
       const batch = importRows.slice(start, start + batchSize).map(row => ({
         ...(row.customerNumber ? { customer_number: row.customerNumber } : {}),
@@ -357,10 +358,19 @@ export default function AdminLeads() {
         notes: row.notes || null,
         is_salla_store: importType === 'salla',
         data_quality: importDataQuality,
-        quantity: row.quantity,
+        ...(quantitySupported ? { quantity: row.quantity } : {}),
         status: 'New',
       }));
-      const { error } = await supabase.from('leads').upsert(batch, { onConflict: 'website_key', ignoreDuplicates: true });
+      let { error } = await supabase.from('leads').upsert(batch, { onConflict: 'website_key', ignoreDuplicates: true });
+      if (error && quantitySupported && isMissingQuantityColumn(error)) {
+        quantitySupported = false;
+        const legacyBatch = batch.map(({ quantity: _quantity, ...row }) => row);
+        const retry = await supabase.from('leads').upsert(legacyBatch, { onConflict: 'website_key', ignoreDuplicates: true });
+        error = retry.error;
+        if (!error) {
+          setImportError('Import is continuing, but quantity is not being saved. Run supabase-setup.sql once to add the quantity column.');
+        }
+      }
       if (error) {
         setImportError(`Import stopped at row ${start + 1}: ${error.message}`);
         setImporting(false);
@@ -760,4 +770,8 @@ export default function AdminLeads() {
       </Modal>
     </div>
   );
+}
+
+function isMissingQuantityColumn(error: { message?: string } | null): boolean {
+  return Boolean(error?.message && /quantity.*column|column.*quantity|schema cache/i.test(error.message));
 }

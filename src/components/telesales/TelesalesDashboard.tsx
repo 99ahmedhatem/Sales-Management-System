@@ -107,6 +107,7 @@ export default function TelesalesDashboard({ userId }: Props) {
   const [detailModal, setDetailModal] = useState<Lead | null>(null);
   const [editingCustomerNumberId, setEditingCustomerNumberId] = useState<string | null>(null);
   const [editingCustomerNumber, setEditingCustomerNumber] = useState('');
+  const [editingPhone, setEditingPhone] = useState('');
 
   const [callStatus, setCallStatus] = useState<LeadStatus>('Contacted');
   const [callNotes, setCallNotes] = useState('');
@@ -130,6 +131,13 @@ export default function TelesalesDashboard({ userId }: Props) {
     if (error) { setLoadError(error.message); return; }
     setLeads(prev => prev.map(lead => lead.id === leadId ? { ...lead, customerNumber: number ?? undefined } : lead));
     setEditingCustomerNumberId(null);
+  };
+
+  const savePhone = async (leadId: string) => {
+    const phone = editingPhone.trim();
+    const { error } = await supabase.from('leads').update({ phone: phone || null, updated_at: new Date().toISOString() }).eq('id', leadId);
+    if (error) { setLoadError(error.message); return; }
+    setLeads(prev => prev.map(lead => lead.id === leadId ? { ...lead, phone } : lead));
   };
 
   if (loading) {
@@ -345,7 +353,6 @@ export default function TelesalesDashboard({ userId }: Props) {
               {[
                 ['Code', detailModal.clientCode],
                 ['Customer Number', detailModal.customerNumber ?? '—'],
-                ['Phone', detailModal.phone],
                 ['Company', detailModal.company || '—'],
                 ['Website', detailModal.website || '—'],
                 ['Quantity', detailModal.quantity ?? 0],
@@ -357,6 +364,13 @@ export default function TelesalesDashboard({ userId }: Props) {
                   <div className="text-white text-sm font-medium">{v}</div>
                 </div>
               ))}
+              <div className="bg-[#1a1a1a] rounded p-3 col-span-2">
+                <div className="text-[#6b6b6b] text-xs mb-1">Phone Number</div>
+                <div className="flex gap-2">
+                  <input value={editingPhone || detailModal.phone} onChange={e => setEditingPhone(e.target.value)} placeholder="Add phone number" className="flex-1 bg-[#0e0e0e] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white" />
+                  <Button variant="primary" size="sm" onClick={() => savePhone(detailModal.id)}>Save Phone</Button>
+                </div>
+              </div>
               <div className="bg-[#1a1a1a] rounded p-3">
                 <div className="text-[#6b6b6b] text-xs mb-1">Status</div>
                 <StatusBadge status={detailModal.status} />

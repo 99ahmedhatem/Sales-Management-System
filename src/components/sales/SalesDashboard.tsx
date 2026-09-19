@@ -37,6 +37,8 @@ export default function SalesDashboard({ userId }: Props) {
   const [customerNumber, setCustomerNumber] = useState<number | undefined>();
   const [customerWebsite, setCustomerWebsite] = useState<string | undefined>();
   const [customerQuantity, setCustomerQuantity] = useState(0);
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerPhoneInput, setCustomerPhoneInput] = useState('');
   const [editingCustomerNumber, setEditingCustomerNumber] = useState(false);
   const [customerNumberInput, setCustomerNumberInput] = useState('');
   const [leadComments, setLeadComments] = useState<Record<string, ClientComment[]>>({});
@@ -50,11 +52,13 @@ export default function SalesDashboard({ userId }: Props) {
 
   useEffect(() => {
     if (!detail) return;
-    supabase.from('leads').select('customer_number, website, quantity').eq('id', detail.leadId).maybeSingle().then(({ data }) => {
+    supabase.from('leads').select('customer_number, website, quantity, phone').eq('id', detail.leadId).maybeSingle().then(({ data }) => {
       setCustomerNumber(data?.customer_number ?? undefined);
       setCustomerNumberInput(data?.customer_number ? String(data.customer_number) : '');
       setCustomerWebsite(data?.website ?? undefined);
       setCustomerQuantity(data?.quantity ?? 0);
+      setCustomerPhone(data?.phone ?? '');
+      setCustomerPhoneInput(data?.phone ?? '');
     });
   }, [detail?.leadId]);
 
@@ -67,6 +71,12 @@ export default function SalesDashboard({ userId }: Props) {
       setCustomerNumber(number ?? undefined);
       setEditingCustomerNumber(false);
     }
+  };
+
+  const saveCustomerPhone = async () => {
+    const phone = customerPhoneInput.trim();
+    const { error } = await supabase.from('leads').update({ phone: phone || null, updated_at: new Date().toISOString() }).eq('id', detail?.leadId);
+    if (!error) setCustomerPhone(phone);
   };
 
   const upcoming = meetings.filter(m => m.outcome === 'Scheduled');
@@ -253,6 +263,13 @@ export default function SalesDashboard({ userId }: Props) {
               <div className="bg-[#1a1a1a] rounded p-3">
                 <div className="text-[#6b6b6b] text-xs mb-1">Website</div>
                 <div className="text-white text-sm font-medium break-all">{customerWebsite || '—'}</div>
+              </div>
+              <div className="bg-[#1a1a1a] rounded p-3">
+                <div className="text-[#6b6b6b] text-xs mb-1">Phone Number</div>
+                <div className="flex gap-2">
+                  <input type="text" value={customerPhoneInput} onChange={e => setCustomerPhoneInput(e.target.value)} placeholder="Add phone number" className="flex-1 bg-[#0e0e0e] border border-[#2a2a2a] rounded px-2 py-1 text-sm text-white" />
+                  <Button variant="primary" size="sm" onClick={saveCustomerPhone}>Save Phone</Button>
+                </div>
               </div>
               <div className="bg-[#1a1a1a] rounded p-3">
                 <div className="text-[#6b6b6b] text-xs mb-1">Quantity</div>

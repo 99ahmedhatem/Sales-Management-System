@@ -48,6 +48,7 @@ export default function ManagerDashboard({ userId }: Props) {
   const [selectedPoolLeads, setSelectedPoolLeads] = useState<string[]>([]);
   const [editingCustomerNumberId, setEditingCustomerNumberId] = useState<string | null>(null);
   const [editingCustomerNumber, setEditingCustomerNumber] = useState('');
+  const [editingPhone, setEditingPhone] = useState('');
   const [leadSearch, setLeadSearch] = useState('');
   const [leadStatus, setLeadStatus] = useState('');
   const [leadCountry, setLeadCountry] = useState('');
@@ -151,6 +152,13 @@ export default function ManagerDashboard({ userId }: Props) {
     if (error) { setErrorMsg(error.message); return; }
     setAllLeads(prev => prev.map(lead => lead.id === leadId ? { ...lead, customerNumber: number ?? undefined } : lead));
     setEditingCustomerNumberId(null);
+  };
+
+  const savePhone = async (leadId: string) => {
+    const phone = editingPhone.trim();
+    const { error } = await supabase.from('leads').update({ phone: phone || null, updated_at: new Date().toISOString() }).eq('id', leadId);
+    if (error) { setErrorMsg(error.message); return; }
+    setAllLeads(prev => prev.map(lead => lead.id === leadId ? { ...lead, phone } : lead));
   };
 
   const unassignedToMe = allLeads.filter(l => l.assignedTo === userId);
@@ -315,10 +323,17 @@ export default function ManagerDashboard({ userId }: Props) {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               {[
-                ['Name', detailLead.name], ['Phone', detailLead.phone], ['Website', detailLead.website || '—'],
+                ['Name', detailLead.name], ['Website', detailLead.website || '—'],
                 ['Quantity', detailLead.quantity ?? 0], ['Company', detailLead.company || '—'], ['Region', detailLead.region || '—'],
                 ['Source', detailLead.source || '—'], ['Data Quality', detailLead.dataQuality || 'normal'],
               ].map(([label, value]) => <div key={label} className="bg-[#1a1a1a] rounded p-3"><div className="text-[#6b6b6b] text-xs mb-1">{label}</div><div className="text-white text-sm font-medium break-all">{value}</div></div>)}
+            </div>
+            <div className="bg-[#1a1a1a] rounded p-3">
+              <div className="text-[#6b6b6b] text-xs mb-1">Phone Number</div>
+              <div className="flex gap-2">
+                <input value={editingPhone || detailLead.phone} onChange={e => setEditingPhone(e.target.value)} placeholder="Add phone number" className="flex-1 bg-[#0e0e0e] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white" />
+                <Button variant="primary" size="sm" onClick={() => savePhone(detailLead.id)}>Save Phone</Button>
+              </div>
             </div>
             <div className="bg-[#1a1a1a] rounded p-3">
               <div className="text-[#6b6b6b] text-xs mb-1">Customer Number</div>

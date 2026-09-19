@@ -17,14 +17,36 @@ const STATUS_OPTIONS = [
   { value: 'No Answer', label: 'No Answer' },
 ];
 
+// Stored in the database as the English name in "value"
 const REGION_OPTIONS = [
-  { value: '', label: 'All Regions' },
-  { value: 'Dubai', label: 'Dubai' },
-  { value: 'Abu Dhabi', label: 'Abu Dhabi' },
-  { value: 'Sharjah', label: 'Sharjah' },
-  { value: 'Ajman', label: 'Ajman' },
-  { value: 'Fujairah', label: 'Fujairah' },
-  { value: 'RAK', label: 'RAK' },
+  { value: '', label: 'All Countries' },
+  { value: 'Saudi Arabia', label: 'Saudi Arabia (السعودية)' },
+  { value: 'Oman', label: 'Oman (عمان)' },
+  { value: 'Iraq', label: 'Iraq (العراق)' },
+  { value: 'UAE', label: 'UAE (الإمارات)' },
+  { value: 'Egypt', label: 'Egypt (مصر)' },
+];
+
+// Different ways a country can be written in a sheet, mapped to the names above
+const COUNTRY_ALIASES: Record<string, string[]> = {
+  'Saudi Arabia': ['saudi arabia', 'saudi', 'ksa', 'sa', 'السعودية', 'السعوديه', 'المملكة العربية السعودية'],
+  Oman: ['oman', 'om', 'omn', 'عمان', 'سلطنة عمان'],
+  Iraq: ['iraq', 'iq', 'irq', 'العراق'],
+  UAE: ['uae', 'ae', 'united arab emirates', 'emirates', 'الامارات', 'الإمارات', 'dubai', 'abu dhabi', 'sharjah', 'ajman', 'fujairah', 'rak', 'ras al khaimah', 'دبي', 'ابوظبي', 'أبوظبي', 'الشارقة'],
+  Egypt: ['egypt', 'eg', 'مصر'],
+};
+
+const TYPE_FILTER_OPTIONS = [
+  { value: '', label: 'All Types' },
+  { value: 'software', label: 'Software' },
+  { value: 'salla', label: 'Salla Store' },
+];
+
+const QUALITY_FILTER_OPTIONS = [
+  { value: '', label: 'All Quality' },
+  { value: 'normal', label: 'Normal (عادية)' },
+  { value: 'medium', label: 'Medium (متوسطة)' },
+  { value: 'high', label: 'Strong (قوية)' },
 ];
 
 const PHONE_FILTER_OPTIONS = [
@@ -35,9 +57,19 @@ const PHONE_FILTER_OPTIONS = [
 
 // Same list as the filter, but the first option is "no region" for the Add Lead form
 const REGION_FORM_OPTIONS = [
-  { value: '', label: 'Select region' },
+  { value: '', label: 'Select country' },
   ...REGION_OPTIONS.slice(1),
 ];
+
+// Turns "ksa", "KSA", "السعودية" ... into "Saudi Arabia". Unknown values are kept as written.
+function normalizeCountry(value: string): string {
+  const key = value.trim().toLowerCase();
+  if (!key) return '';
+  for (const [country, aliases] of Object.entries(COUNTRY_ALIASES)) {
+    if (aliases.includes(key)) return country;
+  }
+  return value.trim();
+}
 
 // A lead as shown in the details modal (comments are loaded separately)
 type LeadWithComments = Lead & { comments?: any[] };
@@ -138,6 +170,8 @@ export default function AdminLeads() {
   const [statusFilter, setStatusFilter] = useState('');
   const [regionFilter, setRegionFilter] = useState('');
   const [phoneFilter, setPhoneFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [qualityFilter, setQualityFilter] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [detailLead, setDetailLead] = useState<LeadWithComments | null>(null);
   const [commentText, setCommentText] = useState('');
@@ -194,6 +228,8 @@ export default function AdminLeads() {
     if (regionFilter) leadsQuery = leadsQuery.eq('region', regionFilter);
     if (phoneFilter === 'missing') leadsQuery = leadsQuery.is('phone', null);
     if (phoneFilter === 'has') leadsQuery = leadsQuery.not('phone', 'is', null);
+    if (typeFilter) leadsQuery = leadsQuery.eq('is_salla_store', typeFilter === 'salla');
+    if (qualityFilter) leadsQuery = leadsQuery.eq('data_quality', qualityFilter);
 
     const [leadsRes, usersRes, allRes, unassignedRes] = await Promise.all([
       leadsQuery,
@@ -228,7 +264,7 @@ export default function AdminLeads() {
     setSelected([]);
     loadData(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter]);
+  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter, qualityFilter]);
 
   useEffect(() => {
     if (!detailLead) return;
@@ -388,7 +424,7 @@ export default function AdminLeads() {
           name: readImportValue(row, ['name', 'full name', 'client name', 'الاسم']),
           phone: cleanPhone(readImportValue(row, ['phone', 'phone number', 'mobile', 'رقم الهاتف'])),
           company: readImportValue(row, ['company', 'الشركة']),
-          region: readImportValue(row, ['region', 'المنطقة']),
+          region: normalizeCountry(readImportValue(row, ['country', 'region', 'الدولة', 'المنطقة'])),
           source: readImportValue(row, ['source', 'المصدر']) || 'Excel Import',
           notes: readImportValue(row, ['notes', 'ملاحظات']),
         }))
@@ -518,7 +554,9 @@ export default function AdminLeads() {
       <div className="flex flex-wrap gap-3">
         <SearchInput value={search} onChange={setSearch} placeholder="Search name, phone, company..." />
         <Select value={statusFilter} onChange={setStatusFilter} options={STATUS_OPTIONS} className="w-40" />
-        <Select value={regionFilter} onChange={setRegionFilter} options={REGION_OPTIONS} className="w-36" />
+        <Select value={regionFilter} onChange={setRegionFilter} options={REGION_OPTIONS} className="w-48" />
+        <Select value={typeFilter} onChange={setTypeFilter} options={TYPE_FILTER_OPTIONS} className="w-36" />
+        <Select value={qualityFilter} onChange={setQualityFilter} options={QUALITY_FILTER_OPTIONS} className="w-40" />
         <Select value={phoneFilter} onChange={setPhoneFilter} options={PHONE_FILTER_OPTIONS} className="w-36" />
         {selected.length > 0 && (
           <div className="flex gap-2">
@@ -531,7 +569,7 @@ export default function AdminLeads() {
       {/* Table */}
       <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : 'transition-opacity'}>
         <Card>
-          <Table headers={['', 'No.', 'Quantity', 'Code', 'Name', 'Phone', 'Company', 'Website', 'Region', 'Salla', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
+          <Table headers={['', 'No.', 'Quantity', 'Code', 'Name', 'Phone', 'Company', 'Website', 'Country', 'Salla', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
             <tr className="border-b border-[#262626]">
               <td className="py-3 px-4">
                 <input
@@ -645,7 +683,7 @@ export default function AdminLeads() {
                 ['Quantity', detailLead.quantity ?? 0],
                 ['Company', detailLead.company || '—'],
                 ['Website', detailLead.website || '—'],
-                ['Region', detailLead.region || '—'],
+                ['Country', detailLead.region || '—'],
                 ['Source', detailLead.source || '—'],
                 ['Salla Store', detailLead.isSallaStore ? 'Yes' : 'No'],
                 ['Data Quality', detailLead.dataQuality],
@@ -781,7 +819,7 @@ export default function AdminLeads() {
             />
           </div>
           <div>
-            <label className="block text-xs text-[#a0a0a0] mb-1">Region</label>
+            <label className="block text-xs text-[#a0a0a0] mb-1">Country</label>
             <select
               value={newLead.region}
               onChange={e => setNewLead(prev => ({ ...prev, region: e.target.value }))}
@@ -902,7 +940,7 @@ export default function AdminLeads() {
           {importError && <p className="text-[#ff6464] text-xs">{importError}</p>}
           <div className="bg-[#1a1a1a] rounded-lg p-3 text-xs text-[#6b6b6b]">
             <p className="font-medium text-[#a0a0a0] mb-1">Expected columns:</p>
-            <p>Customer Number (optional) · Website (optional) · Quantity · Name (required) · Phone (optional) · Company · Region · Source · Notes</p>
+            <p>Customer Number (optional) · Website (optional) · Quantity · Name (required) · Phone (optional) · Company · Country · Source · Notes</p>
             <p className="mt-1">If two rows use the same website, only the first row is imported.</p>
             <p className="mt-1">If a store already exists without a phone and the sheet has one, the phone is added to it.</p>
             <p className="mt-1 text-[#dfff03]">The selected client type and data quality above apply to every imported row.</p>

@@ -1,16 +1,17 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Role } from './data/mockData';
 import Login from './components/Login';
 import AppShell from './components/AppShell';
-import AdminDashboard from './components/admin/AdminDashboard';
-import AdminLeads from './components/admin/AdminLeads';
-import AdminUsers from './components/admin/AdminUsers';
-import AdminMeetings from './components/admin/AdminMeetings';
-import AdminReports from './components/admin/AdminReports';
-import ManagerDashboard from './components/manager/ManagerDashboard';
-import TelesalesDashboard from './components/telesales/TelesalesDashboard';
-import SalesDashboard from './components/sales/SalesDashboard';
-import ContractsModule from './components/shared/ContractsModule';
+
+const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard'));
+const AdminLeads = lazy(() => import('./components/admin/AdminLeads'));
+const AdminUsers = lazy(() => import('./components/admin/AdminUsers'));
+const AdminMeetings = lazy(() => import('./components/admin/AdminMeetings'));
+const AdminReports = lazy(() => import('./components/admin/AdminReports'));
+const ManagerDashboard = lazy(() => import('./components/manager/ManagerDashboard'));
+const TelesalesDashboard = lazy(() => import('./components/telesales/TelesalesDashboard'));
+const SalesDashboard = lazy(() => import('./components/sales/SalesDashboard'));
+const ContractsModule = lazy(() => import('./components/shared/ContractsModule'));
 
 export default function App() {
   const [session, setSession] = useState<{ role: Role; userId: string } | null>(null);
@@ -25,28 +26,21 @@ export default function App() {
       userId={session.userId}
       onLogout={() => setSession(null)}
     >
-      {(page) => {
-        if (session.role === 'admin') {
-          if (page === 'dashboard') return <AdminDashboard />;
-          if (page === 'leads') return <AdminLeads />;
-          if (page === 'users') return <AdminUsers />;
-          if (page === 'meetings') return <AdminMeetings />;
-          if (page === 'reports') return <AdminReports />;
-          if (page === 'contracts') return <ContractsModule userId={session.userId} role="admin" />;
-        }
-        if (session.role === 'manager') {
-          if (page === 'dashboard') return <ManagerDashboard userId={session.userId} />;
-          if (page === 'contracts') return <ContractsModule userId={session.userId} role="manager" />;
-        }
-        if (session.role === 'telesales') {
-          return <TelesalesDashboard userId={session.userId} />;
-        }
-        if (session.role === 'sales') {
-          if (page === 'meetings') return <SalesDashboard userId={session.userId} />;
-          if (page === 'contracts') return <ContractsModule userId={session.userId} role="sales" />;
-        }
-        return null;
-      }}
+      {(page) => (
+        <Suspense fallback={<div className="p-6 text-sm text-[#6b6b6b]">Loading...</div>}>
+          {session.role === 'admin' && page === 'dashboard' && <AdminDashboard />}
+          {session.role === 'admin' && page === 'leads' && <AdminLeads />}
+          {session.role === 'admin' && page === 'users' && <AdminUsers />}
+          {session.role === 'admin' && page === 'meetings' && <AdminMeetings />}
+          {session.role === 'admin' && page === 'reports' && <AdminReports />}
+          {session.role === 'admin' && page === 'contracts' && <ContractsModule userId={session.userId} role="admin" />}
+          {session.role === 'manager' && page === 'dashboard' && <ManagerDashboard userId={session.userId} />}
+          {session.role === 'manager' && page === 'contracts' && <ContractsModule userId={session.userId} role="manager" />}
+          {session.role === 'telesales' && <TelesalesDashboard userId={session.userId} />}
+          {session.role === 'sales' && page === 'meetings' && <SalesDashboard userId={session.userId} />}
+          {session.role === 'sales' && page === 'contracts' && <ContractsModule userId={session.userId} role="sales" />}
+        </Suspense>
+      )}
     </AppShell>
   );
 }

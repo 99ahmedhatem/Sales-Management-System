@@ -33,11 +33,6 @@ export default function Login({ onLogin }: Props) {
     }, 600);
   };
 
-  const quickLogin = (c: typeof CREDENTIALS[0]) => {
-    setLoading(true);
-    setTimeout(() => onLogin(c.role, c.userId), 400);
-  };
-
   return (
     <div className="min-h-screen bg-[#0c0c0c] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
@@ -49,7 +44,7 @@ export default function Login({ onLogin }: Props) {
                 <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
               </svg>
             </div>
-            <span className="text-white font-bold text-xl tracking-tight">SalesCRM</span>
+            <span className="text-white font-bold text-xl tracking-tight lowercase">intillaq</span>
           </div>
           <h1 className="text-white font-semibold text-xl">Sign in to your account</h1>
           <p className="text-[#6b6b6b] text-sm mt-1">Sales & Telesales Management System</p>
@@ -88,21 +83,6 @@ export default function Login({ onLogin }: Props) {
             </button>
           </form>
 
-          <div className="mt-6">
-            <div className="text-[#4a4a4a] text-xs text-center mb-3">— Quick access for demo —</div>
-            <div className="space-y-2">
-              {CREDENTIALS.map(c => (
-                <button
-                  key={c.username}
-                  onClick={() => quickLogin(c)}
-                  className="w-full text-left bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 hover:border-[#dfff03]/30 hover:bg-[#1e1e1e] transition-all"
-                >
-                  <div className="text-white text-xs font-medium">{c.role.charAt(0).toUpperCase() + c.role.slice(1)}</div>
-                  <div className="text-[#6b6b6b] text-xs">{c.label}</div>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>

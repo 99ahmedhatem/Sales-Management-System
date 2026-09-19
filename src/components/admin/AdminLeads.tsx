@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { LEADS, USERS, Lead, LeadStatus } from '../../data/mockData';
+import { useState, useEffect } from 'react';
+import { supabase } from '../../supabaseClient';
+import { USERS, Lead, LeadStatus } from '../../data/mockData';
 import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Badge } from '../ui';
 
 const STATUS_OPTIONS = [
@@ -24,8 +25,31 @@ const REGION_OPTIONS = [
   { value: 'RAK', label: 'RAK' },
 ];
 
+// Converts a row coming from Supabase (snake_case) into our Lead type (camelCase)
+function mapDbLeadToLead(row: any): Lead {
+  return {
+    id: row.id,
+    clientCode: row.client_code,
+    name: row.name,
+    phone: row.phone,
+    company: row.company ?? undefined,
+    region: row.region ?? undefined,
+    source: row.source ?? undefined,
+    status: row.status,
+    assignedTo: row.assigned_to ?? undefined,
+    importBatch: row.import_batch ?? undefined,
+    notes: row.notes ?? undefined,
+    callbackDate: row.callback_date ?? undefined,
+    freeTrialEndDate: row.free_trial_end_date ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 export default function AdminLeads() {
-  const [leads, setLeads] = useState<Lead[]>(LEADS);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [regionFilter, setRegionFilter] = useState('');
@@ -36,6 +60,26 @@ export default function AdminLeads() {
   const [addModal, setAddModal] = useState(false);
   const [newLead, setNewLead] = useState({ name: '', phone: '', company: '', region: '', source: '' });
   const [importModal, setImportModal] = useState(false);
+
+  // Fetch leads from Supabase once, when the screen first loads
+  useEffect(() => {
+    const fetchLeads = async () => {
+      setLoading(true);
+      setLoadError(null);
+      const { data, error } = await supabase
+        .from('leads')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        setLoadError(error.message);
+      } else if (data) {
+        setLeads(data.map(mapDbLeadToLead));
+      }
+      setLoading(false);
+    };
+    fetchLeads();
+  }, []);
 
   const telesalesUsers = USERS.filter(u => u.role === 'telesales' && u.status === 'active');
 
@@ -119,49 +163,65 @@ export default function AdminLeads() {
         )}
       </div>
 
+      {/* Loading / Error states */}
+      {loading && (
+        <Card>
+          <div className="p-6 text-center text-[#a0a0a0] text-sm">Loading leads from the database…</div>
+        </Card>
+      )}
+      {!loading && loadError && (
+        <Card>
+          <div className="p-6 text-center text-red-400 text-sm">
+            Could not load leads: {loadError}
+          </div>
+        </Card>
+      )}
+
       {/* Table */}
-      <Card>
-        <Table headers={['', 'Code', 'Name', 'Phone', 'Company', 'Region', 'Status', 'Assigned To', 'Updated', '']}>
-          <tr className="border-b border-[#262626]">
-            <td className="py-3 px-4">
-              <input type="checkbox" checked={selected.length === filtered.length && filtered.length > 0} onChange={toggleAll} className="accent-[#dfff03]" />
-            </td>
-            <td colSpan={8} className="py-3 px-2 text-[#6b6b6b] text-xs">{filtered.length} records shown</td>
-          </tr>
-          {filtered.map(lead => {
-            const assignedUser = USERS.find(u => u.id === lead.assignedTo);
-            return (
-              <Tr key={lead.id} onClick={() => setDetailLead(lead)}>
-                <Td>
-                  <input type="checkbox" checked={selected.includes(lead.id)} onChange={() => toggleSelect(lead.id)} onClick={e => e.stopPropagation()} className="accent-[#dfff03]" />
-                </Td>
-                <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
-                <Td><span className="font-medium text-white">{lead.name}</span></Td>
-                <Td><span className="font-mono text-xs">{lead.phone}</span></Td>
-                <Td><span className="text-[#a0a0a0]">{lead.company || '—'}</span></Td>
-                <Td><span className="text-[#a0a0a0]">{lead.region || '—'}</span></Td>
-                <Td><StatusBadge status={lead.status} /></Td>
-                <Td>
-                  {assignedUser ? (
-                    <span className="text-[#a0a0a0] text-xs">{assignedUser.fullName}</span>
-                  ) : (
-                    <span className="text-[#4a4a4a] text-xs italic">Unassigned</span>
-                  )}
-                </Td>
-                <Td><span className="text-xs font-mono text-[#6b6b6b]">{lead.updatedAt}</span></Td>
-                <Td>
-                  <button className="text-[#4a4a4a] hover:text-[#dfff03] transition-colors" onClick={e => { e.stopPropagation(); setDetailLead(lead); }}>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  </button>
-                </Td>
-              </Tr>
-            );
-          })}
-        </Table>
-      </Card>
+      {!loading && !loadError && (
+        <Card>
+          <Table headers={['', 'Code', 'Name', 'Phone', 'Company', 'Region', 'Status', 'Assigned To', 'Updated', '']}>
+            <tr className="border-b border-[#262626]">
+              <td className="py-3 px-4">
+                <input type="checkbox" checked={selected.length === filtered.length && filtered.length > 0} onChange={toggleAll} className="accent-[#dfff03]" />
+              </td>
+              <td colSpan={8} className="py-3 px-2 text-[#6b6b6b] text-xs">{filtered.length} records shown</td>
+            </tr>
+            {filtered.map(lead => {
+              const assignedUser = USERS.find(u => u.id === lead.assignedTo);
+              return (
+                <Tr key={lead.id} onClick={() => setDetailLead(lead)}>
+                  <Td>
+                    <input type="checkbox" checked={selected.includes(lead.id)} onChange={() => toggleSelect(lead.id)} onClick={e => e.stopPropagation()} className="accent-[#dfff03]" />
+                  </Td>
+                  <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
+                  <Td><span className="font-medium text-white">{lead.name}</span></Td>
+                  <Td><span className="font-mono text-xs">{lead.phone}</span></Td>
+                  <Td><span className="text-[#a0a0a0]">{lead.company || '—'}</span></Td>
+                  <Td><span className="text-[#a0a0a0]">{lead.region || '—'}</span></Td>
+                  <Td><StatusBadge status={lead.status} /></Td>
+                  <Td>
+                    {assignedUser ? (
+                      <span className="text-[#a0a0a0] text-xs">{assignedUser.fullName}</span>
+                    ) : (
+                      <span className="text-[#4a4a4a] text-xs italic">Unassigned</span>
+                    )}
+                  </Td>
+                  <Td><span className="text-xs font-mono text-[#6b6b6b]">{lead.updatedAt}</span></Td>
+                  <Td>
+                    <button className="text-[#4a4a4a] hover:text-[#dfff03] transition-colors" onClick={e => { e.stopPropagation(); setDetailLead(lead); }}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </button>
+                  </Td>
+                </Tr>
+              );
+            })}
+          </Table>
+        </Card>
+      )}
 
       {/* Lead Detail Modal */}
       <Modal open={!!detailLead} onClose={() => setDetailLead(null)} title="Lead Details">

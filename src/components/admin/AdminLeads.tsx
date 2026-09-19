@@ -230,6 +230,7 @@ export default function AdminLeads() {
         return;
       }
     }
+    setLeads(prev => prev.filter(lead => !selected.includes(lead.id)));
     setSelected([]);
     await loadData();
   };
@@ -242,7 +243,10 @@ export default function AdminLeads() {
       setEditingCustomerNumberId(null);
       return;
     }
-    const { error } = await supabase.from('leads').update({ customer_number: customerNumber ?? null }).eq('id', leadId);
+    const { error } = await supabase.rpc('set_lead_customer_number', {
+      target_lead_id: leadId,
+      new_customer_number: customerNumber ?? null,
+    });
     if (error) {
       setErrorMsg(error.message);
       return;

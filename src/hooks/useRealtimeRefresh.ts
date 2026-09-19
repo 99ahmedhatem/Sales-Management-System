@@ -1,18 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 
-/**
- * Calls onChange whenever a row in one of the given tables is inserted, updated or deleted.
- * Many changes in a short time (like a big import) trigger only one refresh.
- *
- * Usage:
- *   useRealtimeRefresh(['leads', 'users'], () => loadData(page, true));
- */
 export function useRealtimeRefresh(tables: string[], onChange: () => void, delayMs = 1500) {
-  // Always call the latest version of onChange (with the current page and filters)
   const latest = useRef(onChange);
   latest.current = onChange;
-
   const key = tables.join(',');
 
   useEffect(() => {
@@ -21,13 +12,11 @@ export function useRealtimeRefresh(tables: string[], onChange: () => void, delay
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => latest.current(), delayMs);
     };
-
     const channel = supabase.channel(`live-${key}-${Math.random().toString(36).slice(2)}`);
-    key.split(',').forEach(table => {
+    tables.forEach(table => {
       channel.on('postgres_changes', { event: '*', schema: 'public', table }, trigger);
     });
     channel.subscribe();
-
     return () => {
       if (timer) clearTimeout(timer);
       supabase.removeChannel(channel);

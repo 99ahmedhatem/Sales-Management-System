@@ -5,6 +5,11 @@ import { addClientComment, loadClientComments } from '../../data/clientComments'
 import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
+const ROLE_REGION_OPTIONS = [{ value: '', label: 'All Countries' }, { value: 'Saudi Arabia', label: 'Saudi Arabia' }, { value: 'Oman', label: 'Oman' }, { value: 'Iraq', label: 'Iraq' }, { value: 'UAE', label: 'UAE' }, { value: 'Egypt', label: 'Egypt' }];
+const ROLE_TYPE_OPTIONS = [{ value: '', label: 'All Types' }, { value: 'software', label: 'Software' }, { value: 'salla', label: 'Salla Store' }];
+const ROLE_QUALITY_OPTIONS = [{ value: '', label: 'All Quality' }, { value: 'normal', label: 'Normal' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'Strong' }];
+const ROLE_PHONE_OPTIONS = [{ value: '', label: 'All Phones' }, { value: 'has', label: 'Has phone' }, { value: 'missing', label: 'No phone' }];
+
 const CALL_STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: 'No Answer', label: 'No Answer' },
   { value: 'Call Back Later', label: 'Call Back Later' },
@@ -89,6 +94,10 @@ export default function TelesalesDashboard({ userId }: Props) {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [countryFilter, setCountryFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [qualityFilter, setQualityFilter] = useState('');
+  const [phoneFilter, setPhoneFilter] = useState('');
   const [tab, setTab] = useState<'queue' | 'done'>('queue');
 
   // Modals
@@ -139,7 +148,11 @@ export default function TelesalesDashboard({ userId }: Props) {
   const filtered = (tab === 'queue' ? activeLeads : doneLeads).filter(l => {
     const q = search.toLowerCase();
     return (!q || l.name.toLowerCase().includes(q) || l.phone.includes(q))
-      && (!statusFilter || l.status === statusFilter);
+      && (!statusFilter || l.status === statusFilter)
+      && (!countryFilter || l.region === countryFilter)
+      && (!typeFilter || (typeFilter === 'salla' ? l.isSallaStore : !l.isSallaStore))
+      && (!qualityFilter || l.dataQuality === qualityFilter)
+      && (!phoneFilter || (phoneFilter === 'has' ? Boolean(l.phone) : !l.phone));
   });
 
   const updateLead = (id: string, patch: Partial<Lead>) => {
@@ -271,6 +284,10 @@ export default function TelesalesDashboard({ userId }: Props) {
           options={[{ value: '', label: 'All Status' }, ...CALL_STATUS_OPTIONS.map(s => ({ value: s.value, label: s.label }))]}
           className="w-44"
         />
+        <Select value={countryFilter} onChange={setCountryFilter} options={ROLE_REGION_OPTIONS} className="w-40" />
+        <Select value={typeFilter} onChange={setTypeFilter} options={ROLE_TYPE_OPTIONS} className="w-36" />
+        <Select value={qualityFilter} onChange={setQualityFilter} options={ROLE_QUALITY_OPTIONS} className="w-36" />
+        <Select value={phoneFilter} onChange={setPhoneFilter} options={ROLE_PHONE_OPTIONS} className="w-36" />
       </div>
 
       <Card>

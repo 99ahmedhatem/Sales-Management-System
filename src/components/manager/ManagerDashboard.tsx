@@ -4,6 +4,15 @@ import { MEETINGS, Lead, LeadStatus, User } from '../../data/mockData';
 import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
+const ROLE_REGION_OPTIONS = [
+  { value: '', label: 'All Countries' },
+  { value: 'Saudi Arabia', label: 'Saudi Arabia' }, { value: 'Oman', label: 'Oman' },
+  { value: 'Iraq', label: 'Iraq' }, { value: 'UAE', label: 'UAE' }, { value: 'Egypt', label: 'Egypt' },
+];
+const ROLE_TYPE_OPTIONS = [{ value: '', label: 'All Types' }, { value: 'software', label: 'Software' }, { value: 'salla', label: 'Salla Store' }];
+const ROLE_QUALITY_OPTIONS = [{ value: '', label: 'All Quality' }, { value: 'normal', label: 'Normal' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'Strong' }];
+const ROLE_PHONE_OPTIONS = [{ value: '', label: 'All Phones' }, { value: 'has', label: 'Has phone' }, { value: 'missing', label: 'No phone' }];
+
 interface Props {
   userId: string;
 }
@@ -41,6 +50,10 @@ export default function ManagerDashboard({ userId }: Props) {
   const [editingCustomerNumber, setEditingCustomerNumber] = useState('');
   const [leadSearch, setLeadSearch] = useState('');
   const [leadStatus, setLeadStatus] = useState('');
+  const [leadCountry, setLeadCountry] = useState('');
+  const [leadType, setLeadType] = useState('');
+  const [leadQuality, setLeadQuality] = useState('');
+  const [leadPhone, setLeadPhone] = useState('');
   const [detailLead, setDetailLead] = useState<Lead | null>(null);
   const [leadPage, setLeadPage] = useState(0);
   const [totalTeamLeads, setTotalTeamLeads] = useState(0);
@@ -144,7 +157,11 @@ export default function ManagerDashboard({ userId }: Props) {
   const filteredPool = unassignedToMe.filter(lead => {
     const query = leadSearch.toLowerCase();
     return (!query || lead.name.toLowerCase().includes(query) || lead.phone.includes(query) || (lead.company || '').toLowerCase().includes(query))
-      && (!leadStatus || lead.status === leadStatus);
+      && (!leadStatus || lead.status === leadStatus)
+      && (!leadCountry || lead.region === leadCountry)
+      && (!leadType || (leadType === 'salla' ? lead.isSallaStore : !lead.isSallaStore))
+      && (!leadQuality || lead.dataQuality === leadQuality)
+      && (!leadPhone || (leadPhone === 'has' ? Boolean(lead.phone) : !lead.phone));
   });
   const togglePoolLead = (leadId: string) => {
     setSelectedPoolLeads(prev => prev.includes(leadId) ? prev.filter(id => id !== leadId) : [...prev, leadId]);
@@ -247,7 +264,11 @@ export default function ManagerDashboard({ userId }: Props) {
         </div>
         <div className="flex gap-3 mb-4">
           <SearchInput value={leadSearch} onChange={setLeadSearch} placeholder="Search name, phone, company..." />
-          <Select value={leadStatus} onChange={setLeadStatus} options={[{ value: '', label: 'All Status' }, { value: 'New', label: 'New' }, { value: 'Assigned', label: 'Assigned' }, { value: 'Contacted', label: 'Contacted' }, { value: 'Interested', label: 'Interested' }]} className="w-40" />
+          <Select value={leadStatus} onChange={setLeadStatus} options={[{ value: '', label: 'All Statuses' }, { value: 'New', label: 'New' }, { value: 'Assigned', label: 'Assigned' }, { value: 'Contacted', label: 'Contacted' }, { value: 'Interested', label: 'Interested' }]} className="w-40" />
+          <Select value={leadCountry} onChange={setLeadCountry} options={ROLE_REGION_OPTIONS} className="w-40" />
+          <Select value={leadType} onChange={setLeadType} options={ROLE_TYPE_OPTIONS} className="w-36" />
+          <Select value={leadQuality} onChange={setLeadQuality} options={ROLE_QUALITY_OPTIONS} className="w-36" />
+          <Select value={leadPhone} onChange={setLeadPhone} options={ROLE_PHONE_OPTIONS} className="w-36" />
         </div>
         {unassignedToMe.length === 0 ? (
           <p className="text-[#4a4a4a] text-sm py-4">All leads have been distributed to your team members.</p>

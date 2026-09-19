@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../supabaseClient';
 import { addClientComment, loadClientComments } from '../../data/clientComments';
@@ -27,6 +27,12 @@ const REGION_OPTIONS = [
   { value: 'RAK', label: 'RAK' },
 ];
 
+const PHONE_FILTER_OPTIONS = [
+  { value: '', label: 'All Phones' },
+  { value: 'has', label: 'Has phone' },
+  { value: 'missing', label: 'No phone' },
+];
+
 // Same list as the filter, but the first option is "no region" for the Add Lead form
 const REGION_FORM_OPTIONS = [
   { value: '', label: 'Select region' },
@@ -41,7 +47,7 @@ interface ImportLeadRow {
   website?: string;
   websiteKey?: string;
   name: string;
-  phone: string;
+  phone: string; // already cleaned, may be empty
   company: string;
   region: string;
   source: string;
@@ -70,6 +76,11 @@ function parseQuantity(value: string): number {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
 }
 
+// Keeps digits and a leading +. A dash or empty cell becomes '' (no phone).
+function cleanPhone(value: string): string {
+  return value.replace(/[^\d+]/g, '');
+}
+
 function normalizeWebsite(url: string): string {
   return url
     .trim()
@@ -87,7 +98,7 @@ function mapLead(row: any): Lead {
     quantity: row.quantity ?? 0,
     clientCode: row.client_code,
     name: row.name,
-    phone: row.phone,
+    phone: row.phone ?? '',
     company: row.company ?? undefined,
     region: row.region ?? undefined,
     source: row.source ?? undefined,
@@ -120,14 +131,19 @@ export default function AdminLeads() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [firstLoad, setFirstLoad] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [regionFilter, setRegionFilter] = useState('');
+  const [phoneFilter, setPhoneFilter] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [detailLead, setDetailLead] = useState<LeadWithComments | null>(null);
   const [commentText, setCommentText] = useState('');
   const [commentError, setCommentError] = useState('');
+  const [phoneDraft, setPhoneDraft] = useState('');
+  const [phoneMsg, setPhoneMsg] = useState('');
   const [assignModal, setAssignModal] = useState(false);
   const [assignTo, setAssignTo] = useState('');
   const [addModal, setAddModal] = useState(false);
@@ -154,31 +170,70 @@ export default function AdminLeads() {
   const [editingCustomerNumberId, setEditingCustomerNumberId] = useState<string | null>(null);
   const [editingCustomerNumber, setEditingCustomerNumber] = useState('');
   const [page, setPage] = useState(0);
-  const [totalLeads, setTotalLeads] = useState(0);
+  const [totalLeads, setTotalLeads] = useState(0); // after filters
+  const [allCount, setAllCount] = useState(0); // all leads in the database
+  const [unassignedCount, setUnassignedCount] = useState(0);
+  const requestId = useRef(0);
   const pageSize = 500;
 
   async function loadData(nextPage = page) {
+    const reqId = ++requestId.current;
     setLoading(true);
     setErrorMsg('');
-    let leadsQuery = supabase.from('leads').select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(nextPage * pageSize, (nextPage + 1) * pageSize - 1);
-    if (search.trim()) leadsQuery = leadsQuery.or(`name.ilike.%${search.trim()}%,phone.ilike.%${search.trim()}%,company.ilike.%${search.trim()}%`);
+
+    let leadsQuery = supabase
+      .from('leads')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false }) // stable order so pages never overlap
+      .range(nextPage * pageSize, (nextPage + 1) * pageSize - 1);
+
+    const q = debouncedSearch.replace(/[%,()]/g, ' ').trim();
+    if (q) leadsQuery = leadsQuery.or(`name.ilike.%${q}%,phone.ilike.%${q}%,company.ilike.%${q}%`);
     if (statusFilter) leadsQuery = leadsQuery.eq('status', statusFilter);
     if (regionFilter) leadsQuery = leadsQuery.eq('region', regionFilter);
-    const [leadsRes, usersRes] = await Promise.all([
+    if (phoneFilter === 'missing') leadsQuery = leadsQuery.is('phone', null);
+    if (phoneFilter === 'has') leadsQuery = leadsQuery.not('phone', 'is', null);
+
+    const [leadsRes, usersRes, allRes, unassignedRes] = await Promise.all([
       leadsQuery,
       supabase.from('users').select('*'),
+      supabase.from('leads').select('id', { count: 'exact', head: true }),
+      supabase.from('leads').select('id', { count: 'exact', head: true }).is('assigned_to', null),
     ]);
+
+    if (reqId !== requestId.current) return; // a newer request replaced this one
+
     if (leadsRes.error) setErrorMsg(leadsRes.error.message);
-    else { setLeads((leadsRes.data ?? []).map(mapLead)); setTotalLeads(leadsRes.count ?? 0); setPage(nextPage); }
+    else {
+      setLeads((leadsRes.data ?? []).map(mapLead));
+      setTotalLeads(leadsRes.count ?? 0);
+      setPage(nextPage);
+    }
     if (usersRes.error) setErrorMsg(usersRes.error.message);
     else setUsers((usersRes.data ?? []).map(mapUser));
+    setAllCount(allRes.count ?? 0);
+    setUnassignedCount(unassignedRes.count ?? 0);
     setLoading(false);
+    setFirstLoad(false);
   }
 
-  useEffect(() => { loadData(0); }, [search, statusFilter, regionFilter]);
+  // Wait 300ms after typing before querying the database
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    setSelected([]);
+    loadData(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter]);
 
   useEffect(() => {
     if (!detailLead) return;
+    setPhoneDraft(detailLead.phone ?? '');
+    setPhoneMsg('');
     loadClientComments(detailLead.id).then(({ data }) => {
       setDetailLead(prev => (prev ? { ...prev, comments: data } : null));
     });
@@ -187,17 +242,12 @@ export default function AdminLeads() {
 
   const assignableUsers = users.filter(u => ['manager', 'telesales'].includes(u.role) && u.status === 'active');
 
-  const filtered = leads.filter(l => {
-    const q = search.toLowerCase();
-    return !q || l.name.toLowerCase().includes(q) || l.phone.includes(q) || (l.company || '').toLowerCase().includes(q);
-  });
-
   const toggleSelect = (id: string) => {
     setSelected(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
   };
   const toggleAll = () => {
-    if (selected.length === filtered.length) setSelected([]);
-    else setSelected(filtered.map(l => l.id));
+    if (selected.length === leads.length) setSelected([]);
+    else setSelected(leads.map(l => l.id));
   };
 
   const handleAssign = async () => {
@@ -248,31 +298,59 @@ export default function AdminLeads() {
       setErrorMsg(error.message);
       return;
     }
-    setLeads(prev => prev.map(lead => lead.id === leadId ? { ...lead, customerNumber } : lead));
+    setLeads(prev => prev.map(lead => (lead.id === leadId ? { ...lead, customerNumber } : lead)));
     setEditingCustomerNumberId(null);
   };
 
+  const handleSavePhone = async () => {
+    if (!detailLead) return;
+    const phone = cleanPhone(phoneDraft);
+    const { error } = await supabase
+      .from('leads')
+      .update({ phone: phone || null, updated_at: new Date().toISOString() })
+      .eq('id', detailLead.id);
+    if (error) {
+      setPhoneMsg(error.message);
+      return;
+    }
+    setPhoneDraft(phone);
+    setDetailLead(prev => (prev ? { ...prev, phone } : null));
+    setLeads(prev => prev.map(l => (l.id === detailLead.id ? { ...l, phone } : l)));
+    setPhoneMsg('Saved');
+  };
+
   const handleAddLead = async () => {
-    if (!newLead.name || !newLead.phone) return;
-    const { error } = await supabase.from('leads').upsert({
-      client_code: generateCode('CLT'),
-      name: newLead.name,
-      phone: newLead.phone,
-      company: newLead.company || null,
-      website: newLead.website || null,
-      website_key: normalizeWebsite(newLead.website || '') || null,
-      region: newLead.region || null,
-      source: newLead.source || 'Manual',
-      quantity: newLead.quantity,
-      is_salla_store: newLead.isSallaStore,
-      data_quality: newLead.dataQuality,
-      status: 'New',
-    }, { onConflict: 'website_key', ignoreDuplicates: true });
+    if (!newLead.name) return;
+    setErrorMsg('');
+    const { data, error } = await supabase
+      .from('leads')
+      .upsert(
+        {
+          client_code: generateCode('CLT'),
+          name: newLead.name,
+          phone: cleanPhone(newLead.phone) || null,
+          company: newLead.company || null,
+          website: newLead.website || null,
+          website_key: normalizeWebsite(newLead.website || '') || null,
+          region: newLead.region || null,
+          source: newLead.source || 'Manual',
+          quantity: newLead.quantity,
+          is_salla_store: newLead.isSallaStore,
+          data_quality: newLead.dataQuality,
+          status: 'New',
+        },
+        { onConflict: 'website_key', ignoreDuplicates: true }
+      )
+      .select('id');
     if (error) {
       setErrorMsg(error.message);
       return;
     }
-    await loadData(page);
+    if (!data || data.length === 0) {
+      setErrorMsg('A lead with this website already exists, so nothing was added.');
+      return;
+    }
+    await loadData(0);
     setNewLead({ name: '', phone: '', company: '', website: '', region: '', source: '', isSallaStore: false, dataQuality: 'normal', quantity: 0 });
     setAddModal(false);
   };
@@ -308,13 +386,13 @@ export default function AdminLeads() {
           website: readImportValue(row, ['website', 'web site', 'site', 'url', 'رابط الموقع', 'الموقع']),
           quantity: parseQuantity(readImportValue(row, ['quantity', 'qty', 'الكمية'])),
           name: readImportValue(row, ['name', 'full name', 'client name', 'الاسم']),
-          phone: readImportValue(row, ['phone', 'phone number', 'mobile', 'رقم الهاتف']),
+          phone: cleanPhone(readImportValue(row, ['phone', 'phone number', 'mobile', 'رقم الهاتف'])),
           company: readImportValue(row, ['company', 'الشركة']),
           region: readImportValue(row, ['region', 'المنطقة']),
           source: readImportValue(row, ['source', 'المصدر']) || 'Excel Import',
           notes: readImportValue(row, ['notes', 'ملاحظات']),
         }))
-        .filter(row => row.name && row.phone);
+        .filter(row => row.name); // phone is optional
       const seenWebsites = new Set<string>();
       const parsed = parsedRows.filter(row => {
         const websiteKey = normalizeWebsite(row.website || '');
@@ -326,7 +404,7 @@ export default function AdminLeads() {
       });
       setDuplicateImportCount(parsedRows.length - parsed.length);
       if (!parsed.length) {
-        setImportError('No valid rows found. Name and Phone are required.');
+        setImportError('No valid rows found. Name is required.');
         setImportRows([]);
         return;
       }
@@ -344,22 +422,16 @@ export default function AdminLeads() {
     setImportProgress(0);
     const batchSize = 500;
     let quantitySupported = true;
-    const seen = new Set<string>();
-    const uniqueRows = importRows.filter(row => {
-      const key = normalizeWebsite(row.website || '');
-      if (!key) return true;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    for (let start = 0; start < uniqueRows.length; start += batchSize) {
-      const batch = uniqueRows.slice(start, start + batchSize).map(row => ({
+
+    // Rows are already de-duplicated by website when the file is read
+    for (let start = 0; start < importRows.length; start += batchSize) {
+      const batch = importRows.slice(start, start + batchSize).map(row => ({
         ...(row.customerNumber ? { customer_number: row.customerNumber } : {}),
         website: row.website || null,
-        website_key: normalizeWebsite(row.website || '') || null,
+        website_key: row.websiteKey || null,
         client_code: generateCode('CLT'),
         name: row.name,
-        phone: row.phone,
+        phone: row.phone || null,
         company: row.company || null,
         region: row.region || null,
         source: row.source,
@@ -384,10 +456,26 @@ export default function AdminLeads() {
         setImporting(false);
         return;
       }
-      setImportProgress(Math.round(((start + batch.length) / uniqueRows.length) * 100));
+      setImportProgress(Math.round(((start + batch.length) / importRows.length) * 90));
     }
+
+    // Stores that already exist (same website) are skipped above, so fill their phone if it was empty
+    const withPhone = importRows
+      .filter(r => r.phone && r.websiteKey)
+      .map(r => ({ website_key: r.websiteKey, phone: r.phone }));
+    for (let start = 0; start < withPhone.length; start += batchSize) {
+      const { error } = await supabase.rpc('fill_missing_phones', { rows: withPhone.slice(start, start + batchSize) });
+      if (error) {
+        setImportError(`Leads were imported, but updating phones of existing stores failed: ${error.message}`);
+        setImporting(false);
+        await loadData(0);
+        return;
+      }
+    }
+
+    setImportProgress(100);
     setImporting(false);
-    await loadData();
+    await loadData(0);
     setImportFile(null);
     setImportRows([]);
     setImportProgress(0);
@@ -395,9 +483,7 @@ export default function AdminLeads() {
     setImportModal(false);
   };
 
-  const unassigned = leads.filter(l => !l.assignedTo).length;
-
-  if (loading) {
+  if (firstLoad) {
     return <div className="p-6 text-[#a0a0a0] text-sm">Loading leads…</div>;
   }
 
@@ -411,7 +497,9 @@ export default function AdminLeads() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-white text-2xl font-bold">Leads</h1>
-          <p className="text-[#6b6b6b] text-sm mt-0.5">{leads.length} total · {unassigned} unassigned</p>
+          <p className="text-[#6b6b6b] text-sm mt-0.5">
+            {allCount.toLocaleString()} total · {unassignedCount.toLocaleString()} unassigned
+          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={() => setImportModal(true)}>
@@ -431,6 +519,7 @@ export default function AdminLeads() {
         <SearchInput value={search} onChange={setSearch} placeholder="Search name, phone, company..." />
         <Select value={statusFilter} onChange={setStatusFilter} options={STATUS_OPTIONS} className="w-40" />
         <Select value={regionFilter} onChange={setRegionFilter} options={REGION_OPTIONS} className="w-36" />
+        <Select value={phoneFilter} onChange={setPhoneFilter} options={PHONE_FILTER_OPTIONS} className="w-36" />
         {selected.length > 0 && (
           <div className="flex gap-2">
             <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>Assign {selected.length} Selected</Button>
@@ -440,93 +529,111 @@ export default function AdminLeads() {
       </div>
 
       {/* Table */}
-      <Card>
-        <Table headers={['', 'No.', 'Quantity', 'Code', 'Name', 'Phone', 'Company', 'Website', 'Region', 'Salla', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
-          <tr className="border-b border-[#262626]">
-            <td className="py-3 px-4">
-              <input
-                type="checkbox"
-                checked={selected.length === filtered.length && filtered.length > 0}
-                onChange={toggleAll}
-                className="accent-[#dfff03]"
-              />
-            </td>
-            <td colSpan={14} className="py-3 px-2 text-[#6b6b6b] text-xs">{filtered.length.toLocaleString()} records shown</td>
-          </tr>
-          {filtered.map(lead => {
-            const assignedUser = users.find(u => u.id === lead.assignedTo);
-            return (
-              <Tr key={lead.id} onClick={() => setDetailLead(lead)}>
-                <Td>
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(lead.id)}
-                    onChange={() => toggleSelect(lead.id)}
-                    onClick={e => e.stopPropagation()}
-                    className="accent-[#dfff03]"
-                  />
-                </Td>
-                <Td>
-                  <div onDoubleClick={e => { e.stopPropagation(); setEditingCustomerNumberId(lead.id); setEditingCustomerNumber(String(lead.customerNumber ?? '')); }}>
-                    {editingCustomerNumberId === lead.id ? (
-                      <input
-                        autoFocus
-                        type="number"
-                        min="1"
-                        value={editingCustomerNumber}
-                        onChange={e => setEditingCustomerNumber(e.target.value)}
-                        onBlur={() => saveCustomerNumber(lead.id)}
-                        onKeyDown={e => { if (e.key === 'Enter') saveCustomerNumber(lead.id); if (e.key === 'Escape') setEditingCustomerNumberId(null); }}
-                        onClick={e => e.stopPropagation()}
-                        className="w-24 bg-[#1a1a1a] border border-[#dfff03] rounded px-2 py-1 text-xs text-white focus:outline-none"
-                      />
+      <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : 'transition-opacity'}>
+        <Card>
+          <Table headers={['', 'No.', 'Quantity', 'Code', 'Name', 'Phone', 'Company', 'Website', 'Region', 'Salla', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
+            <tr className="border-b border-[#262626]">
+              <td className="py-3 px-4">
+                <input
+                  type="checkbox"
+                  checked={selected.length === leads.length && leads.length > 0}
+                  onChange={toggleAll}
+                  className="accent-[#dfff03]"
+                />
+              </td>
+              <td colSpan={14} className="py-3 px-2 text-[#6b6b6b] text-xs">
+                {leads.length.toLocaleString()} shown of {totalLeads.toLocaleString()} records
+              </td>
+            </tr>
+            {leads.map(lead => {
+              const assignedUser = users.find(u => u.id === lead.assignedTo);
+              return (
+                <Tr key={lead.id} onClick={() => setDetailLead(lead)}>
+                  <Td>
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(lead.id)}
+                      onChange={() => toggleSelect(lead.id)}
+                      onClick={e => e.stopPropagation()}
+                      className="accent-[#dfff03]"
+                    />
+                  </Td>
+                  <Td>
+                    <div onDoubleClick={e => { e.stopPropagation(); setEditingCustomerNumberId(lead.id); setEditingCustomerNumber(String(lead.customerNumber ?? '')); }}>
+                      {editingCustomerNumberId === lead.id ? (
+                        <input
+                          autoFocus
+                          type="number"
+                          min="1"
+                          value={editingCustomerNumber}
+                          onChange={e => setEditingCustomerNumber(e.target.value)}
+                          onBlur={() => saveCustomerNumber(lead.id)}
+                          onKeyDown={e => { if (e.key === 'Enter') saveCustomerNumber(lead.id); if (e.key === 'Escape') setEditingCustomerNumberId(null); }}
+                          onClick={e => e.stopPropagation()}
+                          className="w-24 bg-[#1a1a1a] border border-[#dfff03] rounded px-2 py-1 text-xs text-white focus:outline-none"
+                        />
+                      ) : (
+                        <span className="font-mono text-xs text-[#a0a0a0] cursor-text">{lead.customerNumber ?? '—'}</span>
+                      )}
+                    </div>
+                  </Td>
+                  <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.quantity ?? 0}</span></Td>
+                  <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
+                  <Td><span className="font-medium text-white">{lead.name}</span></Td>
+                  <Td>
+                    {lead.phone ? (
+                      <span className="font-mono text-xs">{lead.phone}</span>
                     ) : (
-                      <span className="font-mono text-xs text-[#a0a0a0] cursor-text">{lead.customerNumber ?? '—'}</span>
+                      <span className="text-[#4a4a4a] text-xs">—</span>
                     )}
-                  </div>
-                </Td>
-                <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.quantity ?? 0}</span></Td>
-                <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
-                <Td><span className="font-medium text-white">{lead.name}</span></Td>
-                <Td><span className="font-mono text-xs">{lead.phone}</span></Td>
-                <Td><span className="text-[#a0a0a0]">{lead.company || '—'}</span></Td>
-                <Td><span className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block">{lead.website || '—'}</span></Td>
-                <Td><span className="text-[#a0a0a0]">{lead.region || '—'}</span></Td>
-                <Td>
-                  <span className={lead.isSallaStore ? 'text-[#dfff03] text-xs' : 'text-[#6b6b6b] text-xs'}>
-                    {lead.isSallaStore ? 'Yes' : 'No'}
-                  </span>
-                </Td>
-                <Td><span className="text-[#a0a0a0] text-xs">{lead.dataQuality}</span></Td>
-                <Td><StatusBadge status={lead.status} /></Td>
-                <Td>
-                  {assignedUser ? (
-                    <span className="text-[#a0a0a0] text-xs">{assignedUser.fullName}</span>
-                  ) : (
-                    <span className="text-[#4a4a4a] text-xs italic">Unassigned</span>
-                  )}
-                </Td>
-                <Td><span className="text-xs font-mono text-[#6b6b6b]">{lead.updatedAt?.slice(0, 10)}</span></Td>
-                <Td>
-                  <button
-                    className="text-[#4a4a4a] hover:text-[#dfff03] transition-colors"
-                    onClick={e => {
-                      e.stopPropagation();
-                      setDetailLead(lead);
-                    }}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  </button>
-                </Td>
-              </Tr>
-            );
-          })}
-        </Table>
-        <Pagination page={page} pageSize={pageSize} total={totalLeads} onChange={nextPage => loadData(nextPage)} />
-      </Card>
+                  </Td>
+                  <Td><span className="text-[#a0a0a0]">{lead.company || '—'}</span></Td>
+                  <Td><span className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block">{lead.website || '—'}</span></Td>
+                  <Td><span className="text-[#a0a0a0]">{lead.region || '—'}</span></Td>
+                  <Td>
+                    <span className={lead.isSallaStore ? 'text-[#dfff03] text-xs' : 'text-[#6b6b6b] text-xs'}>
+                      {lead.isSallaStore ? 'Yes' : 'No'}
+                    </span>
+                  </Td>
+                  <Td><span className="text-[#a0a0a0] text-xs">{lead.dataQuality}</span></Td>
+                  <Td><StatusBadge status={lead.status} /></Td>
+                  <Td>
+                    {assignedUser ? (
+                      <span className="text-[#a0a0a0] text-xs">{assignedUser.fullName}</span>
+                    ) : (
+                      <span className="text-[#4a4a4a] text-xs italic">Unassigned</span>
+                    )}
+                  </Td>
+                  <Td><span className="text-xs font-mono text-[#6b6b6b]">{lead.updatedAt?.slice(0, 10)}</span></Td>
+                  <Td>
+                    <button
+                      className="text-[#4a4a4a] hover:text-[#dfff03] transition-colors"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setDetailLead(lead);
+                      }}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </button>
+                  </Td>
+                </Tr>
+              );
+            })}
+          </Table>
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={totalLeads}
+            onChange={nextPage => {
+              setSelected([]);
+              loadData(nextPage);
+            }}
+          />
+        </Card>
+      </div>
 
       {/* Lead Detail Modal */}
       <Modal open={!!detailLead} onClose={() => setDetailLead(null)} title="Lead Details">
@@ -535,9 +642,9 @@ export default function AdminLeads() {
             <div className="grid grid-cols-2 gap-3">
               {[
                 ['Name', detailLead.name],
-                ['Phone', detailLead.phone],
                 ['Quantity', detailLead.quantity ?? 0],
                 ['Company', detailLead.company || '—'],
+                ['Website', detailLead.website || '—'],
                 ['Region', detailLead.region || '—'],
                 ['Source', detailLead.source || '—'],
                 ['Salla Store', detailLead.isSallaStore ? 'Yes' : 'No'],
@@ -546,10 +653,33 @@ export default function AdminLeads() {
               ].map(([k, v]) => (
                 <div key={k} className="bg-[#1a1a1a] rounded-lg p-3">
                   <div className="text-[#6b6b6b] text-xs mb-1">{k}</div>
-                  <div className="text-white text-sm font-medium">{v}</div>
+                  <div className="text-white text-sm font-medium break-words">{v}</div>
                 </div>
               ))}
             </div>
+
+            {/* Phone (add or edit manually) */}
+            <div className="bg-[#1a1a1a] rounded-lg p-3">
+              <div className="text-[#6b6b6b] text-xs mb-1">Phone</div>
+              <div className="flex gap-2">
+                <input
+                  value={phoneDraft}
+                  onChange={e => { setPhoneDraft(e.target.value); setPhoneMsg(''); }}
+                  placeholder="Add phone number"
+                  className="flex-1 bg-[#111] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60"
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={cleanPhone(phoneDraft) === (detailLead.phone ?? '')}
+                  onClick={handleSavePhone}
+                >
+                  Save
+                </Button>
+              </div>
+              {phoneMsg && <p className="text-xs mt-1 text-[#a0a0a0]">{phoneMsg}</p>}
+            </div>
+
             <div className="flex items-center gap-2">
               <span className="text-[#6b6b6b] text-xs">Status:</span>
               <StatusBadge status={detailLead.status} />
@@ -625,7 +755,7 @@ export default function AdminLeads() {
         <div className="space-y-3">
           {[
             { label: 'Full Name *', key: 'name', placeholder: 'e.g. Ahmed Al-Rashid' },
-            { label: 'Phone Number *', key: 'phone', placeholder: '+971 50 000 0000' },
+            { label: 'Phone Number (optional)', key: 'phone', placeholder: '+971 50 000 0000' },
             { label: 'Company', key: 'company', placeholder: 'Company name' },
             { label: 'Website', key: 'website', placeholder: 'example.com' },
           ].map(f => (
@@ -693,7 +823,7 @@ export default function AdminLeads() {
             </select>
           </div>
           <div className="flex gap-2 pt-2">
-            <Button variant="primary" disabled={!newLead.name || !newLead.phone} onClick={handleAddLead}>Add Lead</Button>
+            <Button variant="primary" disabled={!newLead.name} onClick={handleAddLead}>Add Lead</Button>
             <Button variant="ghost" onClick={() => setAddModal(false)}>Cancel</Button>
           </div>
         </div>
@@ -741,7 +871,13 @@ export default function AdminLeads() {
             <p className="text-[#4a4a4a] text-xs mt-1">.xlsx, .xls, .csv supported</p>
             <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => handleImportFile(e.target.files?.[0])} />
           </label>
-          {importRows.length > 0 && <p className="text-[#dfff03] text-xs">{importRows.length.toLocaleString()} valid rows ready to import.</p>}
+          {importRows.length > 0 && (
+            <p className="text-[#dfff03] text-xs">
+              {importRows.length.toLocaleString()} valid rows ready to import
+              {' · '}
+              {importRows.filter(r => r.phone).length.toLocaleString()} with a phone number.
+            </p>
+          )}
           {duplicateImportCount > 0 && <p className="text-[#ffc832] text-xs">{duplicateImportCount.toLocaleString()} duplicate website rows were skipped automatically.</p>}
           {importing && (
             <div className="space-y-1">
@@ -766,8 +902,9 @@ export default function AdminLeads() {
           {importError && <p className="text-[#ff6464] text-xs">{importError}</p>}
           <div className="bg-[#1a1a1a] rounded-lg p-3 text-xs text-[#6b6b6b]">
             <p className="font-medium text-[#a0a0a0] mb-1">Expected columns:</p>
-            <p>Customer Number (optional) · Website (optional) · Quantity · Name (required) · Phone (required) · Company · Region · Source · Notes</p>
+            <p>Customer Number (optional) · Website (optional) · Quantity · Name (required) · Phone (optional) · Company · Region · Source · Notes</p>
             <p className="mt-1">If two rows use the same website, only the first row is imported.</p>
+            <p className="mt-1">If a store already exists without a phone and the sheet has one, the phone is added to it.</p>
             <p className="mt-1 text-[#dfff03]">The selected client type and data quality above apply to every imported row.</p>
           </div>
           <div className="flex gap-2">

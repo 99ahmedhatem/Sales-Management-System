@@ -152,6 +152,8 @@ export default function AdminLeads() {
   const [importDataQuality, setImportDataQuality] = useState<LeadDataQuality>('normal');
   const [importProgress, setImportProgress] = useState(0);
   const [duplicateImportCount, setDuplicateImportCount] = useState(0);
+  const [editingCustomerNumberId, setEditingCustomerNumberId] = useState<string | null>(null);
+  const [editingCustomerNumber, setEditingCustomerNumber] = useState('');
 
   async function loadData() {
     setLoading(true);
@@ -219,13 +221,34 @@ export default function AdminLeads() {
 
   const handleDeleteSelected = async () => {
     if (!selected.length || !window.confirm(`Delete ${selected.length} selected customer(s)?`)) return;
-    const { error } = await supabase.from('leads').delete().in('id', selected);
+    setErrorMsg('');
+    const batchSize = 500;
+    for (let start = 0; start < selected.length; start += batchSize) {
+      const { error } = await supabase.from('leads').delete().in('id', selected.slice(start, start + batchSize));
+      if (error) {
+        setErrorMsg(`Delete stopped after ${start} customers: ${error.message}`);
+        return;
+      }
+    }
+    setSelected([]);
+    await loadData();
+  };
+
+  const saveCustomerNumber = async (leadId: string) => {
+    const value = editingCustomerNumber.trim();
+    const customerNumber = value ? parseCustomerNumber(value) : undefined;
+    if (value && customerNumber === undefined) {
+      setErrorMsg('Customer number must be a positive whole number.');
+      setEditingCustomerNumberId(null);
+      return;
+    }
+    const { error } = await supabase.from('leads').update({ customer_number: customerNumber ?? null }).eq('id', leadId);
     if (error) {
       setErrorMsg(error.message);
       return;
     }
-    setSelected([]);
-    await loadData();
+    setLeads(prev => prev.map(lead => lead.id === leadId ? { ...lead, customerNumber } : lead));
+    setEditingCustomerNumberId(null);
   };
 
   const handleAddLead = async () => {
@@ -421,7 +444,25 @@ export default function AdminLeads() {
                     className="accent-[#dfff03]"
                   />
                 </Td>
-                <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.customerNumber ?? '—'}</span></Td>
+                <Td>
+                  <div onDoubleClick={e => { e.stopPropagation(); setEditingCustomerNumberId(lead.id); setEditingCustomerNumber(String(lead.customerNumber ?? '')); }}>
+                    {editingCustomerNumberId === lead.id ? (
+                      <input
+                        autoFocus
+                        type="number"
+                        min="1"
+                        value={editingCustomerNumber}
+                        onChange={e => setEditingCustomerNumber(e.target.value)}
+                        onBlur={() => saveCustomerNumber(lead.id)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveCustomerNumber(lead.id); if (e.key === 'Escape') setEditingCustomerNumberId(null); }}
+                        onClick={e => e.stopPropagation()}
+                        className="w-24 bg-[#1a1a1a] border border-[#dfff03] rounded px-2 py-1 text-xs text-white focus:outline-none"
+                      />
+                    ) : (
+                      <span className="font-mono text-xs text-[#a0a0a0] cursor-text">{lead.customerNumber ?? '—'}</span>
+                    )}
+                  </div>
+                </Td>
                 <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.quantity ?? 0}</span></Td>
                 <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
                 <Td><span className="font-medium text-white">{lead.name}</span></Td>

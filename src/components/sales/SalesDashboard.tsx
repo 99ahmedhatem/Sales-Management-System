@@ -241,9 +241,12 @@ export default function SalesDashboard({ userId }: Props) {
             <div className="bg-[#1a1a1a] rounded p-3">
               <div className="text-[#6b6b6b] text-xs mb-1">Customer Number</div>
               {editingCustomerNumber ? (
-                <input autoFocus type="number" min="1" value={customerNumberInput} onChange={e => setCustomerNumberInput(e.target.value)} onBlur={saveCustomerNumber} onKeyDown={e => { if (e.key === 'Enter') saveCustomerNumber(); if (e.key === 'Escape') setEditingCustomerNumber(false); }} className="w-28 bg-[#0e0e0e] border border-[#dfff03] rounded px-2 py-1 text-sm text-white" />
+                <div className="flex gap-2">
+                  <input autoFocus type="number" min="1" value={customerNumberInput} onChange={e => setCustomerNumberInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveCustomerNumber(); if (e.key === 'Escape') setEditingCustomerNumber(false); }} className="flex-1 bg-[#0e0e0e] border border-[#dfff03] rounded px-2 py-1 text-sm text-white" />
+                  <Button variant="primary" size="sm" onClick={saveCustomerNumber}>Save Number</Button>
+                </div>
               ) : (
-                <button onDoubleClick={() => setEditingCustomerNumber(true)} className="text-white text-sm font-medium cursor-text">{customerNumber ?? '—'}</button>
+                <button onClick={() => { setCustomerNumberInput(customerNumber ? String(customerNumber) : ''); setEditingCustomerNumber(true); }} className="text-[#dfff03] text-sm font-medium cursor-text">{customerNumber ?? 'Add customer number'}</button>
               )}
             </div>
             <div className="grid grid-cols-2 gap-3">

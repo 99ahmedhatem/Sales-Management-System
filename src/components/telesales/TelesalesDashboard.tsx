@@ -506,6 +506,7 @@ export default function TelesalesDashboard({ userId }: Props) {
                   placeholder="Enter customer number"
                   className="w-full bg-[#0e0e0e] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white"
                 />
+                <Button variant="primary" size="sm" className="mt-2" onClick={() => { if (detailModal) saveCustomerNumber(detailModal.id); }}>Save Number</Button>
               </div>
             </div>
             <div>

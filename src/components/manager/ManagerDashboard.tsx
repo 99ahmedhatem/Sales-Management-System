@@ -322,7 +322,10 @@ export default function ManagerDashboard({ userId }: Props) {
             </div>
             <div className="bg-[#1a1a1a] rounded p-3">
               <div className="text-[#6b6b6b] text-xs mb-1">Customer Number</div>
-              <input type="number" min="1" value={editingCustomerNumberId === detailLead.id ? editingCustomerNumber : String(detailLead.customerNumber ?? '')} onChange={e => { setEditingCustomerNumberId(detailLead.id); setEditingCustomerNumber(e.target.value); }} onBlur={() => saveCustomerNumber(detailLead.id)} onKeyDown={e => { if (e.key === 'Enter') saveCustomerNumber(detailLead.id); }} placeholder="Add customer number" className="w-full bg-[#0e0e0e] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white" />
+              <div className="flex gap-2">
+                <input type="number" min="1" value={editingCustomerNumberId === detailLead.id ? editingCustomerNumber : String(detailLead.customerNumber ?? '')} onChange={e => { setEditingCustomerNumberId(detailLead.id); setEditingCustomerNumber(e.target.value); }} placeholder="Enter customer number" className="flex-1 bg-[#0e0e0e] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white" />
+                <Button variant="primary" size="sm" onClick={() => saveCustomerNumber(detailLead.id)}>Save Number</Button>
+              </div>
             </div>
             <Button variant="ghost" onClick={() => setDetailLead(null)}>Close</Button>
           </div>

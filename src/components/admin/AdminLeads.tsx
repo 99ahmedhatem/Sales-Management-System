@@ -37,12 +37,16 @@ const REGION_FORM_OPTIONS = [
 type LeadWithComments = Lead & { comments?: any[] };
 
 interface ImportLeadRow {
+  customerNumber?: number;
+  website?: string;
+  websiteKey?: string;
   name: string;
   phone: string;
   company: string;
   region: string;
   source: string;
   notes: string;
+  quantity: number;
 }
 
 function readImportValue(row: Record<string, unknown>, names: string[]): string {
@@ -56,9 +60,33 @@ function readImportValue(row: Record<string, unknown>, names: string[]): string 
   return String(value ?? '').trim();
 }
 
+function parseCustomerNumber(value: string): number | undefined {
+  const parsed = Number(value.replace(/[,\s]/g, ''));
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function parseQuantity(value: string): number {
+  const parsed = Number(value.replace(/[,\s]/g, ''));
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
+}
+
+function normalizeWebsite(value: string): string | undefined {
+  const input = value.trim();
+  if (!input) return undefined;
+  try {
+    const url = new URL(input.includes('://') ? input : `https://${input}`);
+    return url.hostname.toLowerCase().replace(/^www\./, '').replace(/\.$/, '') || undefined;
+  } catch {
+    return input.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[/?#]/)[0] || undefined;
+  }
+}
+
 function mapLead(row: any): Lead {
   return {
     id: row.id,
+    customerNumber: row.customer_number ?? undefined,
+    website: row.website ?? undefined,
+    quantity: row.quantity ?? 0,
     clientCode: row.client_code,
     name: row.name,
     phone: row.phone,
@@ -113,6 +141,7 @@ export default function AdminLeads() {
     source: '',
     isSallaStore: false,
     dataQuality: 'normal' as LeadDataQuality,
+    quantity: 0,
   });
   const [importModal, setImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -121,6 +150,8 @@ export default function AdminLeads() {
   const [importing, setImporting] = useState(false);
   const [importType, setImportType] = useState<'salla' | 'software'>('software');
   const [importDataQuality, setImportDataQuality] = useState<LeadDataQuality>('normal');
+  const [importProgress, setImportProgress] = useState(0);
+  const [duplicateImportCount, setDuplicateImportCount] = useState(0);
 
   async function loadData() {
     setLoading(true);
@@ -186,6 +217,17 @@ export default function AdminLeads() {
     setAssignTo('');
   };
 
+  const handleDeleteSelected = async () => {
+    if (!selected.length || !window.confirm(`Delete ${selected.length} selected customer(s)?`)) return;
+    const { error } = await supabase.from('leads').delete().in('id', selected);
+    if (error) {
+      setErrorMsg(error.message);
+      return;
+    }
+    setSelected([]);
+    await loadData();
+  };
+
   const handleAddLead = async () => {
     if (!newLead.name || !newLead.phone) return;
     const { error } = await supabase.from('leads').insert({
@@ -195,6 +237,7 @@ export default function AdminLeads() {
       company: newLead.company || null,
       region: newLead.region || null,
       source: newLead.source || 'Manual',
+      quantity: newLead.quantity,
       is_salla_store: newLead.isSallaStore,
       data_quality: newLead.dataQuality,
       status: 'New',
@@ -204,7 +247,7 @@ export default function AdminLeads() {
       return;
     }
     await loadData();
-    setNewLead({ name: '', phone: '', company: '', region: '', source: '', isSallaStore: false, dataQuality: 'normal' });
+    setNewLead({ name: '', phone: '', company: '', region: '', source: '', isSallaStore: false, dataQuality: 'normal', quantity: 0 });
     setAddModal(false);
   };
 
@@ -233,8 +276,11 @@ export default function AdminLeads() {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
-      const parsed: ImportLeadRow[] = rows
+      const parsedRows: ImportLeadRow[] = rows
         .map(row => ({
+          customerNumber: parseCustomerNumber(readImportValue(row, ['customer number', 'customer no', 'number', 'رقم العميل', 'الرقم'])),
+          website: readImportValue(row, ['website', 'web site', 'site', 'url', 'رابط الموقع', 'الموقع']),
+          quantity: parseQuantity(readImportValue(row, ['quantity', 'qty', 'الكمية'])),
           name: readImportValue(row, ['name', 'full name', 'client name', 'الاسم']),
           phone: readImportValue(row, ['phone', 'phone number', 'mobile', 'رقم الهاتف']),
           company: readImportValue(row, ['company', 'الشركة']),
@@ -243,6 +289,16 @@ export default function AdminLeads() {
           notes: readImportValue(row, ['notes', 'ملاحظات']),
         }))
         .filter(row => row.name && row.phone);
+      const seenWebsites = new Set<string>();
+      const parsed = parsedRows.filter(row => {
+        const websiteKey = normalizeWebsite(row.website || '');
+        row.websiteKey = websiteKey;
+        if (!websiteKey) return true;
+        if (seenWebsites.has(websiteKey)) return false;
+        seenWebsites.add(websiteKey);
+        return true;
+      });
+      setDuplicateImportCount(parsedRows.length - parsed.length);
       if (!parsed.length) {
         setImportError('No valid rows found. Name and Phone are required.');
         setImportRows([]);
@@ -259,8 +315,12 @@ export default function AdminLeads() {
     if (!importRows.length) return;
     setImporting(true);
     setImportError('');
-    const { error } = await supabase.from('leads').insert(
-      importRows.map(row => ({
+    setImportProgress(0);
+    const batchSize = 500;
+    for (let start = 0; start < importRows.length; start += batchSize) {
+      const batch = importRows.slice(start, start + batchSize).map(row => ({
+        ...(row.customerNumber ? { customer_number: row.customerNumber } : {}),
+        ...(row.websiteKey ? { website: row.website || null, website_key: row.websiteKey } : {}),
         client_code: generateCode('CLT'),
         name: row.name,
         phone: row.phone,
@@ -270,17 +330,23 @@ export default function AdminLeads() {
         notes: row.notes || null,
         is_salla_store: importType === 'salla',
         data_quality: importDataQuality,
+        quantity: row.quantity,
         status: 'New',
-      }))
-    );
-    setImporting(false);
-    if (error) {
-      setImportError(error.message);
-      return;
+      }));
+      const { error } = await supabase.from('leads').upsert(batch, { onConflict: 'website_key', ignoreDuplicates: true });
+      if (error) {
+        setImportError(`Import stopped at row ${start + 1}: ${error.message}`);
+        setImporting(false);
+        return;
+      }
+      setImportProgress(Math.round(((start + batch.length) / importRows.length) * 100));
     }
+    setImporting(false);
     await loadData();
     setImportFile(null);
     setImportRows([]);
+    setImportProgress(0);
+    setDuplicateImportCount(0);
     setImportModal(false);
   };
 
@@ -321,15 +387,16 @@ export default function AdminLeads() {
         <Select value={statusFilter} onChange={setStatusFilter} options={STATUS_OPTIONS} className="w-40" />
         <Select value={regionFilter} onChange={setRegionFilter} options={REGION_OPTIONS} className="w-36" />
         {selected.length > 0 && (
-          <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>
-            Assign {selected.length} Selected
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>Assign {selected.length} Selected</Button>
+            <Button variant="danger" size="sm" onClick={handleDeleteSelected}>Delete {selected.length}</Button>
+          </div>
         )}
       </div>
 
       {/* Table */}
       <Card>
-        <Table headers={['', 'Code', 'Name', 'Phone', 'Company', 'Region', 'Salla', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
+        <Table headers={['', 'No.', 'Quantity', 'Code', 'Name', 'Phone', 'Company', 'Website', 'Region', 'Salla', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
           <tr className="border-b border-[#262626]">
             <td className="py-3 px-4">
               <input
@@ -339,7 +406,7 @@ export default function AdminLeads() {
                 className="accent-[#dfff03]"
               />
             </td>
-            <td colSpan={11} className="py-3 px-2 text-[#6b6b6b] text-xs">{filtered.length} records shown</td>
+            <td colSpan={14} className="py-3 px-2 text-[#6b6b6b] text-xs">{filtered.length.toLocaleString()} records shown</td>
           </tr>
           {filtered.map(lead => {
             const assignedUser = users.find(u => u.id === lead.assignedTo);
@@ -354,10 +421,13 @@ export default function AdminLeads() {
                     className="accent-[#dfff03]"
                   />
                 </Td>
+                <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.customerNumber ?? '—'}</span></Td>
+                <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.quantity ?? 0}</span></Td>
                 <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
                 <Td><span className="font-medium text-white">{lead.name}</span></Td>
                 <Td><span className="font-mono text-xs">{lead.phone}</span></Td>
                 <Td><span className="text-[#a0a0a0]">{lead.company || '—'}</span></Td>
+                <Td><span className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block">{lead.website || '—'}</span></Td>
                 <Td><span className="text-[#a0a0a0]">{lead.region || '—'}</span></Td>
                 <Td>
                   <span className={lead.isSallaStore ? 'text-[#dfff03] text-xs' : 'text-[#6b6b6b] text-xs'}>
@@ -402,6 +472,7 @@ export default function AdminLeads() {
               {[
                 ['Name', detailLead.name],
                 ['Phone', detailLead.phone],
+                ['Quantity', detailLead.quantity ?? 0],
                 ['Company', detailLead.company || '—'],
                 ['Region', detailLead.region || '—'],
                 ['Source', detailLead.source || '—'],
@@ -504,6 +575,17 @@ export default function AdminLeads() {
             </div>
           ))}
           <div>
+            <label className="block text-xs text-[#a0a0a0] mb-1">Quantity</label>
+            <input
+              type="number"
+              min="0"
+              value={newLead.quantity}
+              onChange={e => setNewLead(prev => ({ ...prev, quantity: parseQuantity(e.target.value) }))}
+              placeholder="0"
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60"
+            />
+          </div>
+          <div>
             <label className="block text-xs text-[#a0a0a0] mb-1">Region</label>
             <select
               value={newLead.region}
@@ -594,7 +676,14 @@ export default function AdminLeads() {
             <p className="text-[#4a4a4a] text-xs mt-1">.xlsx, .xls, .csv supported</p>
             <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => handleImportFile(e.target.files?.[0])} />
           </label>
-          {importRows.length > 0 && <p className="text-[#dfff03] text-xs">{importRows.length} valid rows ready to import.</p>}
+          {importRows.length > 0 && <p className="text-[#dfff03] text-xs">{importRows.length.toLocaleString()} valid rows ready to import.</p>}
+          {duplicateImportCount > 0 && <p className="text-[#ffc832] text-xs">{duplicateImportCount.toLocaleString()} duplicate website rows were skipped automatically.</p>}
+          {importing && (
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-[#a0a0a0]"><span>Uploading customers</span><span>{importProgress}%</span></div>
+              <div className="h-1.5 bg-[#262626] rounded-full overflow-hidden"><div className="h-full bg-[#dfff03] transition-all" style={{ width: `${importProgress}%` }} /></div>
+            </div>
+          )}
           {importRows.length > 0 && (
             <div className="bg-[#dfff03]/5 border border-[#dfff03]/20 rounded-lg p-3 text-xs">
               <div className="text-white font-medium">Import settings</div>
@@ -612,7 +701,8 @@ export default function AdminLeads() {
           {importError && <p className="text-[#ff6464] text-xs">{importError}</p>}
           <div className="bg-[#1a1a1a] rounded-lg p-3 text-xs text-[#6b6b6b]">
             <p className="font-medium text-[#a0a0a0] mb-1">Expected columns:</p>
-            <p>Name (required) · Phone (required) · Company · Region · Source · Notes</p>
+            <p>Customer Number (optional) · Website (optional) · Quantity · Name (required) · Phone (required) · Company · Region · Source · Notes</p>
+            <p className="mt-1">If two rows use the same website, only the first row is imported.</p>
             <p className="mt-1 text-[#dfff03]">The selected client type and data quality above apply to every imported row.</p>
           </div>
           <div className="flex gap-2">

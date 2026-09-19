@@ -4,6 +4,7 @@ import { supabase } from '../../supabaseClient';
 import { addClientComment, loadClientComments } from '../../data/clientComments';
 import { generateCode, Lead, LeadDataQuality, LeadStatus, User } from '../../data/mockData';
 import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Pagination } from '../ui';
+import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -208,11 +209,11 @@ export default function AdminLeads() {
   const [allCount, setAllCount] = useState(0); // all leads in the database
   const [unassignedCount, setUnassignedCount] = useState(0);
   const requestId = useRef(0);
-  const pageSize = 500;
+  const pageSize = 100;
 
-  async function loadData(nextPage = page) {
+  async function loadData(nextPage = page, silent = false) {
     const reqId = ++requestId.current;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setErrorMsg('');
 
     let leadsQuery = supabase
@@ -275,6 +276,9 @@ export default function AdminLeads() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailLead?.id]);
+
+  // Live updates: when anyone changes a lead or a user, this page refreshes by itself
+  useRealtimeRefresh(['leads', 'users'], () => loadData(page, true));
 
   const assignableUsers = users.filter(u => ['manager', 'telesales'].includes(u.role) && u.status === 'active');
 

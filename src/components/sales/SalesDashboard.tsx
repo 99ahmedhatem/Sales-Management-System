@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { MEETINGS, LEADS, USERS, Meeting, MeetingOutcome, ClientComment, LeadStatus } from '../../data/mockData';
 import { addClientComment, loadClientComments } from '../../data/clientComments';
-import { Avatar, Button, Card, KpiCard, Modal, StatusBadge, Table, Td, Tr } from '../ui';
+import { Avatar, Button, Card, KpiCard, Modal, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
 
 const CLIENT_STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: 'Subscribed', label: 'Subscribed' },
@@ -30,6 +30,8 @@ export default function SalesDashboard({ userId }: Props) {
   const [meetings, setMeetings] = useState<Meeting[]>(myMeetings);
   const [detail, setDetail] = useState<Meeting | null>(null);
   const [tab, setTab] = useState<'upcoming' | 'all'>('upcoming');
+  const [search, setSearch] = useState('');
+  const [outcomeFilter, setOutcomeFilter] = useState('');
   const [commentModal, setCommentModal] = useState<{ meetingId: string; leadId: string; leadName: string } | null>(null);
   const [newComment, setNewComment] = useState('');
   const [customerNumber, setCustomerNumber] = useState<number | undefined>();
@@ -92,7 +94,11 @@ export default function SalesDashboard({ userId }: Props) {
     setNewComment('');
   };
 
-  const displayed = tab === 'upcoming' ? upcoming : meetings;
+  const displayed = (tab === 'upcoming' ? upcoming : meetings).filter(meeting => {
+    const query = search.toLowerCase();
+    return (!query || meeting.leadName.toLowerCase().includes(query) || meeting.leadPhone.includes(query))
+      && (!outcomeFilter || meeting.outcome === outcomeFilter);
+  });
 
   return (
     <div className="p-6 space-y-6">
@@ -122,6 +128,11 @@ export default function SalesDashboard({ userId }: Props) {
             {t.label}
           </button>
         ))}
+      </div>
+
+      <div className="flex gap-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search client or phone..." />
+        <Select value={outcomeFilter} onChange={setOutcomeFilter} options={[{ value: '', label: 'All Outcomes' }, ...OUTCOME_OPTIONS.map(option => ({ value: option.value, label: option.label }))]} className="w-48" />
       </div>
 
       {/* Meeting cards for upcoming */}

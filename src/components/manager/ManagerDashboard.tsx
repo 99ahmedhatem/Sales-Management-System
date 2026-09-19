@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { MEETINGS, Lead, LeadStatus, User } from '../../data/mockData';
-import { Avatar, Button, Card, KpiCard, Modal, Pagination, Select, StatusBadge, Table, Td, Tr } from '../ui';
+import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
 interface Props {
@@ -39,6 +39,9 @@ export default function ManagerDashboard({ userId }: Props) {
   const [selectedPoolLeads, setSelectedPoolLeads] = useState<string[]>([]);
   const [editingCustomerNumberId, setEditingCustomerNumberId] = useState<string | null>(null);
   const [editingCustomerNumber, setEditingCustomerNumber] = useState('');
+  const [leadSearch, setLeadSearch] = useState('');
+  const [leadStatus, setLeadStatus] = useState('');
+  const [detailLead, setDetailLead] = useState<Lead | null>(null);
   const [leadPage, setLeadPage] = useState(0);
   const [totalTeamLeads, setTotalTeamLeads] = useState(0);
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -138,6 +141,11 @@ export default function ManagerDashboard({ userId }: Props) {
   };
 
   const unassignedToMe = allLeads.filter(l => l.assignedTo === userId);
+  const filteredPool = unassignedToMe.filter(lead => {
+    const query = leadSearch.toLowerCase();
+    return (!query || lead.name.toLowerCase().includes(query) || lead.phone.includes(query) || (lead.company || '').toLowerCase().includes(query))
+      && (!leadStatus || lead.status === leadStatus);
+  });
   const togglePoolLead = (leadId: string) => {
     setSelectedPoolLeads(prev => prev.includes(leadId) ? prev.filter(id => id !== leadId) : [...prev, leadId]);
   };
@@ -237,13 +245,17 @@ export default function ManagerDashboard({ userId }: Props) {
             </button>
           )}
         </div>
+        <div className="flex gap-3 mb-4">
+          <SearchInput value={leadSearch} onChange={setLeadSearch} placeholder="Search name, phone, company..." />
+          <Select value={leadStatus} onChange={setLeadStatus} options={[{ value: '', label: 'All Status' }, { value: 'New', label: 'New' }, { value: 'Assigned', label: 'Assigned' }, { value: 'Contacted', label: 'Contacted' }, { value: 'Interested', label: 'Interested' }]} className="w-40" />
+        </div>
         {unassignedToMe.length === 0 ? (
           <p className="text-[#4a4a4a] text-sm py-4">All leads have been distributed to your team members.</p>
         ) : (
           <div>
             <Table headers={['', 'No.', 'Code', 'Name', 'Phone', 'Company', 'Website', 'Quantity', 'Status', '']}>
-              {unassignedToMe.map(l => (
-                <Tr key={l.id}>
+              {filteredPool.map(l => (
+                <Tr key={l.id} onClick={() => setDetailLead(l)}>
                 <Td>
                   <input type="checkbox" checked={selectedPoolLeads.includes(l.id)} onChange={() => togglePoolLead(l.id)} className="accent-[#dfff03]" />
                 </Td>
@@ -276,6 +288,25 @@ export default function ManagerDashboard({ userId }: Props) {
           </div>
         )}
       </Card>
+
+      <Modal open={!!detailLead} onClose={() => setDetailLead(null)} title="Lead Details">
+        {detailLead && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ['Name', detailLead.name], ['Phone', detailLead.phone], ['Website', detailLead.website || '—'],
+                ['Quantity', detailLead.quantity ?? 0], ['Company', detailLead.company || '—'], ['Region', detailLead.region || '—'],
+                ['Source', detailLead.source || '—'], ['Data Quality', detailLead.dataQuality || 'normal'],
+              ].map(([label, value]) => <div key={label} className="bg-[#1a1a1a] rounded p-3"><div className="text-[#6b6b6b] text-xs mb-1">{label}</div><div className="text-white text-sm font-medium break-all">{value}</div></div>)}
+            </div>
+            <div className="bg-[#1a1a1a] rounded p-3">
+              <div className="text-[#6b6b6b] text-xs mb-1">Customer Number</div>
+              <input type="number" min="1" value={editingCustomerNumberId === detailLead.id ? editingCustomerNumber : String(detailLead.customerNumber ?? '')} onChange={e => { setEditingCustomerNumberId(detailLead.id); setEditingCustomerNumber(e.target.value); }} onBlur={() => saveCustomerNumber(detailLead.id)} onKeyDown={e => { if (e.key === 'Enter') saveCustomerNumber(detailLead.id); }} placeholder="Add customer number" className="w-full bg-[#0e0e0e] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white" />
+            </div>
+            <Button variant="ghost" onClick={() => setDetailLead(null)}>Close</Button>
+          </div>
+        )}
+      </Modal>
 
       {/* Upcoming meetings */}
       <Card className="p-5">

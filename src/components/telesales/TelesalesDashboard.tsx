@@ -327,8 +327,11 @@ export default function TelesalesDashboard({ userId }: Props) {
             <div className="grid grid-cols-2 gap-3">
               {[
                 ['Code', detailModal.clientCode],
+                ['Customer Number', detailModal.customerNumber ?? '—'],
                 ['Phone', detailModal.phone],
                 ['Company', detailModal.company || '—'],
+                ['Website', detailModal.website || '—'],
+                ['Quantity', detailModal.quantity ?? 0],
                 ['Region', detailModal.region || '—'],
                 ['Source', detailModal.source || '—'],
               ].map(([k, v]) => (
@@ -474,6 +477,19 @@ export default function TelesalesDashboard({ userId }: Props) {
                   </div>
                 </button>
               ))}
+              <div className="bg-[#1a1a1a] rounded p-3 col-span-2">
+                <div className="text-[#6b6b6b] text-xs mb-1">Add / Edit Customer Number</div>
+                <input
+                  type="number"
+                  min="1"
+                  value={editingCustomerNumberId === detailModal?.id ? editingCustomerNumber : String(detailModal?.customerNumber ?? '')}
+                  onChange={e => { if (detailModal) setEditingCustomerNumberId(detailModal.id); setEditingCustomerNumber(e.target.value); }}
+                  onBlur={() => { if (detailModal) saveCustomerNumber(detailModal.id); }}
+                  onKeyDown={e => { if (e.key === 'Enter' && detailModal) saveCustomerNumber(detailModal.id); }}
+                  placeholder="Enter customer number"
+                  className="w-full bg-[#0e0e0e] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white"
+                />
+              </div>
             </div>
             <div>
               <label className="block text-xs text-[#a0a0a0] mb-1">Proposed Meeting Date & Time *</label>

@@ -33,6 +33,8 @@ export default function SalesDashboard({ userId }: Props) {
   const [commentModal, setCommentModal] = useState<{ meetingId: string; leadId: string; leadName: string } | null>(null);
   const [newComment, setNewComment] = useState('');
   const [customerNumber, setCustomerNumber] = useState<number | undefined>();
+  const [customerWebsite, setCustomerWebsite] = useState<string | undefined>();
+  const [customerQuantity, setCustomerQuantity] = useState(0);
   const [editingCustomerNumber, setEditingCustomerNumber] = useState(false);
   const [customerNumberInput, setCustomerNumberInput] = useState('');
   const [leadComments, setLeadComments] = useState<Record<string, ClientComment[]>>({});
@@ -46,9 +48,11 @@ export default function SalesDashboard({ userId }: Props) {
 
   useEffect(() => {
     if (!detail) return;
-    supabase.from('leads').select('customer_number').eq('id', detail.leadId).maybeSingle().then(({ data }) => {
+    supabase.from('leads').select('customer_number, website, quantity').eq('id', detail.leadId).maybeSingle().then(({ data }) => {
       setCustomerNumber(data?.customer_number ?? undefined);
       setCustomerNumberInput(data?.customer_number ? String(data.customer_number) : '');
+      setCustomerWebsite(data?.website ?? undefined);
+      setCustomerQuantity(data?.quantity ?? 0);
     });
   }, [detail?.leadId]);
 
@@ -230,6 +234,16 @@ export default function SalesDashboard({ userId }: Props) {
               ) : (
                 <button onDoubleClick={() => setEditingCustomerNumber(true)} className="text-white text-sm font-medium cursor-text">{customerNumber ?? '—'}</button>
               )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-[#1a1a1a] rounded p-3">
+                <div className="text-[#6b6b6b] text-xs mb-1">Website</div>
+                <div className="text-white text-sm font-medium break-all">{customerWebsite || '—'}</div>
+              </div>
+              <div className="bg-[#1a1a1a] rounded p-3">
+                <div className="text-[#6b6b6b] text-xs mb-1">Quantity</div>
+                <div className="text-white text-sm font-medium">{customerQuantity}</div>
+              </div>
             </div>
             <div className="bg-[#1a1a1a] rounded p-3">
               <div className="text-[#6b6b6b] text-xs mb-1">Telesales Qualifying Notes</div>

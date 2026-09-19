@@ -274,7 +274,7 @@ export default function TelesalesDashboard({ userId }: Props) {
       </div>
 
       <Card>
-        <Table headers={['No.', 'Code', 'Lead', 'Phone', 'Status', 'Notes', 'Due', 'Actions']}>
+        <Table headers={['No.', 'Code', 'Lead', 'Phone', 'Website', 'Quantity', 'Status', 'Notes', 'Due', 'Actions']}>
           {filtered.map(lead => (
             <Tr key={lead.id} onClick={() => setDetailModal(lead)}>
               <Td>
@@ -287,6 +287,8 @@ export default function TelesalesDashboard({ userId }: Props) {
               <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
               <Td><span className="font-medium text-white">{lead.name}</span></Td>
               <Td><span className="font-mono text-xs">{lead.phone}</span></Td>
+              <Td><span className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block">{lead.website || '—'}</span></Td>
+              <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.quantity ?? 0}</span></Td>
               <Td><StatusBadge status={lead.status} /></Td>
               <Td>
                 <span className="text-[#6b6b6b] text-xs">

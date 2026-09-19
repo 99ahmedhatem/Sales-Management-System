@@ -241,7 +241,7 @@ export default function ManagerDashboard({ userId }: Props) {
           <p className="text-[#4a4a4a] text-sm py-4">All leads have been distributed to your team members.</p>
         ) : (
           <div>
-            <Table headers={['', 'No.', 'Code', 'Name', 'Phone', 'Company', 'Status', '']}>
+            <Table headers={['', 'No.', 'Code', 'Name', 'Phone', 'Company', 'Website', 'Quantity', 'Status', '']}>
               {unassignedToMe.map(l => (
                 <Tr key={l.id}>
                 <Td>
@@ -258,6 +258,8 @@ export default function ManagerDashboard({ userId }: Props) {
                 <Td><span className="text-white font-medium">{l.name}</span></Td>
                 <Td><span className="font-mono text-xs">{l.phone}</span></Td>
                 <Td><span className="text-[#a0a0a0] text-xs">{l.company || '—'}</span></Td>
+                <Td><span className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block">{l.website || '—'}</span></Td>
+                <Td><span className="font-mono text-xs text-[#a0a0a0]">{l.quantity ?? 0}</span></Td>
                 <Td><StatusBadge status={l.status} /></Td>
                 <Td>
                   <button

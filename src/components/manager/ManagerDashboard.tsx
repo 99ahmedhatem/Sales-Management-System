@@ -35,6 +35,7 @@ export default function ManagerDashboard({ userId }: Props) {
   const [assignModal, setAssignModal] = useState(false);
   const [assignLeads, setAssignLeads] = useState<string[]>([]);
   const [assignTo, setAssignTo] = useState('');
+  const [selectedPoolLeads, setSelectedPoolLeads] = useState<string[]>([]);
   useEffect(() => {
     async function loadManagerData() {
       setLoading(true);
@@ -106,9 +107,16 @@ export default function ManagerDashboard({ userId }: Props) {
     setAssignModal(false);
     setAssignLeads([]);
     setAssignTo('');
+    setSelectedPoolLeads([]);
   };
 
   const unassignedToMe = allLeads.filter(l => l.assignedTo === userId);
+  const togglePoolLead = (leadId: string) => {
+    setSelectedPoolLeads(prev => prev.includes(leadId) ? prev.filter(id => id !== leadId) : [...prev, leadId]);
+  };
+  const toggleAllPoolLeads = () => {
+    setSelectedPoolLeads(prev => prev.length === unassignedToMe.length ? [] : unassignedToMe.map(lead => lead.id));
+  };
 
   if (loading) {
     return <div className="p-6 text-[#a0a0a0] text-sm">Loading team data…</div>;
@@ -123,8 +131,8 @@ export default function ManagerDashboard({ userId }: Props) {
           <p className="text-[#6b6b6b] text-sm mt-0.5">{me?.fullName || 'Manager'} — Manager</p>
         </div>
         {unassignedToMe.length > 0 && (
-          <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>
-            Distribute Leads ({unassignedToMe.length})
+          <Button variant="primary" size="sm" disabled={!selectedPoolLeads.length} onClick={() => { setAssignLeads(selectedPoolLeads); setAssignTo(''); setAssignModal(true); }}>
+            Distribute Selected ({selectedPoolLeads.length})
           </Button>
         )}
       </div>
@@ -194,13 +202,23 @@ export default function ManagerDashboard({ userId }: Props) {
 
       {/* Team Leads Table */}
       <Card className="p-5">
-        <h3 className="text-white font-semibold mb-4">My Leads Pool ({unassignedToMe.length} unassigned to agents)</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white font-semibold">My Leads Pool ({unassignedToMe.length} unassigned to agents)</h3>
+          {unassignedToMe.length > 0 && (
+            <button onClick={toggleAllPoolLeads} className="text-[#dfff03] text-xs hover:underline">
+              {selectedPoolLeads.length === unassignedToMe.length ? 'Clear selection' : 'Select all'}
+            </button>
+          )}
+        </div>
         {unassignedToMe.length === 0 ? (
           <p className="text-[#4a4a4a] text-sm py-4">All leads have been distributed to your team members.</p>
         ) : (
-          <Table headers={['Code', 'Name', 'Phone', 'Company', 'Status', '']}>
-            {unassignedToMe.slice(0, 8).map(l => (
+          <Table headers={['', 'Code', 'Name', 'Phone', 'Company', 'Status', '']}>
+            {unassignedToMe.map(l => (
               <Tr key={l.id}>
+                <Td>
+                  <input type="checkbox" checked={selectedPoolLeads.includes(l.id)} onChange={() => togglePoolLead(l.id)} className="accent-[#dfff03]" />
+                </Td>
                 <Td><span className="font-mono text-xs text-[#dfff03]">{l.clientCode}</span></Td>
                 <Td><span className="text-white font-medium">{l.name}</span></Td>
                 <Td><span className="font-mono text-xs">{l.phone}</span></Td>
@@ -208,7 +226,7 @@ export default function ManagerDashboard({ userId }: Props) {
                 <Td><StatusBadge status={l.status} /></Td>
                 <Td>
                   <button
-                    onClick={() => { setAssignLeads([l.id]); setAssignModal(true); }}
+                    onClick={() => { setSelectedPoolLeads([l.id]); setAssignLeads([l.id]); setAssignTo(''); setAssignModal(true); }}
                     className="text-[#dfff03] text-xs hover:underline"
                   >
                     Assign
@@ -269,7 +287,7 @@ export default function ManagerDashboard({ userId }: Props) {
             </div>
           </div>
           <div className="bg-[#1a1a1a] rounded p-3 text-xs text-[#6b6b6b]">
-            {assignLeads.length > 0 ? `${assignLeads.length} lead(s) selected` : `All ${unassignedToMe.length} unassigned leads will be assigned`}
+            {assignLeads.length > 0 ? `${assignLeads.length} lead(s) selected` : 'Select leads from your pool first'}
           </div>
           <div className="flex gap-2">
             <Button variant="primary" disabled={!assignTo} onClick={handleAssign}>Assign Leads</Button>

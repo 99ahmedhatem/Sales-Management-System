@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../../supabaseClient';
 import { addClientComment, loadClientComments } from '../../data/clientComments';
 import { generateCode, Lead, LeadDataQuality, LeadStatus, User } from '../../data/mockData';
-import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Badge } from '../ui';
+import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card } from '../ui';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -27,6 +27,15 @@ const REGION_OPTIONS = [
   { value: 'RAK', label: 'RAK' },
 ];
 
+// Same list as the filter, but the first option is "no region" for the Add Lead form
+const REGION_FORM_OPTIONS = [
+  { value: '', label: 'Select region' },
+  ...REGION_OPTIONS.slice(1),
+];
+
+// A lead as shown in the details modal (comments are loaded separately)
+type LeadWithComments = Lead & { comments?: any[] };
+
 interface ImportLeadRow {
   name: string;
   phone: string;
@@ -34,8 +43,6 @@ interface ImportLeadRow {
   region: string;
   source: string;
   notes: string;
-  isSallaStore: boolean;
-  dataQuality: LeadDataQuality;
 }
 
 function readImportValue(row: Record<string, unknown>, names: string[]): string {
@@ -43,19 +50,10 @@ function readImportValue(row: Record<string, unknown>, names: string[]): string 
     result[key.trim().toLowerCase().replace(/[\s_-]+/g, '')] = value;
     return result;
   }, {});
-  const value = names.map(name => normalized[name.replace(/[\s_-]+/g, '').toLowerCase()]).find(value => value !== undefined && value !== '');
+  const value = names
+    .map(name => normalized[name.replace(/[\s_-]+/g, '').toLowerCase()])
+    .find(value => value !== undefined && value !== '');
   return String(value ?? '').trim();
-}
-
-function parseImportBoolean(value: string): boolean {
-  return ['true', 'yes', 'y', '1', 'سلة', 'متجر سلة'].includes(value.toLowerCase());
-}
-
-function parseImportQuality(value: string): LeadDataQuality {
-  const normalized = value.toLowerCase();
-  if (['high', 'عالية', 'عالي'].includes(normalized)) return 'high';
-  if (['medium', 'متوسطة', 'متوسط'].includes(normalized)) return 'medium';
-  return 'normal';
 }
 
 function mapLead(row: any): Lead {
@@ -101,18 +99,28 @@ export default function AdminLeads() {
   const [statusFilter, setStatusFilter] = useState('');
   const [regionFilter, setRegionFilter] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
-  const [detailLead, setDetailLead] = useState<Lead | null>(null);
+  const [detailLead, setDetailLead] = useState<LeadWithComments | null>(null);
   const [commentText, setCommentText] = useState('');
   const [commentError, setCommentError] = useState('');
   const [assignModal, setAssignModal] = useState(false);
   const [assignTo, setAssignTo] = useState('');
   const [addModal, setAddModal] = useState(false);
-  const [newLead, setNewLead] = useState({ name: '', phone: '', company: '', region: '', source: '', isSallaStore: false, dataQuality: 'normal' as LeadDataQuality });
+  const [newLead, setNewLead] = useState({
+    name: '',
+    phone: '',
+    company: '',
+    region: '',
+    source: '',
+    isSallaStore: false,
+    dataQuality: 'normal' as LeadDataQuality,
+  });
   const [importModal, setImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importRows, setImportRows] = useState<ImportLeadRow[]>([]);
   const [importError, setImportError] = useState('');
   const [importing, setImporting] = useState(false);
+  const [importType, setImportType] = useState<'salla' | 'software'>('software');
+  const [importDataQuality, setImportDataQuality] = useState<LeadDataQuality>('normal');
 
   async function loadData() {
     setLoading(true);
@@ -135,22 +143,27 @@ export default function AdminLeads() {
   useEffect(() => {
     if (!detailLead) return;
     loadClientComments(detailLead.id).then(({ data }) => {
-      setDetailLead((prev: any) => prev ? { ...prev, comments: data } : null);
+      setDetailLead(prev => (prev ? { ...prev, comments: data } : null));
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailLead?.id]);
 
   const assignableUsers = users.filter(u => ['manager', 'telesales'].includes(u.role) && u.status === 'active');
 
   const filtered = leads.filter(l => {
     const q = search.toLowerCase();
-    const matchQ = !q || l.name.toLowerCase().includes(q) || l.phone.includes(q) || (l.company || '').toLowerCase().includes(q);
+    const matchQ =
+      !q ||
+      l.name.toLowerCase().includes(q) ||
+      l.phone.includes(q) ||
+      (l.company || '').toLowerCase().includes(q);
     const matchS = !statusFilter || l.status === statusFilter;
     const matchR = !regionFilter || l.region === regionFilter;
     return matchQ && matchS && matchR;
   });
 
   const toggleSelect = (id: string) => {
-    setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    setSelected(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
   };
   const toggleAll = () => {
     if (selected.length === filtered.length) setSelected([]);
@@ -208,7 +221,7 @@ export default function AdminLeads() {
       setCommentError(error || 'Could not save the comment.');
       return;
     }
-    setDetailLead((prev: any) => prev ? { ...prev, comments: [...(prev.comments || []), data] } : null);
+    setDetailLead(prev => (prev ? { ...prev, comments: [...(prev.comments || []), data] } : null));
     setCommentText('');
   };
 
@@ -220,16 +233,16 @@ export default function AdminLeads() {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
-      const parsed = rows.map(row => ({
-        name: readImportValue(row, ['name', 'full name', 'client name', 'الاسم']),
-        phone: readImportValue(row, ['phone', 'phone number', 'mobile', 'رقم الهاتف']),
-        company: readImportValue(row, ['company', 'الشركة']),
-        region: readImportValue(row, ['region', 'المنطقة']),
-        source: readImportValue(row, ['source', 'المصدر']) || 'Excel Import',
-        notes: readImportValue(row, ['notes', 'ملاحظات']),
-        isSallaStore: parseImportBoolean(readImportValue(row, ['salla store', 'salla', 'is salla', 'متجر سلة'])),
-        dataQuality: parseImportQuality(readImportValue(row, ['data quality', 'quality', 'جودة البيانات'])),
-      })).filter(row => row.name && row.phone);
+      const parsed: ImportLeadRow[] = rows
+        .map(row => ({
+          name: readImportValue(row, ['name', 'full name', 'client name', 'الاسم']),
+          phone: readImportValue(row, ['phone', 'phone number', 'mobile', 'رقم الهاتف']),
+          company: readImportValue(row, ['company', 'الشركة']),
+          region: readImportValue(row, ['region', 'المنطقة']),
+          source: readImportValue(row, ['source', 'المصدر']) || 'Excel Import',
+          notes: readImportValue(row, ['notes', 'ملاحظات']),
+        }))
+        .filter(row => row.name && row.phone);
       if (!parsed.length) {
         setImportError('No valid rows found. Name and Phone are required.');
         setImportRows([]);
@@ -246,18 +259,20 @@ export default function AdminLeads() {
     if (!importRows.length) return;
     setImporting(true);
     setImportError('');
-    const { error } = await supabase.from('leads').insert(importRows.map(row => ({
-      client_code: generateCode('CLT'),
-      name: row.name,
-      phone: row.phone,
-      company: row.company || null,
-      region: row.region || null,
-      source: row.source,
-      notes: row.notes || null,
-      is_salla_store: row.isSallaStore,
-      data_quality: row.dataQuality,
-      status: 'New',
-    })));
+    const { error } = await supabase.from('leads').insert(
+      importRows.map(row => ({
+        client_code: generateCode('CLT'),
+        name: row.name,
+        phone: row.phone,
+        company: row.company || null,
+        region: row.region || null,
+        source: row.source,
+        notes: row.notes || null,
+        is_salla_store: importType === 'salla',
+        data_quality: importDataQuality,
+        status: 'New',
+      }))
+    );
     setImporting(false);
     if (error) {
       setImportError(error.message);
@@ -312,42 +327,43 @@ export default function AdminLeads() {
         )}
       </div>
 
-      {/* Loading / Error states */}
-      {loading && (
-        <Card>
-          <div className="p-6 text-center text-[#a0a0a0] text-sm">Loading leads from the database…</div>
-        </Card>
-      )}
-      {!loading && errorMsg && (
-        <Card>
-          <div className="p-6 text-center text-red-400 text-sm">
-            Could not load leads: {errorMsg}
-          </div>
-        </Card>
-      )}
-
       {/* Table */}
       <Card>
-        <Table headers={['', 'Code', 'Name', 'Phone', 'Company', 'Salla', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
+        <Table headers={['', 'Code', 'Name', 'Phone', 'Company', 'Region', 'Salla', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
           <tr className="border-b border-[#262626]">
             <td className="py-3 px-4">
-              <input type="checkbox" checked={selected.length === filtered.length && filtered.length > 0} onChange={toggleAll} className="accent-[#dfff03]" />
+              <input
+                type="checkbox"
+                checked={selected.length === filtered.length && filtered.length > 0}
+                onChange={toggleAll}
+                className="accent-[#dfff03]"
+              />
             </td>
-            <td colSpan={9} className="py-3 px-2 text-[#6b6b6b] text-xs">{filtered.length} records shown</td>
+            <td colSpan={11} className="py-3 px-2 text-[#6b6b6b] text-xs">{filtered.length} records shown</td>
           </tr>
           {filtered.map(lead => {
             const assignedUser = users.find(u => u.id === lead.assignedTo);
             return (
               <Tr key={lead.id} onClick={() => setDetailLead(lead)}>
                 <Td>
-                  <input type="checkbox" checked={selected.includes(lead.id)} onChange={() => toggleSelect(lead.id)} onClick={e => e.stopPropagation()} className="accent-[#dfff03]" />
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(lead.id)}
+                    onChange={() => toggleSelect(lead.id)}
+                    onClick={e => e.stopPropagation()}
+                    className="accent-[#dfff03]"
+                  />
                 </Td>
                 <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
                 <Td><span className="font-medium text-white">{lead.name}</span></Td>
                 <Td><span className="font-mono text-xs">{lead.phone}</span></Td>
                 <Td><span className="text-[#a0a0a0]">{lead.company || '—'}</span></Td>
                 <Td><span className="text-[#a0a0a0]">{lead.region || '—'}</span></Td>
-                <Td><span className={lead.isSallaStore ? 'text-[#dfff03] text-xs' : 'text-[#6b6b6b] text-xs'}>{lead.isSallaStore ? 'Yes' : 'No'}</span></Td>
+                <Td>
+                  <span className={lead.isSallaStore ? 'text-[#dfff03] text-xs' : 'text-[#6b6b6b] text-xs'}>
+                    {lead.isSallaStore ? 'Yes' : 'No'}
+                  </span>
+                </Td>
                 <Td><span className="text-[#a0a0a0] text-xs">{lead.dataQuality}</span></Td>
                 <Td><StatusBadge status={lead.status} /></Td>
                 <Td>
@@ -359,7 +375,13 @@ export default function AdminLeads() {
                 </Td>
                 <Td><span className="text-xs font-mono text-[#6b6b6b]">{lead.updatedAt?.slice(0, 10)}</span></Td>
                 <Td>
-                  <button className="text-[#4a4a4a] hover:text-[#dfff03] transition-colors" onClick={e => { e.stopPropagation(); setDetailLead(lead); }}>
+                  <button
+                    className="text-[#4a4a4a] hover:text-[#dfff03] transition-colors"
+                    onClick={e => {
+                      e.stopPropagation();
+                      setDetailLead(lead);
+                    }}
+                  >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
@@ -406,7 +428,7 @@ export default function AdminLeads() {
             <div>
               <div className="text-[#6b6b6b] text-xs mb-2">Comments ({(detailLead.comments || []).length})</div>
               <div className="space-y-2 max-h-40 overflow-y-auto">
-                {(detailLead.comments || []).map(comment => (
+                {(detailLead.comments || []).map((comment: any) => (
                   <div key={comment.id} className="bg-[#1a1a1a] rounded-lg p-3">
                     <div className="flex justify-between mb-1">
                       <span className="text-[#dfff03] text-xs font-medium">{comment.authorName}</span>
@@ -424,7 +446,9 @@ export default function AdminLeads() {
                 className="w-full mt-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60 resize-none"
               />
               {commentError && <p className="text-[#ff6464] text-xs mt-1">{commentError}</p>}
-              <Button variant="secondary" size="sm" className="mt-2" disabled={!commentText.trim()} onClick={handleAddComment}>Post Comment</Button>
+              <Button variant="secondary" size="sm" className="mt-2" disabled={!commentText.trim()} onClick={handleAddComment}>
+                Post Comment
+              </Button>
             </div>
             <div className="flex gap-2 pt-2">
               <Button variant="secondary" size="sm" onClick={() => setDetailLead(null)}>Close</Button>
@@ -436,7 +460,7 @@ export default function AdminLeads() {
       {/* Assign Modal */}
       <Modal open={assignModal} onClose={() => setAssignModal(false)} title={`Assign ${selected.length} Leads`}>
         <div className="space-y-4">
-            <p className="text-[#a0a0a0] text-sm">Select a manager or Telesales agent to assign these leads to:</p>
+          <p className="text-[#a0a0a0] text-sm">Select a manager or Telesales agent to assign these leads to:</p>
           <div className="space-y-2">
             {assignableUsers.map(u => {
               const assignedCount = leads.filter(l => l.assignedTo === u.id).length;
@@ -447,7 +471,9 @@ export default function AdminLeads() {
                   className={`w-full text-left p-3 rounded-lg border transition-all ${assignTo === u.id ? 'border-[#dfff03] bg-[#dfff03]/5' : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'}`}
                 >
                   <div className="text-white text-sm font-medium">{u.fullName}</div>
-                  <div className="text-[#6b6b6b] text-xs">{u.role === 'manager' ? 'Manager' : 'Telesales'} · {assignedCount} leads currently assigned</div>
+                  <div className="text-[#6b6b6b] text-xs">
+                    {u.role === 'manager' ? 'Manager' : 'Telesales'} · {assignedCount} leads currently assigned
+                  </div>
                 </button>
               );
             })}
@@ -466,8 +492,6 @@ export default function AdminLeads() {
             { label: 'Full Name *', key: 'name', placeholder: 'e.g. Ahmed Al-Rashid' },
             { label: 'Phone Number *', key: 'phone', placeholder: '+971 50 000 0000' },
             { label: 'Company', key: 'company', placeholder: 'Company name' },
-            { label: 'Region', key: 'region', placeholder: 'Dubai, Abu Dhabi...' },
-            { label: 'Source', key: 'source', placeholder: 'Referral, Website...' },
           ].map(f => (
             <div key={f.key}>
               <label className="block text-xs text-[#a0a0a0] mb-1">{f.label}</label>
@@ -479,13 +503,43 @@ export default function AdminLeads() {
               />
             </div>
           ))}
+          <div>
+            <label className="block text-xs text-[#a0a0a0] mb-1">Region</label>
+            <select
+              value={newLead.region}
+              onChange={e => setNewLead(prev => ({ ...prev, region: e.target.value }))}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#dfff03]/60"
+            >
+              {REGION_FORM_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-[#a0a0a0] mb-1">Source</label>
+            <input
+              value={newLead.source}
+              onChange={e => setNewLead(prev => ({ ...prev, source: e.target.value }))}
+              placeholder="Referral, Website..."
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60"
+            />
+          </div>
           <label className="flex items-center gap-2 text-sm text-[#d0d0d0]">
-            <input type="checkbox" checked={newLead.isSallaStore} onChange={e => setNewLead(prev => ({ ...prev, isSallaStore: e.target.checked }))} className="accent-[#dfff03]" />
+            <input
+              type="checkbox"
+              checked={newLead.isSallaStore}
+              onChange={e => setNewLead(prev => ({ ...prev, isSallaStore: e.target.checked }))}
+              className="accent-[#dfff03]"
+            />
             Salla store
           </label>
           <div>
             <label className="block text-xs text-[#a0a0a0] mb-1">Data Quality</label>
-            <select value={newLead.dataQuality} onChange={e => setNewLead(prev => ({ ...prev, dataQuality: e.target.value as LeadDataQuality }))} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#dfff03]/60">
+            <select
+              value={newLead.dataQuality}
+              onChange={e => setNewLead(prev => ({ ...prev, dataQuality: e.target.value as LeadDataQuality }))}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#dfff03]/60"
+            >
               <option value="high">High</option>
               <option value="medium">Medium</option>
               <option value="normal">Normal</option>
@@ -501,6 +555,37 @@ export default function AdminLeads() {
       {/* Import Modal */}
       <Modal open={importModal} onClose={() => setImportModal(false)} title="Import Leads from Excel">
         <div className="space-y-4">
+          <div>
+            <label className="block text-xs text-[#a0a0a0] mb-2">Client type for this import</label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { value: 'software' as const, label: 'Software', description: 'Regular software client' },
+                { value: 'salla' as const, label: 'Salla Store', description: 'Salla store client' },
+              ].map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setImportType(option.value)}
+                  className={`text-left rounded-lg border p-3 transition-colors ${importType === option.value ? 'border-[#dfff03] bg-[#dfff03]/5' : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'}`}
+                >
+                  <div className="text-white text-sm font-medium">{option.label}</div>
+                  <div className="text-[#6b6b6b] text-xs mt-1">{option.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-[#a0a0a0] mb-1">Data quality for this import</label>
+            <select
+              value={importDataQuality}
+              onChange={e => setImportDataQuality(e.target.value as LeadDataQuality)}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#dfff03]/60"
+            >
+              <option value="high">Strong (قوية)</option>
+              <option value="medium">Medium (متوسطة)</option>
+              <option value="normal">Normal (عادية)</option>
+            </select>
+          </div>
           <label className="block border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#dfff03]/30 transition-colors cursor-pointer">
             <svg className="w-10 h-10 text-[#4a4a4a] mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -510,13 +595,30 @@ export default function AdminLeads() {
             <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => handleImportFile(e.target.files?.[0])} />
           </label>
           {importRows.length > 0 && <p className="text-[#dfff03] text-xs">{importRows.length} valid rows ready to import.</p>}
+          {importRows.length > 0 && (
+            <div className="bg-[#dfff03]/5 border border-[#dfff03]/20 rounded-lg p-3 text-xs">
+              <div className="text-white font-medium">Import settings</div>
+              <div className="text-[#a0a0a0] mt-1">
+                Type: <span className="text-[#dfff03]">{importType === 'salla' ? 'Salla Store' : 'Software'}</span>
+                {' · '}
+                Data quality:{' '}
+                <span className="text-[#dfff03]">
+                  {importDataQuality === 'high' ? 'Strong' : importDataQuality === 'medium' ? 'Medium' : 'Normal'}
+                </span>
+              </div>
+              <div className="text-[#6b6b6b] mt-1">These settings will be applied to all imported customers.</div>
+            </div>
+          )}
           {importError && <p className="text-[#ff6464] text-xs">{importError}</p>}
           <div className="bg-[#1a1a1a] rounded-lg p-3 text-xs text-[#6b6b6b]">
             <p className="font-medium text-[#a0a0a0] mb-1">Expected columns:</p>
-            <p>Name (required) · Phone (required) · Company · Region · Source · Notes · Salla Store · Data Quality</p>
+            <p>Name (required) · Phone (required) · Company · Region · Source · Notes</p>
+            <p className="mt-1 text-[#dfff03]">The selected client type and data quality above apply to every imported row.</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="primary" disabled={!importRows.length || importing} onClick={handleImport}>{importing ? 'Importing...' : 'Import Leads'}</Button>
+            <Button variant="primary" disabled={!importRows.length || importing} onClick={handleImport}>
+              {importing ? 'Importing...' : 'Import Leads'}
+            </Button>
             <Button variant="ghost" onClick={() => setImportModal(false)}>Cancel</Button>
           </div>
         </div>

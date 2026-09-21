@@ -12,8 +12,23 @@ interface LeadRow {
   name: string;
   phone: string;
   status: string;
+  region?: string;
+  isSallaStore: boolean;
+  dataQuality: string;
   assignedTo?: string;
 }
+
+const STATUS_OPTIONS = [
+  { value: '', label: 'All Statuses' },
+  { value: 'New', label: 'New' },
+  { value: 'Assigned', label: 'Assigned' },
+  { value: 'Contacted', label: 'Contacted' },
+  { value: 'Interested', label: 'Interested' },
+  { value: 'Not Interested', label: 'Not Interested' },
+  { value: 'Call Back Later', label: 'Call Back Later' },
+  { value: 'Converted', label: 'Converted' },
+  { value: 'No Answer', label: 'No Answer' },
+];
 
 export default function AdminActivity() {
   const [activities, setActivities] = useState<ActivityLog[]>([]);
@@ -21,13 +36,18 @@ export default function AdminActivity() {
   const [users, setUsers] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
+  const [status, setStatus] = useState('');
+  const [country, setCountry] = useState('');
+  const [leadType, setLeadType] = useState('');
+  const [quality, setQuality] = useState('');
+  const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   async function loadActivity() {
     const [activityRes, leadRes, userRes] = await Promise.all([
       supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(1000),
-      supabase.from('leads').select('id, customer_number, client_code, name, phone, status, assigned_to'),
+      supabase.from('leads').select('id, customer_number, client_code, name, phone, status, region, is_salla_store, data_quality, assigned_to'),
       supabase.from('users').select('id, full_name'),
     ]);
     if (activityRes.error) setError(activityRes.error.message);
@@ -39,6 +59,9 @@ export default function AdminActivity() {
       name: row.name,
       phone: row.phone ?? '',
       status: row.status,
+      region: row.region ?? undefined,
+      isSallaStore: row.is_salla_store ?? false,
+      dataQuality: row.data_quality ?? 'normal',
       assignedTo: row.assigned_to ?? undefined,
     })));
     if (!userRes.error) setUsers(Object.fromEntries((userRes.data ?? []).map(row => [row.id, row.full_name])));
@@ -53,6 +76,11 @@ export default function AdminActivity() {
     const lead = leadById.get(activity.leadId);
     const query = search.toLowerCase();
     return (!type || activity.activityType === type)
+      && (!status || lead?.status === status)
+      && (!country || lead?.region === country)
+      && (!leadType || (leadType === 'salla' ? lead?.isSallaStore : !lead?.isSallaStore))
+      && (!quality || lead?.dataQuality === quality)
+      && (!phone || (phone === 'has' ? Boolean(lead?.phone) : !lead?.phone))
       && (!query || lead?.name.toLowerCase().includes(query) || lead?.phone.includes(query) || activity.actorName.toLowerCase().includes(query));
   });
 
@@ -71,9 +99,14 @@ export default function AdminActivity() {
         <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Calls</div><div className="text-white text-2xl font-bold mt-1">{activities.filter(activity => activity.activityType === 'call').length}</div></Card>
         <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Comments</div><div className="text-white text-2xl font-bold mt-1">{activities.filter(activity => activity.activityType === 'comment').length}</div></Card>
       </div>
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <SearchInput value={search} onChange={setSearch} placeholder="Search client, phone, or agent..." />
         <Select value={type} onChange={setType} options={[{ value: '', label: 'All Activity' }, { value: 'call', label: 'Calls' }, { value: 'comment', label: 'Comments' }, { value: 'assignment', label: 'Assignments' }, { value: 'forward', label: 'Forwarded' }]} className="w-44" />
+        <Select value={status} onChange={setStatus} options={STATUS_OPTIONS} className="w-40" />
+        <Select value={country} onChange={setCountry} options={[{ value: '', label: 'All Countries' }, { value: 'Saudi Arabia', label: 'Saudi Arabia' }, { value: 'Oman', label: 'Oman' }, { value: 'Iraq', label: 'Iraq' }, { value: 'UAE', label: 'UAE' }, { value: 'Egypt', label: 'Egypt' }]} className="w-40" />
+        <Select value={leadType} onChange={setLeadType} options={[{ value: '', label: 'All Types' }, { value: 'software', label: 'Software' }, { value: 'salla', label: 'Salla Store' }]} className="w-36" />
+        <Select value={quality} onChange={setQuality} options={[{ value: '', label: 'All Quality' }, { value: 'normal', label: 'Normal' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'Strong' }]} className="w-36" />
+        <Select value={phone} onChange={setPhone} options={[{ value: '', label: 'All Phones' }, { value: 'has', label: 'Has phone' }, { value: 'missing', label: 'No phone' }]} className="w-36" />
       </div>
       <Card>
         <Table headers={['Client', 'Phone', 'Agent', 'Activity', 'Outcome', 'Notes', 'Time']}>

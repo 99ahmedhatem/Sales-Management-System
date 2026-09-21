@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 import { generateCode, User, Role } from '../../data/mockData';
-import { Avatar, Badge, Button, Card, Modal, StatusBadge, Table, Td, Tr } from '../ui';
+import { Avatar, Badge, Button, Card, Modal, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
+import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
 function mapUser(row: any): User {
   return {
@@ -25,14 +26,27 @@ export default function AdminUsers() {
   const [detailUser, setDetailUser] = useState<User | null>(null);
   const [resetMessage, setResetMessage] = useState('');
   const [tab, setTab] = useState<'all' | 'manager' | 'telesales' | 'sales'>('all');
+  const [pageView, setPageView] = useState<'users' | 'clients'>('users');
+  const [assignedLeads, setAssignedLeads] = useState<AssignedLead[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [clientSearch, setClientSearch] = useState('');
   const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'telesales' as Role, managerId: '' });
 
   async function loadUsers() {
     setLoading(true);
     setErrorMsg('');
-    const { data, error } = await supabase.from('users').select('*').neq('role', 'admin').order('full_name');
-    if (error) setErrorMsg(error.message);
-    else setUsers((data ?? []).map(mapUser));
+    const [usersRes, leadsRes] = await Promise.all([
+      supabase.from('users').select('*').neq('role', 'admin').order('full_name'),
+      supabase.from('leads').select('id, customer_number, client_code, name, phone, company, quantity, status, assigned_to, updated_at').not('assigned_to', 'is', null).order('updated_at', { ascending: false }),
+    ]);
+    if (usersRes.error) setErrorMsg(usersRes.error.message);
+    else {
+      const loadedUsers = (usersRes.data ?? []).map(mapUser);
+      setUsers(loadedUsers);
+      setSelectedUserId(current => current || loadedUsers[0]?.id || '');
+    }
+    if (leadsRes.error) setErrorMsg(leadsRes.error.message);
+    else setAssignedLeads((leadsRes.data ?? []).map(mapAssignedLead));
     setLoading(false);
   }
 
@@ -40,8 +54,16 @@ export default function AdminUsers() {
     loadUsers();
   }, []);
 
+  useRealtimeRefresh(['users', 'leads'], loadUsers);
+
   const managers = users.filter(u => u.role === 'manager');
   const filtered = users.filter(u => tab === 'all' || u.role === tab);
+  const selectedUser = users.find(user => user.id === selectedUserId);
+  const visibleAssignedLeads = assignedLeads.filter(lead => {
+    const query = clientSearch.toLowerCase();
+    return lead.assignedTo === selectedUserId
+      && (!query || lead.name.toLowerCase().includes(query) || lead.phone.includes(query) || lead.clientCode.toLowerCase().includes(query) || (lead.company || '').toLowerCase().includes(query));
+  });
 
   const handleAdd = async () => {
     if (!newUser.fullName || !newUser.email || newUser.password.length < 8) return;
@@ -138,7 +160,18 @@ export default function AdminUsers() {
         <Button variant="primary" size="sm" onClick={() => setAddModal(true)}>+ Add User</Button>
       </div>
 
-      {/* Tab Filter */}
+      <div className="flex gap-1 bg-[#1a1a1a] rounded-lg p-1 w-fit">
+        {[
+          { key: 'users', label: 'User Data' },
+          { key: 'clients', label: 'Distributed Clients' },
+        ].map(view => (
+          <button key={view.key} onClick={() => setPageView(view.key as 'users' | 'clients')} className={`px-4 py-1.5 text-sm rounded-md transition-all ${pageView === view.key ? 'bg-[#dfff03] text-black font-medium' : 'text-[#6b6b6b] hover:text-white'}`}>
+            {view.label}
+          </button>
+        ))}
+      </div>
+
+      {pageView === 'users' && <>
       <div className="flex gap-1 bg-[#1a1a1a] rounded-lg p-1 w-fit">
         {(['all', 'manager', 'telesales', 'sales'] as const).map(t => (
           <button
@@ -195,6 +228,37 @@ export default function AdminUsers() {
           ))}
         </Table>
       </Card>
+      </>}
+
+      {pageView === 'clients' && <>
+        <div className="flex flex-wrap gap-3 items-center">
+          <Select value={selectedUserId} onChange={setSelectedUserId} options={users.map(user => ({ value: user.id, label: `${user.fullName} · ${roleLabel[user.role]}` }))} className="w-64" />
+          <SearchInput value={clientSearch} onChange={setClientSearch} placeholder="Search assigned clients..." />
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Selected User</div><div className="text-white text-sm font-medium mt-1">{selectedUser?.fullName || '—'}</div></Card>
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Assigned Clients</div><div className="text-[#dfff03] text-2xl font-bold mt-1">{visibleAssignedLeads.length}</div></Card>
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Active</div><div className="text-white text-2xl font-bold mt-1">{visibleAssignedLeads.filter(lead => !['Converted', 'Subscribed', 'Did Not Subscribe'].includes(lead.status)).length}</div></Card>
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Converted</div><div className="text-white text-2xl font-bold mt-1">{visibleAssignedLeads.filter(lead => ['Converted', 'Subscribed'].includes(lead.status)).length}</div></Card>
+        </div>
+        <Card>
+          <Table headers={['No.', 'Code', 'Client', 'Phone', 'Company', 'Quantity', 'Status', 'Last Updated']}>
+            {visibleAssignedLeads.map(lead => (
+              <Tr key={lead.id}>
+                <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.customerNumber ?? '—'}</span></Td>
+                <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
+                <Td><span className="text-white font-medium">{lead.name}</span></Td>
+                <Td><span className="font-mono text-xs">{lead.phone || '—'}</span></Td>
+                <Td><span className="text-[#a0a0a0] text-xs">{lead.company || '—'}</span></Td>
+                <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.quantity}</span></Td>
+                <Td><StatusBadge status={lead.status} /></Td>
+                <Td><span className="font-mono text-xs text-[#6b6b6b]">{lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : '—'}</span></Td>
+              </Tr>
+            ))}
+          </Table>
+          {visibleAssignedLeads.length === 0 && <div className="p-8 text-center text-[#4a4a4a] text-sm">No clients are assigned to this user.</div>}
+        </Card>
+      </>}
 
       {/* Permissions note */}
       <Card className="p-4">
@@ -328,4 +392,32 @@ export default function AdminUsers() {
       )}
     </div>
   );
+}
+
+interface AssignedLead {
+  id: string;
+  customerNumber?: number;
+  clientCode: string;
+  name: string;
+  phone: string;
+  company?: string;
+  quantity: number;
+  status: string;
+  assignedTo?: string;
+  updatedAt: string;
+}
+
+function mapAssignedLead(row: any): AssignedLead {
+  return {
+    id: row.id,
+    customerNumber: row.customer_number ?? undefined,
+    clientCode: row.client_code,
+    name: row.name,
+    phone: row.phone ?? '',
+    company: row.company ?? undefined,
+    quantity: row.quantity ?? 0,
+    status: row.status,
+    assignedTo: row.assigned_to ?? undefined,
+    updatedAt: row.updated_at,
+  };
 }

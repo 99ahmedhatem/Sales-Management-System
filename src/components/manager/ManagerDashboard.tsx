@@ -3,6 +3,8 @@ import { supabase } from '../../supabaseClient';
 import { MEETINGS, Lead, LeadStatus, User } from '../../data/mockData';
 import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
+import { recordActivity } from '../../data/activityLog';
+import { createNotification } from '../../data/notifications';
 
 const ROLE_REGION_OPTIONS = [
   { value: '', label: 'All Countries' },
@@ -58,6 +60,8 @@ export default function ManagerDashboard({ userId }: Props) {
   const [detailLead, setDetailLead] = useState<Lead | null>(null);
   const [leadPage, setLeadPage] = useState(0);
   const [totalTeamLeads, setTotalTeamLeads] = useState(0);
+  const [receivedCount, setReceivedCount] = useState(0);
+  const [distributedCount, setDistributedCount] = useState(0);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const pageSize = 100;
   useEffect(() => {
@@ -71,7 +75,7 @@ export default function ManagerDashboard({ userId }: Props) {
       if (usersRes.error || leadsRes.error) {
         setErrorMsg(usersRes.error?.message || leadsRes.error?.message || 'Could not load manager data.');
       } else {
-        setUsers((usersRes.data ?? []).map(row => ({
+        const mappedUsers = (usersRes.data ?? []).map(row => ({
           id: row.id,
           username: row.username,
           fullName: row.full_name,
@@ -80,7 +84,8 @@ export default function ManagerDashboard({ userId }: Props) {
           email: row.email,
           lastLogin: row.last_login,
           managerId: row.manager_id ?? undefined,
-        })));
+        }));
+        setUsers(mappedUsers);
         setAllLeads((leadsRes.data ?? []).map(row => ({
           id: row.id,
           customerNumber: row.customer_number ?? undefined,
@@ -103,6 +108,13 @@ export default function ManagerDashboard({ userId }: Props) {
           updatedAt: row.updated_at,
         })));
         setTotalTeamLeads(leadsRes.count ?? 0);
+        const teamIds = mappedUsers.filter(user => user.managerId === userId).map(user => user.id);
+        const [receivedRes, distributedRes] = await Promise.all([
+          supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', userId),
+          teamIds.length ? supabase.from('leads').select('id', { count: 'exact', head: true }).in('assigned_to', teamIds) : Promise.resolve({ count: 0, error: null }),
+        ]);
+        setReceivedCount(receivedRes.count ?? 0);
+        setDistributedCount(distributedRes.count ?? 0);
       }
       setLoading(false);
     }
@@ -133,6 +145,16 @@ export default function ManagerDashboard({ userId }: Props) {
       setErrorMsg(error.message);
       return;
     }
+    await Promise.all(assignLeads.map(leadId => recordActivity({
+      leadId,
+      actorId: userId,
+      actorName: me?.fullName || 'Manager',
+      actorRole: 'manager',
+      activityType: 'assignment',
+      outcome: 'Assigned',
+      notes: `Assigned to ${users.find(user => user.id === assignTo)?.fullName || 'team member'}`,
+    })));
+    await createNotification(assignTo, 'New leads assigned', `${assignLeads.length} client(s) were assigned to you by ${me?.fullName || 'your manager'}.`);
     setAllLeads(prev => prev.map(l => assignLeads.includes(l.id) ? { ...l, assignedTo: assignTo, status: 'Assigned' as LeadStatus } : l));
     setAssignModal(false);
     setAssignLeads([]);
@@ -199,7 +221,8 @@ export default function ManagerDashboard({ userId }: Props) {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard label="Team Members" value={myTeam.length} sub={`${telesalesTeam.length} telesales · ${salesTeam.length} sales`} />
-        <KpiCard label="Team Leads" value={myLeads.length} sub="Assigned to team" />
+        <KpiCard label="Received from Admin" value={receivedCount} sub="Waiting in your pool" />
+        <KpiCard label="Distributed" value={distributedCount} sub="Assigned to your team" />
         <KpiCard label="Converted" value={converted} accent sub={`${myLeads.length > 0 ? Math.round(converted / myLeads.length * 100) : 0}% rate`} />
         <KpiCard label="Deals Won" value={won} sub={`${myMeetings.length} total meetings`} />
       </div>

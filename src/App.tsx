@@ -8,6 +8,7 @@ import AppShell from './components/AppShell';
 
 const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard'));
 const AdminLeads = lazy(() => import('./components/admin/AdminLeads'));
+const AdminActivity = lazy(() => import('./components/admin/AdminActivity'));
 const AdminUsers = lazy(() => import('./components/admin/AdminUsers'));
 const AdminMeetings = lazy(() => import('./components/admin/AdminMeetings'));
 const AdminReports = lazy(() => import('./components/admin/AdminReports'));
@@ -89,6 +90,7 @@ export default function App() {
         <Suspense fallback={<div className="p-6 text-sm text-[#6b6b6b]">Loading...</div>}>
           {session.role === 'admin' && page === 'dashboard' && <AdminDashboard />}
           {session.role === 'admin' && page === 'leads' && <AdminLeads />}
+          {session.role === 'admin' && page === 'activity' && <AdminActivity />}
           {session.role === 'admin' && page === 'users' && <AdminUsers />}
           {session.role === 'admin' && page === 'meetings' && <AdminMeetings />}
           {session.role === 'admin' && page === 'reports' && <AdminReports />}

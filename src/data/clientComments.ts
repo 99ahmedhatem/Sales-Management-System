@@ -1,5 +1,6 @@
 import { supabase } from '../supabaseClient';
-import { ClientComment } from './mockData';
+import { ClientComment, Role } from './mockData';
+import { recordActivity } from './activityLog';
 
 export async function loadClientComments(leadId: string): Promise<{ data: ClientComment[]; error?: string }> {
   const { data, error } = await supabase
@@ -21,7 +22,7 @@ export async function loadClientComments(leadId: string): Promise<{ data: Client
   };
 }
 
-export async function addClientComment(comment: Omit<ClientComment, 'id' | 'createdAt'>): Promise<{ data?: ClientComment; error?: string }> {
+export async function addClientComment(comment: Omit<ClientComment, 'id' | 'createdAt'> & { actorRole?: Role }): Promise<{ data?: ClientComment; error?: string }> {
   const { data, error } = await supabase
     .from('client_comments')
     .insert({
@@ -34,6 +35,14 @@ export async function addClientComment(comment: Omit<ClientComment, 'id' | 'crea
     .single();
 
   if (error) return { error: error.message };
+  await recordActivity({
+    leadId: comment.leadId,
+    actorId: comment.authorId,
+    actorName: comment.authorName,
+    actorRole: comment.actorRole || (comment.authorName === 'Admin' ? 'admin' : 'telesales'),
+    activityType: 'comment',
+    notes: comment.text,
+  });
   return {
     data: {
       id: data.id,

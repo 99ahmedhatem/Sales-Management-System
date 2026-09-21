@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { Lead, LeadStatus, CallLog, ClientComment, User } from '../../data/mockData';
 import { addClientComment, loadClientComments } from '../../data/clientComments';
+import { recordActivity } from '../../data/activityLog';
+import { createNotification } from '../../data/notifications';
 import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
@@ -42,9 +44,10 @@ export default function TelesalesDashboard({ userId }: Props) {
   useEffect(() => {
     async function loadQueue() {
       setLoading(true);
-      const [userRes, leadRes] = await Promise.all([
+      const [userRes, leadRes, activityRes] = await Promise.all([
         supabase.from('users').select('*'),
         supabase.from('leads').select('*', { count: 'exact' }).eq('assigned_to', userId).order('created_at', { ascending: false }).range(page * pageSize, (page + 1) * pageSize - 1),
+        supabase.from('activity_logs').select('*').eq('actor_id', userId).eq('activity_type', 'call').order('created_at', { ascending: false }),
       ]);
       if (userRes.error || leadRes.error) {
         setLoadError(userRes.error?.message || leadRes.error?.message || 'Could not load your queue.');
@@ -81,6 +84,14 @@ export default function TelesalesDashboard({ userId }: Props) {
           updatedAt: row.updated_at,
         })));
         setTotalLeads(leadRes.count ?? 0);
+        setCallLogs((activityRes.data ?? []).map(row => ({
+          id: row.id,
+          leadId: row.lead_id,
+          agentId: row.actor_id,
+          outcome: row.outcome as LeadStatus,
+          notes: row.notes ?? '',
+          calledAt: row.created_at,
+        })));
       }
       setLoading(false);
     }
@@ -167,18 +178,43 @@ export default function TelesalesDashboard({ userId }: Props) {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, ...patch, updatedAt: new Date().toISOString().slice(0, 10) } : l));
   };
 
-  const logCall = () => {
+  const logCall = async () => {
     if (!callModal) return;
+    const lead = callModal;
+    const { error } = await supabase.from('leads').update({
+      status: callStatus,
+      notes: callNotes || null,
+      callback_date: callStatus === 'Call Back Later' ? callbackDate || null : null,
+      free_trial_end_date: callStatus === 'Free Trial' ? freeTrialEnd || null : null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', lead.id);
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+    const activityError = await recordActivity({
+      leadId: lead.id,
+      actorId: userId,
+      actorName: me?.fullName || 'Telesales',
+      actorRole: 'telesales',
+      activityType: 'call',
+      outcome: callStatus,
+      notes: callNotes,
+    });
+    if (activityError) {
+      setLoadError(activityError);
+      return;
+    }
     const log: CallLog = {
       id: `c${Date.now()}`,
-      leadId: callModal.id,
+      leadId: lead.id,
       agentId: userId,
       outcome: callStatus,
       notes: callNotes,
       calledAt: new Date().toLocaleString(),
     };
     setCallLogs(prev => [...prev, log]);
-    updateLead(callModal.id, {
+    updateLead(lead.id, {
       status: callStatus,
       notes: callNotes,
       callbackDate: callStatus === 'Call Back Later' ? callbackDate : undefined,
@@ -191,9 +227,30 @@ export default function TelesalesDashboard({ userId }: Props) {
     setFreeTrialEnd('');
   };
 
-  const forwardToSales = () => {
+  const forwardToSales = async () => {
     if (!forwardModal || !forwardTo || !meetingDate) return;
-    updateLead(forwardModal.id, { status: 'Converted' });
+    const lead = forwardModal;
+    const salesUser = users.find(user => user.id === forwardTo);
+    const { error } = await supabase.from('leads').update({ assigned_to: forwardTo, status: 'Converted', updated_at: new Date().toISOString() }).eq('id', lead.id);
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+    const activityError = await recordActivity({
+      leadId: lead.id,
+      actorId: userId,
+      actorName: me?.fullName || 'Telesales',
+      actorRole: 'telesales',
+      activityType: 'forward',
+      outcome: 'Converted',
+      notes: `Forwarded to ${salesUser?.fullName || 'Sales'} for ${meetingDate}`,
+    });
+    if (activityError) {
+      setLoadError(activityError);
+      return;
+    }
+    await createNotification(forwardTo, 'New client forwarded', `${lead.name} was forwarded to you by ${me?.fullName || 'Telesales'}.`);
+    updateLead(lead.id, { status: 'Converted', assignedTo: forwardTo });
     setForwardModal(null);
     setForwardTo('');
     setMeetingDate('');
@@ -205,6 +262,7 @@ export default function TelesalesDashboard({ userId }: Props) {
       leadId: commentModal.id,
       authorId: userId,
       authorName: me?.fullName || 'Telesales',
+      actorRole: 'telesales',
       text: newComment.trim(),
     });
     if (error || !comment) {

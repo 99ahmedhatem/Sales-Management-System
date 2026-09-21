@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../supabaseClient';
 import { addClientComment, loadClientComments } from '../../data/clientComments';
+import { recordActivity } from '../../data/activityLog';
+import { createNotification } from '../../data/notifications';
 import { generateCode, Lead, LeadDataQuality, LeadStatus, User } from '../../data/mockData';
 import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Pagination } from '../ui';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
@@ -300,6 +302,19 @@ export default function AdminLeads() {
       setErrorMsg(error.message);
       return;
     }
+    const assignee = users.find(user => user.id === assignTo);
+    const authUserId = (await supabase.auth.getUser()).data.user?.id || '';
+    const admin = (await supabase.from('users').select('full_name').eq('id', authUserId).maybeSingle()).data;
+    await Promise.all(selected.map(leadId => recordActivity({
+      leadId,
+      actorId: authUserId,
+      actorName: admin?.full_name || 'Admin',
+      actorRole: 'admin',
+      activityType: 'assignment',
+      outcome: 'Assigned',
+      notes: `Assigned to ${assignee?.fullName || 'team member'}`,
+    })));
+    await createNotification(assignTo, 'New leads assigned', `${selected.length} client(s) were assigned to you.`);
     await loadData(page);
     setSelected([]);
     setAssignModal(false);
@@ -402,6 +417,7 @@ export default function AdminLeads() {
       leadId: detailLead.id,
       authorId: (await supabase.auth.getUser()).data.user?.id || '',
       authorName: 'Admin',
+      actorRole: 'admin',
       text: commentText.trim(),
     });
     if (error || !data) {

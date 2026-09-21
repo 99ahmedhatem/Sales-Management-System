@@ -1,6 +1,8 @@
-import { useState, ReactNode } from 'react';
-import { Role, NOTIFICATIONS } from '../data/mockData';
+import { useEffect, useState, ReactNode } from 'react';
+import { supabase } from '../supabaseClient';
+import { Notification, Role } from '../data/mockData';
 import { Avatar, Badge } from './ui';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 type AdminPage = 'dashboard' | 'leads' | 'users' | 'meetings' | 'reports';
 type SalesPage = 'meetings';
@@ -22,6 +24,11 @@ const adminNav: NavItem[] = [
     key: 'leads',
     label: 'Leads',
     icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
+  },
+  {
+    key: 'activity',
+    label: 'Worked Clients',
+    icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 6h3m-3 4h3m-7-4h.01m-.01 4h.01" /></svg>,
   },
   {
     key: 'meetings',
@@ -92,9 +99,23 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
   const [page, setPage] = useState(defaultPage);
   const [notifOpen, setNotifOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [myNotifs, setMyNotifs] = useState<Notification[]>([]);
 
+  const loadNotifications = async () => {
+    const { data } = await supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(30);
+    setMyNotifs((data ?? []).map(row => ({
+      id: row.id,
+      userId: row.user_id,
+      type: row.type,
+      title: row.title,
+      message: row.message,
+      read: row.read,
+      createdAt: row.created_at,
+    })));
+  };
+  useEffect(() => { loadNotifications(); }, [userId]);
+  useRealtimeRefresh(['notifications'], loadNotifications, 800);
 
-  const myNotifs = NOTIFICATIONS.filter(n => n.userId === userId);
   const unreadCount = myNotifs.filter(n => !n.read).length;
 
   const roleLabel = { admin: 'Administrator', manager: 'Manager', sales: 'Sales', telesales: 'Telesales' }[role];

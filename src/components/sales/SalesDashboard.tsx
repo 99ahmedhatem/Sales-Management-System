@@ -94,6 +94,7 @@ export default function SalesDashboard({ userId }: Props) {
       leadId: commentModal.leadId,
       authorId: userId,
       authorName: me?.fullName || 'Sales',
+      actorRole: 'sales',
       text: newComment.trim(),
     });
     if (error || !comment) {

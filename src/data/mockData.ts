@@ -130,6 +130,20 @@ export interface Notification {
   createdAt: string;
 }
 
+export type ActivityType = 'call' | 'comment' | 'assignment' | 'forward';
+
+export interface ActivityLog {
+  id: string;
+  leadId: string;
+  actorId: string;
+  actorName: string;
+  actorRole: Role;
+  activityType: ActivityType;
+  outcome?: string;
+  notes?: string;
+  createdAt: string;
+}
+
 export function generateCode(prefix: 'EMP' | 'CLT'): string {
   const uniquePart = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID().split('-')[0]

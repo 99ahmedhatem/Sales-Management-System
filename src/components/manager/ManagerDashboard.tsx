@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { MEETINGS, Lead, LeadStatus, User } from '../../data/mockData';
 import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
+import { WebsiteLink } from '../ui';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
@@ -62,6 +63,7 @@ export default function ManagerDashboard({ userId }: Props) {
   const [totalTeamLeads, setTotalTeamLeads] = useState(0);
   const [receivedCount, setReceivedCount] = useState(0);
   const [distributedCount, setDistributedCount] = useState(0);
+    const [workedClientCount, setWorkedClientCount] = useState(0);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const pageSize = 100;
   useEffect(() => {
@@ -109,12 +111,16 @@ export default function ManagerDashboard({ userId }: Props) {
         })));
         setTotalTeamLeads(leadsRes.count ?? 0);
         const teamIds = mappedUsers.filter(user => user.managerId === userId).map(user => user.id);
-        const [receivedRes, distributedRes] = await Promise.all([
+        const [receivedRes, distributedRes, activityRes] = await Promise.all([
           supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', userId),
           teamIds.length ? supabase.from('leads').select('id', { count: 'exact', head: true }).in('assigned_to', teamIds) : Promise.resolve({ count: 0, error: null }),
+          teamIds.length ? supabase.from('activity_logs').select('lead_id').in('actor_id', teamIds).in('activity_type', ['call', 'forward']) : Promise.resolve({ data: [], error: null }),
         ]);
         setReceivedCount(receivedRes.count ?? 0);
         setDistributedCount(distributedRes.count ?? 0);
+        const workedLeadIds = new Set((activityRes.data ?? []).map(row => row.lead_id));
+        MEETINGS.filter(meeting => teamIds.includes(meeting.assignedSalesId) || teamIds.includes(meeting.bookedById)).forEach(meeting => workedLeadIds.add(meeting.leadId));
+        setWorkedClientCount(workedLeadIds.size);
       }
       setLoading(false);
     }
@@ -220,6 +226,7 @@ export default function ManagerDashboard({ userId }: Props) {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard label="Clients Worked" value={workedClientCount} sub="Distinct team clients" />
         <KpiCard label="Team Members" value={myTeam.length} sub={`${telesalesTeam.length} telesales · ${salesTeam.length} sales`} />
         <KpiCard label="Received from Admin" value={receivedCount} sub="Waiting in your pool" />
         <KpiCard label="Distributed" value={distributedCount} sub="Assigned to your team" />
@@ -322,7 +329,7 @@ export default function ManagerDashboard({ userId }: Props) {
                 <Td><span className="text-white font-medium">{l.name}</span></Td>
                 <Td><span className="font-mono text-xs">{l.phone}</span></Td>
                 <Td><span className="text-[#a0a0a0] text-xs">{l.company || '—'}</span></Td>
-                <Td><span className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block">{l.website || '—'}</span></Td>
+                <Td><WebsiteLink url={l.website} className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block" /></Td>
                 <Td><span className="font-mono text-xs text-[#a0a0a0]">{l.quantity ?? 0}</span></Td>
                 <Td><StatusBadge status={l.status} /></Td>
                 <Td>
@@ -349,7 +356,7 @@ export default function ManagerDashboard({ userId }: Props) {
                 ['Name', detailLead.name], ['Website', detailLead.website || '—'],
                 ['Quantity', detailLead.quantity ?? 0], ['Company', detailLead.company || '—'], ['Region', detailLead.region || '—'],
                 ['Source', detailLead.source || '—'], ['Data Quality', detailLead.dataQuality || 'normal'],
-              ].map(([label, value]) => <div key={label} className="bg-[#1a1a1a] rounded p-3"><div className="text-[#6b6b6b] text-xs mb-1">{label}</div><div className="text-white text-sm font-medium break-all">{value}</div></div>)}
+              ].map(([label, value]) => <div key={label} className="bg-[#1a1a1a] rounded p-3"><div className="text-[#6b6b6b] text-xs mb-1">{label}</div><div className="text-white text-sm font-medium break-all">{label === 'Website' ? <WebsiteLink url={String(value)} /> : value}</div></div>)}
             </div>
             <div className="bg-[#1a1a1a] rounded p-3">
               <div className="text-[#6b6b6b] text-xs mb-1">Phone Number</div>

@@ -5,7 +5,7 @@ import { addClientComment, loadClientComments } from '../../data/clientComments'
 import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
 import { generateCode, Lead, LeadDataQuality, LeadStatus, User } from '../../data/mockData';
-import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Pagination } from '../ui';
+import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Pagination, WebsiteLink } from '../ui';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
 const STATUS_OPTIONS = [
@@ -646,7 +646,7 @@ export default function AdminLeads() {
                     )}
                   </Td>
                   <Td><span className="text-[#a0a0a0]">{lead.company || '—'}</span></Td>
-                  <Td><span className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block">{lead.website || '—'}</span></Td>
+                  <Td><WebsiteLink url={lead.website} className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block" /></Td>
                   <Td><span className="text-[#a0a0a0]">{lead.region || '—'}</span></Td>
                   <Td>
                     <span className={lead.isSallaStore ? 'text-[#dfff03] text-xs' : 'text-[#6b6b6b] text-xs'}>
@@ -711,7 +711,7 @@ export default function AdminLeads() {
               ].map(([k, v]) => (
                 <div key={k} className="bg-[#1a1a1a] rounded-lg p-3">
                   <div className="text-[#6b6b6b] text-xs mb-1">{k}</div>
-                  <div className="text-white text-sm font-medium break-words">{v}</div>
+                  <div className="text-white text-sm font-medium break-words">{k === 'Website' ? <WebsiteLink url={String(v)} /> : v}</div>
                 </div>
               ))}
             </div>

@@ -3,6 +3,7 @@ import { supabase } from '../../supabaseClient';
 import { MEETINGS, LEADS, USERS, Meeting, MeetingOutcome, ClientComment, LeadStatus } from '../../data/mockData';
 import { addClientComment, loadClientComments } from '../../data/clientComments';
 import { Avatar, Button, Card, KpiCard, Modal, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
+import { WebsiteLink } from '../ui';
 
 const CLIENT_STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: 'Subscribed', label: 'Subscribed' },
@@ -82,6 +83,7 @@ export default function SalesDashboard({ userId }: Props) {
   const upcoming = meetings.filter(m => m.outcome === 'Scheduled');
   const wonCount = meetings.filter(m => m.outcome === 'Deal Closed – Won').length;
   const lostCount = meetings.filter(m => m.outcome === 'Deal Lost').length;
+  const workedClientCount = new Set(meetings.map(meeting => meeting.leadId)).size;
 
   const updateOutcome = (id: string, outcome: MeetingOutcome) => {
     setMeetings(prev => prev.map(m => m.id === id ? { ...m, outcome } : m));
@@ -119,6 +121,7 @@ export default function SalesDashboard({ userId }: Props) {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard label="Clients Worked" value={workedClientCount} sub="Distinct clients in meetings" />
         <KpiCard label="Upcoming" value={upcoming.length} sub="Scheduled meetings" />
         <KpiCard label="Deals Won" value={wonCount} accent sub="Closed successfully" />
         <KpiCard label="Deals Lost" value={lostCount} sub="Not converted" />
@@ -263,7 +266,7 @@ export default function SalesDashboard({ userId }: Props) {
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-[#1a1a1a] rounded p-3">
                 <div className="text-[#6b6b6b] text-xs mb-1">Website</div>
-                <div className="text-white text-sm font-medium break-all">{customerWebsite || '—'}</div>
+                <WebsiteLink url={customerWebsite} className="text-white text-sm font-medium break-all" />
               </div>
               <div className="bg-[#1a1a1a] rounded p-3">
                 <div className="text-[#6b6b6b] text-xs mb-1">Phone Number</div>

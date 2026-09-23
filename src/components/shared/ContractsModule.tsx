@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CONTRACTS, generateCode, USERS, Contract } from '../../data/mockData';
-import { Button, Card, KpiCard, Modal, StatusBadge, Table, Td, Tr } from '../ui';
+import { Button, Card, KpiCard, Modal, StatusBadge, Table, Td, Tr, WebsiteLink } from '../ui';
 
 const PRODUCT_TYPES = ['E-commerce Platform', 'SaaS Platform', 'Mobile App', 'ERP System', 'Custom Solution'];
 const PACKAGE_TYPES = ['Starter', 'Business', 'Enterprise', 'Custom'];
@@ -191,7 +191,7 @@ export default function ContractsModule({ userId, role, managerId }: Props) {
               ].map(([k, v]) => (
                 <div key={k} className="bg-[#1a1a1a] rounded p-3">
                   <div className="text-[#6b6b6b] text-xs mb-1">{k}</div>
-                  <div className="text-white text-sm font-medium break-all">{v}</div>
+                  <div className="text-white text-sm font-medium break-all">{k === 'Store Link' ? <WebsiteLink url={String(v)} /> : v}</div>
                 </div>
               ))}
             </div>

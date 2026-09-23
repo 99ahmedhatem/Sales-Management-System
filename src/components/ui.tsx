@@ -1,4 +1,23 @@
 import { ReactNode, useState } from 'react';
+export function normalizeWebsiteUrl(url: string): string {
+  const trimmed = url.trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+export function WebsiteLink({ url, className = '' }: { url?: string; className?: string }) {
+  const displayUrl = url?.trim();
+  if (!displayUrl) return <span className={className}>—</span>;
+  return (
+    <a
+      href={normalizeWebsiteUrl(displayUrl)}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={event => event.stopPropagation()}
+      className={`${className} hover:text-[#dfff03] hover:underline`}
+    >
+      {displayUrl}
+    </a>
+  );
+}
 
 export function Badge({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (

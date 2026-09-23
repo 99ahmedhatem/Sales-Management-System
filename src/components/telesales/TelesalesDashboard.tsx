@@ -5,6 +5,7 @@ import { addClientComment, loadClientComments } from '../../data/clientComments'
 import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
 import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
+import { WebsiteLink } from '../ui';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
 const ROLE_REGION_OPTIONS = [{ value: '', label: 'All Countries' }, { value: 'Saudi Arabia', label: 'Saudi Arabia' }, { value: 'Oman', label: 'Oman' }, { value: 'Iraq', label: 'Iraq' }, { value: 'UAE', label: 'UAE' }, { value: 'Egypt', label: 'Egypt' }];
@@ -279,6 +280,7 @@ export default function TelesalesDashboard({ userId }: Props) {
   };
 
   const todayCalls = callLogs.length;
+    const workedClientCount = new Set(callLogs.map(log => log.leadId)).size;
   const totalConverted = leads.filter(l => ['Subscribed', 'Converted'].includes(l.status)).length;
   const freeTrial = leads.filter(l => l.status === 'Free Trial').length;
   const convRate = leads.length > 0 ? Math.round((totalConverted / leads.length) * 100) : 0;
@@ -292,6 +294,7 @@ export default function TelesalesDashboard({ userId }: Props) {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard label="Clients Worked" value={workedClientCount} sub="Distinct clients contacted" />
         <KpiCard label="Active Queue" value={activeLeads.length} sub="Leads to contact" />
         <KpiCard label="Subscribed" value={totalConverted} accent sub={`${convRate}% rate`} />
         <KpiCard label="Free Trial" value={freeTrial} sub="Awaiting decision" />
@@ -370,7 +373,7 @@ export default function TelesalesDashboard({ userId }: Props) {
               <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
               <Td><span className="font-medium text-white">{lead.name}</span></Td>
               <Td><span className="font-mono text-xs">{lead.phone}</span></Td>
-              <Td><span className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block">{lead.website || '—'}</span></Td>
+              <Td><WebsiteLink url={lead.website} className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block" /></Td>
               <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.quantity ?? 0}</span></Td>
               <Td><StatusBadge status={lead.status} /></Td>
               <Td>
@@ -419,7 +422,7 @@ export default function TelesalesDashboard({ userId }: Props) {
               ].map(([k, v]) => (
                 <div key={k} className="bg-[#1a1a1a] rounded p-3">
                   <div className="text-[#6b6b6b] text-xs mb-1">{k}</div>
-                  <div className="text-white text-sm font-medium">{v}</div>
+                  <div className="text-white text-sm font-medium">{k === 'Website' ? <WebsiteLink url={String(v)} /> : v}</div>
                 </div>
               ))}
               <div className="bg-[#1a1a1a] rounded p-3 col-span-2">

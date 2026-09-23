@@ -4,8 +4,8 @@ import { Lead, LeadStatus, CallLog, ClientComment, User } from '../../data/mockD
 import { addClientComment, loadClientComments } from '../../data/clientComments';
 import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
-import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
-import { WebsiteLink } from '../ui';
+import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr, WebsiteLink } from '../ui';
+import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
 const ROLE_REGION_OPTIONS = [{ value: '', label: 'All Countries' }, { value: 'Saudi Arabia', label: 'Saudi Arabia' }, { value: 'Oman', label: 'Oman' }, { value: 'Iraq', label: 'Iraq' }, { value: 'UAE', label: 'UAE' }, { value: 'Egypt', label: 'Egypt' }];
@@ -67,6 +67,9 @@ export default function TelesalesDashboard({ userId }: Props) {
           id: row.id,
           customerNumber: row.customer_number ?? undefined,
           website: row.website ?? undefined,
+          websiteStatus: row.website_status ?? undefined,
+          websiteStatusSource: row.website_status_source ?? undefined,
+          phoneSource: row.phone_source ?? undefined,
           quantity: row.quantity ?? 0,
           clientCode: row.client_code,
           name: row.name,
@@ -150,6 +153,27 @@ export default function TelesalesDashboard({ userId }: Props) {
     const { error } = await supabase.from('leads').update({ phone: phone || null, phone_source: phone ? 'manual' : null, updated_at: new Date().toISOString() }).eq('id', leadId);
     if (error) { setLoadError(error.message); return; }
     setLeads(prev => prev.map(lead => lead.id === leadId ? { ...lead, phone } : lead));
+  };
+
+  const saveInlinePhone = async (lead: Lead, value: string) => {
+    const phone = value.replace(/[^\d+]/g, '');
+    const { error } = await supabase.from('leads').update({ phone: phone || null, phone_source: phone ? 'manual' : null, updated_at: new Date().toISOString() }).eq('id', lead.id);
+    if (error) {
+      setLoadError(error.message);
+      throw new Error(error.message);
+    }
+    setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, phone, phoneSource: phone ? 'manual' : undefined } : item));
+  };
+
+  const toggleWebsiteStatus = async (lead: Lead, nextStatus: 'working' | 'not_working') => {
+    const previousStatus = lead.websiteStatus;
+    setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, websiteStatus: nextStatus, websiteStatusSource: 'manual' } : item));
+    const { error } = await supabase.from('leads').update({ website_status: nextStatus, website_status_source: 'manual', updated_at: new Date().toISOString() }).eq('id', lead.id);
+    if (error) {
+      setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, websiteStatus: previousStatus, websiteStatusSource: lead.websiteStatusSource } : item));
+      setLoadError(error.message);
+      throw new Error(error.message);
+    }
   };
 
   if (loading) {
@@ -360,7 +384,7 @@ export default function TelesalesDashboard({ userId }: Props) {
       </div>
 
       <Card>
-        <Table headers={['No.', 'Code', 'Lead', 'Phone', 'Website', 'Quantity', 'Status', 'Notes', 'Due', 'Actions']}>
+        <Table headers={['No.', 'Code', 'Lead', 'Phone', 'Website', 'Website Status', 'Quantity', 'Status', 'Notes', 'Due', 'Actions']}>
           {filtered.map(lead => (
             <Tr key={lead.id} onClick={() => setDetailModal(lead)}>
               <Td>
@@ -372,8 +396,9 @@ export default function TelesalesDashboard({ userId }: Props) {
               </Td>
               <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
               <Td><span className="font-medium text-white">{lead.name}</span></Td>
-              <Td><span className="font-mono text-xs">{lead.phone}</span></Td>
+              <Td><EditablePhoneCell phone={lead.phone} onSave={phone => saveInlinePhone(lead, phone)} /></Td>
               <Td><WebsiteLink url={lead.website} className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block" /></Td>
+              <Td><WebsiteStatusToggle status={lead.websiteStatus} onToggle={nextStatus => toggleWebsiteStatus(lead, nextStatus)} /></Td>
               <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.quantity ?? 0}</span></Td>
               <Td><StatusBadge status={lead.status} /></Td>
               <Td>

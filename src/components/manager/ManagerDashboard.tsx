@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { MEETINGS, Lead, LeadStatus, User } from '../../data/mockData';
-import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
-import { WebsiteLink } from '../ui';
+import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr, WebsiteLink } from '../ui';
+import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
@@ -58,6 +58,7 @@ export default function ManagerDashboard({ userId }: Props) {
   const [leadType, setLeadType] = useState('');
   const [leadQuality, setLeadQuality] = useState('');
   const [leadPhone, setLeadPhone] = useState('');
+  const [assignmentFilter, setAssignmentFilter] = useState('manager');
   const [detailLead, setDetailLead] = useState<Lead | null>(null);
   const [leadPage, setLeadPage] = useState(0);
   const [totalTeamLeads, setTotalTeamLeads] = useState(0);
@@ -92,6 +93,9 @@ export default function ManagerDashboard({ userId }: Props) {
           id: row.id,
           customerNumber: row.customer_number ?? undefined,
           website: row.website ?? undefined,
+          websiteStatus: row.website_status ?? undefined,
+          websiteStatusSource: row.website_status_source ?? undefined,
+          phoneSource: row.phone_source ?? undefined,
           quantity: row.quantity ?? 0,
           clientCode: row.client_code,
           name: row.name,
@@ -189,8 +193,33 @@ export default function ManagerDashboard({ userId }: Props) {
     setAllLeads(prev => prev.map(lead => lead.id === leadId ? { ...lead, phone } : lead));
   };
 
-  const unassignedToMe = allLeads.filter(l => l.assignedTo === userId);
-  const filteredPool = unassignedToMe.filter(lead => {
+  const saveInlinePhone = async (lead: Lead, value: string) => {
+    const phone = value.replace(/[^\d+]/g, '');
+    const { error } = await supabase.from('leads').update({ phone: phone || null, phone_source: phone ? 'manual' : null, updated_at: new Date().toISOString() }).eq('id', lead.id);
+    if (error) {
+      setErrorMsg(error.message);
+      throw new Error(error.message);
+    }
+    setAllLeads(prev => prev.map(item => item.id === lead.id ? { ...item, phone, phoneSource: phone ? 'manual' : undefined } : item));
+  };
+
+  const toggleWebsiteStatus = async (lead: Lead, nextStatus: 'working' | 'not_working') => {
+    const previousStatus = lead.websiteStatus;
+    setAllLeads(prev => prev.map(item => item.id === lead.id ? { ...item, websiteStatus: nextStatus, websiteStatusSource: 'manual' } : item));
+    const { error } = await supabase.from('leads').update({ website_status: nextStatus, website_status_source: 'manual', updated_at: new Date().toISOString() }).eq('id', lead.id);
+    if (error) {
+      setAllLeads(prev => prev.map(item => item.id === lead.id ? { ...item, websiteStatus: previousStatus, websiteStatusSource: lead.websiteStatusSource } : item));
+      setErrorMsg(error.message);
+      throw new Error(error.message);
+    }
+  };
+
+  const poolLeads = assignmentFilter === 'all'
+    ? allLeads
+    : assignmentFilter === 'unassigned'
+      ? allLeads.filter(lead => !lead.assignedTo)
+      : allLeads.filter(lead => lead.assignedTo === userId);
+  const filteredPool = poolLeads.filter(lead => {
     const query = leadSearch.toLowerCase();
     return (!query || lead.name.toLowerCase().includes(query) || lead.phone.includes(query) || (lead.company || '').toLowerCase().includes(query))
       && (!leadStatus || lead.status === leadStatus)
@@ -203,7 +232,7 @@ export default function ManagerDashboard({ userId }: Props) {
     setSelectedPoolLeads(prev => prev.includes(leadId) ? prev.filter(id => id !== leadId) : [...prev, leadId]);
   };
   const toggleAllPoolLeads = () => {
-    setSelectedPoolLeads(prev => prev.length === unassignedToMe.length ? [] : unassignedToMe.map(lead => lead.id));
+    setSelectedPoolLeads(prev => prev.length === poolLeads.length ? [] : poolLeads.map(lead => lead.id));
   };
 
   if (loading) {
@@ -218,7 +247,7 @@ export default function ManagerDashboard({ userId }: Props) {
           <h1 className="text-white text-2xl font-bold">Team Overview</h1>
           <p className="text-[#6b6b6b] text-sm mt-0.5">{me?.fullName || 'Manager'} — Manager</p>
         </div>
-        {unassignedToMe.length > 0 && (
+        {poolLeads.length > 0 && (
           <Button variant="primary" size="sm" disabled={!selectedPoolLeads.length} onClick={() => { setAssignLeads(selectedPoolLeads); setAssignTo(''); setAssignModal(true); }}>
             Distribute Selected ({selectedPoolLeads.length})
           </Button>
@@ -293,10 +322,10 @@ export default function ManagerDashboard({ userId }: Props) {
       {/* Team Leads Table */}
       <Card className="p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-semibold">My Leads Pool ({unassignedToMe.length} unassigned to agents)</h3>
-          {unassignedToMe.length > 0 && (
+          <h3 className="text-white font-semibold">My Leads Pool ({poolLeads.length} unassigned to agents)</h3>
+          {poolLeads.length > 0 && (
             <button onClick={toggleAllPoolLeads} className="text-[#dfff03] text-xs hover:underline">
-              {selectedPoolLeads.length === unassignedToMe.length ? 'Clear selection' : 'Select all'}
+              {selectedPoolLeads.length === poolLeads.length ? 'Clear selection' : 'Select all'}
             </button>
           )}
         </div>
@@ -307,12 +336,13 @@ export default function ManagerDashboard({ userId }: Props) {
           <Select value={leadType} onChange={setLeadType} options={ROLE_TYPE_OPTIONS} className="w-36" />
           <Select value={leadQuality} onChange={setLeadQuality} options={ROLE_QUALITY_OPTIONS} className="w-36" />
           <Select value={leadPhone} onChange={setLeadPhone} options={ROLE_PHONE_OPTIONS} className="w-36" />
+          <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: 'all', label: 'All' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
         </div>
-        {unassignedToMe.length === 0 ? (
+        {poolLeads.length === 0 ? (
           <p className="text-[#4a4a4a] text-sm py-4">All leads have been distributed to your team members.</p>
         ) : (
           <div>
-            <Table headers={['', 'No.', 'Code', 'Name', 'Phone', 'Company', 'Website', 'Quantity', 'Status', '']}>
+            <Table headers={['', 'No.', 'Code', 'Name', 'Phone', 'Company', 'Website', 'Website Status', 'Quantity', 'Status', '']}>
               {filteredPool.map(l => (
                 <Tr key={l.id} onClick={() => setDetailLead(l)}>
                 <Td>
@@ -327,9 +357,10 @@ export default function ManagerDashboard({ userId }: Props) {
                 </Td>
                 <Td><span className="font-mono text-xs text-[#dfff03]">{l.clientCode}</span></Td>
                 <Td><span className="text-white font-medium">{l.name}</span></Td>
-                <Td><span className="font-mono text-xs">{l.phone}</span></Td>
+                <Td><EditablePhoneCell phone={l.phone} onSave={phone => saveInlinePhone(l, phone)} /></Td>
                 <Td><span className="text-[#a0a0a0] text-xs">{l.company || '—'}</span></Td>
                 <Td><WebsiteLink url={l.website} className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block" /></Td>
+                <Td><WebsiteStatusToggle status={l.websiteStatus} onToggle={nextStatus => toggleWebsiteStatus(l, nextStatus)} /></Td>
                 <Td><span className="font-mono text-xs text-[#a0a0a0]">{l.quantity ?? 0}</span></Td>
                 <Td><StatusBadge status={l.status} /></Td>
                 <Td>

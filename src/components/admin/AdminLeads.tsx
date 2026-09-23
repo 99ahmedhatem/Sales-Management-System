@@ -6,6 +6,7 @@ import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
 import { generateCode, Lead, LeadDataQuality, LeadStatus, User } from '../../data/mockData';
 import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Pagination, WebsiteLink } from '../ui';
+import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
 const STATUS_OPTIONS = [
@@ -185,9 +186,6 @@ export default function AdminLeads() {
   const [commentError, setCommentError] = useState('');
   const [phoneDraft, setPhoneDraft] = useState('');
   const [phoneMsg, setPhoneMsg] = useState('');
-  const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null);
-  const [editingPhoneValue, setEditingPhoneValue] = useState('');
-  const [savingPhoneId, setSavingPhoneId] = useState<string | null>(null);
   const [assignModal, setAssignModal] = useState(false);
   const [assignTo, setAssignTo] = useState('');
   const [addModal, setAddModal] = useState(false);
@@ -390,30 +388,26 @@ export default function AdminLeads() {
   };
 
   const saveInlinePhone = async (lead: Lead, value: string) => {
-    if (savingPhoneId === lead.id) return;
     const phone = cleanPhone(value);
-    setSavingPhoneId(lead.id);
     const { error } = await supabase.from('leads').update({
       phone: phone || null,
       phone_source: phone ? 'manual' : null,
       updated_at: new Date().toISOString(),
     }).eq('id', lead.id);
-    setSavingPhoneId(null);
-    setEditingPhoneId(null);
     if (error) {
       setErrorMsg(error.message);
-      return;
+      throw new Error(error.message);
     }
     setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, phone, phoneSource: phone ? 'manual' : undefined } : item));
   };
 
-  const toggleWebsiteStatus = async (lead: Lead) => {
-    const nextStatus = lead.websiteStatus === 'working' ? 'not_working' : 'working';
+  const toggleWebsiteStatus = async (lead: Lead, nextStatus: 'working' | 'not_working') => {
     setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, websiteStatus: nextStatus, websiteStatusSource: 'manual' } : item));
     const { error } = await supabase.from('leads').update({ website_status: nextStatus, website_status_source: 'manual', updated_at: new Date().toISOString() }).eq('id', lead.id);
     if (error) {
       setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, websiteStatus: lead.websiteStatus, websiteStatusSource: lead.websiteStatusSource } : item));
       setErrorMsg(error.message);
+      throw new Error(error.message);
     }
   };
 
@@ -664,26 +658,9 @@ export default function AdminLeads() {
                   </Td>
                   <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
                   <Td><span className="font-medium text-white">{lead.name}</span></Td>
-                  <Td>
-                    <div onClick={e => e.stopPropagation()}>
-                    {editingPhoneId === lead.id ? (
-                      <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                        <input autoFocus value={editingPhoneValue} onChange={e => setEditingPhoneValue(e.target.value)} onBlur={() => saveInlinePhone(lead, editingPhoneValue)} onKeyDown={e => { if (e.key === 'Enter') saveInlinePhone(lead, editingPhoneValue); if (e.key === 'Escape') setEditingPhoneId(null); }} className="w-32 bg-[#1a1a1a] border border-[#dfff03] rounded px-2 py-1 text-xs text-white focus:outline-none" />
-                        {savingPhoneId === lead.id && <span className="text-[#6b6b6b] text-xs">Saving...</span>}
-                      </div>
-                    ) : (
-                      <span className={`font-mono text-xs cursor-text ${lead.phone ? 'text-white' : 'text-[#4a4a4a]'}`} onDoubleClick={e => { e.stopPropagation(); setEditingPhoneId(lead.id); setEditingPhoneValue(lead.phone || ''); }}>
-                        {lead.phone || '—'}
-                      </span>
-                    )}
-                    </div>
-                  </Td>
+                  <Td><EditablePhoneCell phone={lead.phone} onSave={phone => saveInlinePhone(lead, phone)} /></Td>
                   <Td><WebsiteLink url={lead.website} className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block" /></Td>
-                  <Td>
-                    <button type="button" onClick={e => { e.stopPropagation(); toggleWebsiteStatus(lead); }} className={`px-2 py-1 rounded text-xs font-medium transition-colors ${lead.websiteStatus === 'working' ? 'bg-[#64dc78]/15 text-[#64dc78]' : lead.websiteStatus === 'not_working' ? 'bg-[#ff6464]/15 text-[#ff6464]' : 'bg-[#2a2a2a] text-[#6b6b6b]'}`}>
-                      {lead.websiteStatus === 'working' ? 'Working' : lead.websiteStatus === 'not_working' ? 'Not Working' : 'Not Checked'}
-                    </button>
-                  </Td>
+                  <Td><WebsiteStatusToggle status={lead.websiteStatus} onToggle={nextStatus => toggleWebsiteStatus(lead, nextStatus)} /></Td>
                   <Td>
                     <span className={lead.isSallaStore ? 'text-[#dfff03] text-xs' : 'text-[#6b6b6b] text-xs'}>
                       {lead.isSallaStore ? 'Yes' : 'No'}

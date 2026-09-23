@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 import { generateCode, User, Role } from '../../data/mockData';
 import { Avatar, Badge, Button, Card, Modal, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
+import { EditablePhoneCell } from '../shared/LeadRowControls';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
 function mapUser(row: any): User {
@@ -31,6 +32,16 @@ export default function AdminUsers() {
   const [selectedUserId, setSelectedUserId] = useState('');
   const [clientSearch, setClientSearch] = useState('');
   const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'telesales' as Role, managerId: '' });
+
+  const saveAssignedLeadPhone = async (lead: AssignedLead, value: string) => {
+    const phone = value.replace(/[^\d+]/g, '');
+    const { error } = await supabase.from('leads').update({ phone: phone || null, phone_source: phone ? 'manual' : null, updated_at: new Date().toISOString() }).eq('id', lead.id);
+    if (error) {
+      setErrorMsg(error.message);
+      throw new Error(error.message);
+    }
+    setAssignedLeads(prev => prev.map(item => item.id === lead.id ? { ...item, phone } : item));
+  };
 
   async function loadUsers() {
     setLoading(true);
@@ -248,7 +259,7 @@ export default function AdminUsers() {
                 <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.customerNumber ?? '—'}</span></Td>
                 <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
                 <Td><span className="text-white font-medium">{lead.name}</span></Td>
-                <Td><span className="font-mono text-xs">{lead.phone || '—'}</span></Td>
+                <Td><EditablePhoneCell phone={lead.phone} onSave={value => saveAssignedLeadPhone(lead, value)} /></Td>
                 <Td><span className="text-[#a0a0a0] text-xs">{lead.company || '—'}</span></Td>
                 <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.quantity}</span></Td>
                 <Td><StatusBadge status={lead.status} /></Td>

@@ -4,6 +4,7 @@ import { ActivityLog } from '../../data/mockData';
 import { mapActivity } from '../../data/activityLog';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { Card, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
+import { EditablePhoneCell } from '../shared/LeadRowControls';
 
 interface LeadRow {
   id: string;
@@ -43,6 +44,16 @@ export default function AdminActivity() {
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const saveLeadPhone = async (lead: LeadRow, value: string) => {
+    const phone = value.replace(/[^\d+]/g, '');
+    const { error: saveError } = await supabase.from('leads').update({ phone: phone || null, phone_source: phone ? 'manual' : null, updated_at: new Date().toISOString() }).eq('id', lead.id);
+    if (saveError) {
+      setError(saveError.message);
+      throw new Error(saveError.message);
+    }
+    setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, phone } : item));
+  };
 
   async function loadActivity() {
     const [activityRes, leadRes, userRes] = await Promise.all([
@@ -114,7 +125,7 @@ export default function AdminActivity() {
             const lead = leadById.get(activity.leadId);
             return <Tr key={activity.id}>
               <Td><div className="text-white font-medium">{lead?.name || 'Deleted client'}</div><div className="text-[#dfff03] text-xs font-mono">{lead?.clientCode}</div></Td>
-              <Td><span className="font-mono text-xs">{lead?.phone || '—'}</span></Td>
+              <Td>{lead ? <EditablePhoneCell phone={lead.phone} onSave={value => saveLeadPhone(lead, value)} /> : <span className="font-mono text-xs">—</span>}</Td>
               <Td><div className="text-white text-sm">{activity.actorName}</div><div className="text-[#6b6b6b] text-xs">{activity.actorRole}</div></Td>
               <Td><span className="text-[#a0a0a0] text-xs capitalize">{activity.activityType}</span></Td>
               <Td>{activity.outcome ? <StatusBadge status={activity.outcome} /> : <span className="text-[#4a4a4a]">—</span>}</Td>

@@ -150,12 +150,20 @@ alter table public.leads
   check (website_status in ('working', 'not_working'));
 
 alter table public.leads
+  add column if not exists website_status_source text
+  check (website_status_source in ('manual', 'auto_checked'));
+
+alter table public.leads
   add column if not exists phone_source text
   check (phone_source in ('manual', 'website'));
 
 update public.leads
 set phone_source = 'manual'
 where phone is not null and phone_source is null;
+
+update public.leads
+set website_status_source = 'manual'
+where website_status is not null and website_status_source is null;
 
 create table if not exists public.client_comments (
   id uuid primary key default gen_random_uuid(),

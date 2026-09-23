@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type MouseEvent } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../supabaseClient';
 import { addClientComment, loadClientComments } from '../../data/clientComments';
@@ -131,6 +131,7 @@ function mapLead(row: any): Lead {
     customerNumber: row.customer_number ?? undefined,
     website: row.website ?? undefined,
     websiteStatus: row.website_status ?? undefined,
+    websiteStatusSource: row.website_status_source ?? undefined,
     phoneSource: row.phone_source ?? undefined,
     quantity: row.quantity ?? 0,
     clientCode: row.client_code,
@@ -184,6 +185,9 @@ export default function AdminLeads() {
   const [commentError, setCommentError] = useState('');
   const [phoneDraft, setPhoneDraft] = useState('');
   const [phoneMsg, setPhoneMsg] = useState('');
+  const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null);
+  const [editingPhoneValue, setEditingPhoneValue] = useState('');
+  const [savingPhoneId, setSavingPhoneId] = useState<string | null>(null);
   const [assignModal, setAssignModal] = useState(false);
   const [assignTo, setAssignTo] = useState('');
   const [addModal, setAddModal] = useState(false);
@@ -385,23 +389,30 @@ export default function AdminLeads() {
     setPhoneMsg('Saved');
   };
 
-  const copyPhone = async (event: MouseEvent, phone: string) => {
-    event.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(phone);
-      setPhoneMsg(`Copied ${phone}`);
-      window.setTimeout(() => setPhoneMsg(''), 1600);
-    } catch {
-      setPhoneMsg('Could not copy phone number');
+  const saveInlinePhone = async (lead: Lead, value: string) => {
+    if (savingPhoneId === lead.id) return;
+    const phone = cleanPhone(value);
+    setSavingPhoneId(lead.id);
+    const { error } = await supabase.from('leads').update({
+      phone: phone || null,
+      phone_source: phone ? 'manual' : null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', lead.id);
+    setSavingPhoneId(null);
+    setEditingPhoneId(null);
+    if (error) {
+      setErrorMsg(error.message);
+      return;
     }
+    setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, phone, phoneSource: phone ? 'manual' : undefined } : item));
   };
 
   const toggleWebsiteStatus = async (lead: Lead) => {
     const nextStatus = lead.websiteStatus === 'working' ? 'not_working' : 'working';
-    setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, websiteStatus: nextStatus } : item));
-    const { error } = await supabase.from('leads').update({ website_status: nextStatus, updated_at: new Date().toISOString() }).eq('id', lead.id);
+    setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, websiteStatus: nextStatus, websiteStatusSource: 'manual' } : item));
+    const { error } = await supabase.from('leads').update({ website_status: nextStatus, website_status_source: 'manual', updated_at: new Date().toISOString() }).eq('id', lead.id);
     if (error) {
-      setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, websiteStatus: lead.websiteStatus } : item));
+      setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, websiteStatus: lead.websiteStatus, websiteStatusSource: lead.websiteStatusSource } : item));
       setErrorMsg(error.message);
     }
   };
@@ -654,16 +665,18 @@ export default function AdminLeads() {
                   <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
                   <Td><span className="font-medium text-white">{lead.name}</span></Td>
                   <Td>
-                    {lead.phone ? (
-                      <span className="inline-flex items-center gap-1 font-mono text-xs" onDoubleClick={e => copyPhone(e, lead.phone)}>
-                        {lead.phone}
-                        <button type="button" title="Copy phone" onClick={e => copyPhone(e, lead.phone)} className="text-[#6b6b6b] hover:text-[#dfff03]">
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></svg>
-                        </button>
-                      </span>
+                    <div onClick={e => e.stopPropagation()}>
+                    {editingPhoneId === lead.id ? (
+                      <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                        <input autoFocus value={editingPhoneValue} onChange={e => setEditingPhoneValue(e.target.value)} onBlur={() => saveInlinePhone(lead, editingPhoneValue)} onKeyDown={e => { if (e.key === 'Enter') saveInlinePhone(lead, editingPhoneValue); if (e.key === 'Escape') setEditingPhoneId(null); }} className="w-32 bg-[#1a1a1a] border border-[#dfff03] rounded px-2 py-1 text-xs text-white focus:outline-none" />
+                        {savingPhoneId === lead.id && <span className="text-[#6b6b6b] text-xs">Saving...</span>}
+                      </div>
                     ) : (
-                      <span className="text-[#4a4a4a] text-xs">—</span>
+                      <span className={`font-mono text-xs cursor-text ${lead.phone ? 'text-white' : 'text-[#4a4a4a]'}`} onDoubleClick={e => { e.stopPropagation(); setEditingPhoneId(lead.id); setEditingPhoneValue(lead.phone || ''); }}>
+                        {lead.phone || '—'}
+                      </span>
                     )}
+                    </div>
                   </Td>
                   <Td><WebsiteLink url={lead.website} className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block" /></Td>
                   <Td>

@@ -3,6 +3,7 @@ import { supabase } from '../../supabaseClient';
 import { MEETINGS, Lead, LeadStatus, User } from '../../data/mockData';
 import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr, WebsiteLink } from '../ui';
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
+import { exportRowsToExcel } from '../shared/exportExcel';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
@@ -66,6 +67,7 @@ export default function ManagerDashboard({ userId }: Props) {
   const [distributedCount, setDistributedCount] = useState(0);
     const [workedClientCount, setWorkedClientCount] = useState(0);
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [exporting, setExporting] = useState(false);
   const pageSize = 100;
   useEffect(() => {
     async function loadManagerData() {
@@ -235,6 +237,52 @@ export default function ManagerDashboard({ userId }: Props) {
     setSelectedPoolLeads(prev => prev.length === poolLeads.length ? [] : poolLeads.map(lead => lead.id));
   };
 
+  const exportLeads = async () => {
+    setExporting(true);
+    setErrorMsg('');
+    try {
+      const queryBuilder = supabase.from('leads').select('*').order('created_at', { ascending: false }).order('id', { ascending: false });
+      const data: any[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data: pageRows, error } = await queryBuilder.range(from, from + 999);
+        if (error) throw error;
+        data.push(...(pageRows ?? []));
+        if (!pageRows || pageRows.length < 1000) break;
+      }
+      const searchQuery = leadSearch.toLowerCase();
+      const rows = (data ?? []).filter(row => {
+        const assignedTo = row.assigned_to as string | null;
+        const matchesAssignment = assignmentFilter === 'all'
+          ? true
+          : assignmentFilter === 'unassigned'
+            ? !assignedTo
+            : assignedTo === userId;
+        return matchesAssignment
+          && (!searchQuery || String(row.name ?? '').toLowerCase().includes(searchQuery) || String(row.phone ?? '').includes(searchQuery) || String(row.company ?? '').toLowerCase().includes(searchQuery))
+          && (!leadStatus || row.status === leadStatus)
+          && (!leadCountry || row.region === leadCountry)
+          && (!leadType || (leadType === 'salla' ? row.is_salla_store : !row.is_salla_store))
+          && (!leadQuality || row.data_quality === leadQuality)
+          && (!leadPhone || (leadPhone === 'has' ? Boolean(row.phone) : !row.phone));
+      });
+      exportRowsToExcel(rows.map(row => ({
+        'NO.': row.customer_number ?? '',
+        CODE: row.client_code,
+        NAME: row.name,
+        PHONE: row.phone ?? '',
+        COMPANY: row.company ?? '',
+        WEBSITE: row.website ?? '',
+        'WEBSITE STATUS': row.website_status === 'working' ? 'Working' : row.website_status === 'not_working' ? 'Not Working' : 'Not Checked',
+        QUANTITY: row.quantity ?? 0,
+        STATUS: row.status ?? '',
+      })), 'manager-leads-export');
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Could not export leads.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (loading) {
     return <div className="p-6 text-[#a0a0a0] text-sm">Loading team data…</div>;
   }
@@ -337,6 +385,7 @@ export default function ManagerDashboard({ userId }: Props) {
           <Select value={leadQuality} onChange={setLeadQuality} options={ROLE_QUALITY_OPTIONS} className="w-36" />
           <Select value={leadPhone} onChange={setLeadPhone} options={ROLE_PHONE_OPTIONS} className="w-36" />
           <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: 'all', label: 'All' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
+          <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? 'Exporting...' : 'Export Excel'}</Button>
         </div>
         {poolLeads.length === 0 ? (
           <p className="text-[#4a4a4a] text-sm py-4">All leads have been distributed to your team members.</p>

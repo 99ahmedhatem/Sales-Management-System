@@ -6,6 +6,7 @@ import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
 import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr, WebsiteLink } from '../ui';
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
+import { exportRowsToExcel } from '../shared/exportExcel';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
 const ROLE_REGION_OPTIONS = [{ value: '', label: 'All Countries' }, { value: 'Saudi Arabia', label: 'Saudi Arabia' }, { value: 'Oman', label: 'Oman' }, { value: 'Iraq', label: 'Iraq' }, { value: 'UAE', label: 'UAE' }, { value: 'Egypt', label: 'Egypt' }];
@@ -40,6 +41,7 @@ export default function TelesalesDashboard({ userId }: Props) {
   const [page, setPage] = useState(0);
   const [totalLeads, setTotalLeads] = useState(0);
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [exporting, setExporting] = useState(false);
   const pageSize = 100;
 
   useEffect(() => {
@@ -201,6 +203,48 @@ export default function TelesalesDashboard({ userId }: Props) {
 
   const updateLead = (id: string, patch: Partial<Lead>) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, ...patch, updatedAt: new Date().toISOString().slice(0, 10) } : l));
+  };
+
+  const exportLeads = async () => {
+    setExporting(true);
+    setLoadError('');
+    try {
+      const queryBuilder = supabase.from('leads').select('*').eq('assigned_to', userId).order('created_at', { ascending: false }).order('id', { ascending: false });
+      const data: any[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data: pageRows, error } = await queryBuilder.range(from, from + 999);
+        if (error) throw error;
+        data.push(...(pageRows ?? []));
+        if (!pageRows || pageRows.length < 1000) break;
+      }
+      const searchQuery = search.toLowerCase();
+      const rows = (data ?? []).filter(row => {
+        const isDone = ['Subscribed', 'Converted', 'Did Not Subscribe'].includes(row.status);
+        return (tab === 'done' ? isDone : !isDone)
+          && (!searchQuery || String(row.name ?? '').toLowerCase().includes(searchQuery) || String(row.phone ?? '').includes(searchQuery))
+          && (!statusFilter || row.status === statusFilter)
+          && (!countryFilter || row.region === countryFilter)
+          && (!typeFilter || (typeFilter === 'salla' ? row.is_salla_store : !row.is_salla_store))
+          && (!qualityFilter || row.data_quality === qualityFilter)
+          && (!phoneFilter || (phoneFilter === 'has' ? Boolean(row.phone) : !row.phone));
+      });
+      exportRowsToExcel(rows.map(row => ({
+        'NO.': row.customer_number ?? '',
+        CODE: row.client_code,
+        LEAD: row.name,
+        PHONE: row.phone ?? '',
+        WEBSITE: row.website ?? '',
+        'WEBSITE STATUS': row.website_status === 'working' ? 'Working' : row.website_status === 'not_working' ? 'Not Working' : 'Not Checked',
+        QUANTITY: row.quantity ?? 0,
+        STATUS: row.status ?? '',
+        NOTES: row.notes ?? '',
+        DUE: row.callback_date ?? row.free_trial_end_date ?? '',
+      })), 'telesales-queue-export');
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Could not export leads.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const logCall = async () => {
@@ -381,6 +425,7 @@ export default function TelesalesDashboard({ userId }: Props) {
         <Select value={typeFilter} onChange={setTypeFilter} options={ROLE_TYPE_OPTIONS} className="w-36" />
         <Select value={qualityFilter} onChange={setQualityFilter} options={ROLE_QUALITY_OPTIONS} className="w-36" />
         <Select value={phoneFilter} onChange={setPhoneFilter} options={ROLE_PHONE_OPTIONS} className="w-36" />
+        <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? 'Exporting...' : 'Export Excel'}</Button>
       </div>
 
       <Card>

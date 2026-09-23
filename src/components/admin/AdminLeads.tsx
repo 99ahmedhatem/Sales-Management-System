@@ -7,6 +7,7 @@ import { createNotification } from '../../data/notifications';
 import { generateCode, Lead, LeadDataQuality, LeadStatus, User } from '../../data/mockData';
 import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Pagination, WebsiteLink } from '../ui';
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
+import { exportRowsToExcel } from '../shared/exportExcel';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
 const STATUS_OPTIONS = [
@@ -215,6 +216,7 @@ export default function AdminLeads() {
   const [totalLeads, setTotalLeads] = useState(0); // after filters
   const [allCount, setAllCount] = useState(0); // all leads in the database
   const [unassignedCount, setUnassignedCount] = useState(0);
+  const [exporting, setExporting] = useState(false);
   const requestId = useRef(0);
   const pageSize = 100;
 
@@ -408,6 +410,49 @@ export default function AdminLeads() {
       setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, websiteStatus: lead.websiteStatus, websiteStatusSource: lead.websiteStatusSource } : item));
       setErrorMsg(error.message);
       throw new Error(error.message);
+    }
+  };
+
+  const exportLeads = async () => {
+    setExporting(true);
+    setErrorMsg('');
+    try {
+      const managerIds = users.filter(user => user.role === 'manager').map(user => user.id);
+      let query = supabase.from('leads').select('*').order('created_at', { ascending: false }).order('id', { ascending: false });
+      const q = debouncedSearch.replace(/[%,()]/g, ' ').trim();
+      if (q) query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%,company.ilike.%${q}%`);
+      if (statusFilter) query = query.eq('status', statusFilter);
+      if (regionFilter) query = query.eq('region', regionFilter);
+      if (phoneFilter === 'missing') query = query.is('phone', null);
+      if (phoneFilter === 'has') query = query.not('phone', 'is', null);
+      if (typeFilter) query = query.eq('is_salla_store', typeFilter === 'salla');
+      if (qualityFilter) query = query.eq('data_quality', qualityFilter);
+      if (assignmentFilter === 'manager') query = managerIds.length ? query.in('assigned_to', managerIds) : query.eq('id', '00000000-0000-0000-0000-000000000000');
+      if (assignmentFilter === 'unassigned') query = query.is('assigned_to', null);
+      const data: any[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data: pageRows, error } = await query.range(from, from + 999);
+        if (error) throw error;
+        data.push(...(pageRows ?? []));
+        if (!pageRows || pageRows.length < 1000) break;
+      }
+      const assignedNames = new Map(users.map(user => [user.id, user.fullName]));
+      exportRowsToExcel((data ?? []).map(row => ({
+        CODE: row.client_code,
+        NAME: row.name,
+        PHONE: row.phone ?? '',
+        WEBSITE: row.website ?? '',
+        SALLA: row.is_salla_store ? 'Yes' : 'No',
+        QUALITY: row.data_quality ?? '',
+        STATUS: row.status ?? '',
+        'WEBSITE STATUS': row.website_status === 'working' ? 'Working' : row.website_status === 'not_working' ? 'Not Working' : 'Not Checked',
+        'ASSIGNED TO': row.assigned_to ? assignedNames.get(row.assigned_to) ?? '' : 'Unassigned',
+        UPDATED: row.updated_at ? String(row.updated_at).slice(0, 10) : '',
+      })), 'leads-export');
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Could not export leads.');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -618,6 +663,7 @@ export default function AdminLeads() {
         <Select value={qualityFilter} onChange={setQualityFilter} options={QUALITY_FILTER_OPTIONS} className="w-40" />
         <Select value={phoneFilter} onChange={setPhoneFilter} options={PHONE_FILTER_OPTIONS} className="w-36" />
         <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: '', label: 'All Assignments' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
+        <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? 'Exporting...' : 'Export Excel'}</Button>
         {selected.length > 0 && (
           <div className="flex gap-2">
             <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>Assign {selected.length} Selected</Button>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type MouseEvent } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../supabaseClient';
 import { addClientComment, loadClientComments } from '../../data/clientComments';
@@ -130,6 +130,8 @@ function mapLead(row: any): Lead {
     id: row.id,
     customerNumber: row.customer_number ?? undefined,
     website: row.website ?? undefined,
+    websiteStatus: row.website_status ?? undefined,
+    phoneSource: row.phone_source ?? undefined,
     quantity: row.quantity ?? 0,
     clientCode: row.client_code,
     name: row.name,
@@ -175,6 +177,7 @@ export default function AdminLeads() {
   const [phoneFilter, setPhoneFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [qualityFilter, setQualityFilter] = useState('');
+  const [assignmentFilter, setAssignmentFilter] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [detailLead, setDetailLead] = useState<LeadWithComments | null>(null);
   const [commentText, setCommentText] = useState('');
@@ -218,6 +221,10 @@ export default function AdminLeads() {
     if (!silent) setLoading(true);
     setErrorMsg('');
 
+    const { data: userRows, error: usersError } = await supabase.from('users').select('*');
+    const loadedUsers = (userRows ?? []).map(mapUser);
+    const managerIds = loadedUsers.filter(user => user.role === 'manager').map(user => user.id);
+
     let leadsQuery = supabase
       .from('leads')
       .select('*', { count: 'exact' })
@@ -233,10 +240,14 @@ export default function AdminLeads() {
     if (phoneFilter === 'has') leadsQuery = leadsQuery.not('phone', 'is', null);
     if (typeFilter) leadsQuery = leadsQuery.eq('is_salla_store', typeFilter === 'salla');
     if (qualityFilter) leadsQuery = leadsQuery.eq('data_quality', qualityFilter);
+    if (assignmentFilter === 'manager') {
+      if (managerIds.length) leadsQuery = leadsQuery.in('assigned_to', managerIds);
+      else leadsQuery = leadsQuery.eq('id', '00000000-0000-0000-0000-000000000000');
+    }
+    if (assignmentFilter === 'unassigned') leadsQuery = leadsQuery.is('assigned_to', null);
 
-    const [leadsRes, usersRes, allRes, unassignedRes] = await Promise.all([
+    const [leadsRes, allRes, unassignedRes] = await Promise.all([
       leadsQuery,
-      supabase.from('users').select('*'),
       supabase.from('leads').select('id', { count: 'exact', head: true }),
       supabase.from('leads').select('id', { count: 'exact', head: true }).is('assigned_to', null),
     ]);
@@ -249,8 +260,8 @@ export default function AdminLeads() {
       setTotalLeads(leadsRes.count ?? 0);
       setPage(nextPage);
     }
-    if (usersRes.error) setErrorMsg(usersRes.error.message);
-    else setUsers((usersRes.data ?? []).map(mapUser));
+    if (usersError) setErrorMsg(usersError.message);
+    else setUsers(loadedUsers);
     setAllCount(allRes.count ?? 0);
     setUnassignedCount(unassignedRes.count ?? 0);
     setLoading(false);
@@ -267,7 +278,7 @@ export default function AdminLeads() {
     setSelected([]);
     loadData(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter, qualityFilter]);
+  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter, qualityFilter, assignmentFilter]);
 
   useEffect(() => {
     if (!detailLead) return;
@@ -362,7 +373,7 @@ export default function AdminLeads() {
     const phone = cleanPhone(phoneDraft);
     const { error } = await supabase
       .from('leads')
-      .update({ phone: phone || null, updated_at: new Date().toISOString() })
+      .update({ phone: phone || null, phone_source: phone ? 'manual' : null, updated_at: new Date().toISOString() })
       .eq('id', detailLead.id);
     if (error) {
       setPhoneMsg(error.message);
@@ -372,6 +383,27 @@ export default function AdminLeads() {
     setDetailLead(prev => (prev ? { ...prev, phone } : null));
     setLeads(prev => prev.map(l => (l.id === detailLead.id ? { ...l, phone } : l)));
     setPhoneMsg('Saved');
+  };
+
+  const copyPhone = async (event: MouseEvent, phone: string) => {
+    event.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(phone);
+      setPhoneMsg(`Copied ${phone}`);
+      window.setTimeout(() => setPhoneMsg(''), 1600);
+    } catch {
+      setPhoneMsg('Could not copy phone number');
+    }
+  };
+
+  const toggleWebsiteStatus = async (lead: Lead) => {
+    const nextStatus = lead.websiteStatus === 'working' ? 'not_working' : 'working';
+    setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, websiteStatus: nextStatus } : item));
+    const { error } = await supabase.from('leads').update({ website_status: nextStatus, updated_at: new Date().toISOString() }).eq('id', lead.id);
+    if (error) {
+      setLeads(prev => prev.map(item => item.id === lead.id ? { ...item, websiteStatus: lead.websiteStatus } : item));
+      setErrorMsg(error.message);
+    }
   };
 
   const handleAddLead = async () => {
@@ -384,6 +416,7 @@ export default function AdminLeads() {
           client_code: generateCode('CLT'),
           name: newLead.name,
           phone: cleanPhone(newLead.phone) || null,
+          phone_source: cleanPhone(newLead.phone) ? 'manual' : null,
           company: newLead.company || null,
           website: newLead.website || null,
           website_key: normalizeWebsite(newLead.website || '') || null,
@@ -488,6 +521,7 @@ export default function AdminLeads() {
         client_code: generateCode('CLT'),
         name: row.name,
         phone: row.phone || null,
+        phone_source: row.phone ? 'manual' : null,
         company: row.company || null,
         region: row.region || null,
         source: row.source,
@@ -578,6 +612,7 @@ export default function AdminLeads() {
         <Select value={typeFilter} onChange={setTypeFilter} options={TYPE_FILTER_OPTIONS} className="w-36" />
         <Select value={qualityFilter} onChange={setQualityFilter} options={QUALITY_FILTER_OPTIONS} className="w-40" />
         <Select value={phoneFilter} onChange={setPhoneFilter} options={PHONE_FILTER_OPTIONS} className="w-36" />
+        <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: '', label: 'All Assignments' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
         {selected.length > 0 && (
           <div className="flex gap-2">
             <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>Assign {selected.length} Selected</Button>
@@ -589,7 +624,7 @@ export default function AdminLeads() {
       {/* Table */}
       <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : 'transition-opacity'}>
         <Card>
-          <Table headers={['', 'No.', 'Quantity', 'Code', 'Name', 'Phone', 'Company', 'Website', 'Country', 'Salla', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
+          <Table headers={['', 'Code', 'Name', 'Phone', 'Website', 'Website Status', 'Salla', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
             <tr className="border-b border-[#262626]">
               <td className="py-3 px-4">
                 <input
@@ -599,7 +634,7 @@ export default function AdminLeads() {
                   className="accent-[#dfff03]"
                 />
               </td>
-              <td colSpan={14} className="py-3 px-2 text-[#6b6b6b] text-xs">
+              <td colSpan={12} className="py-3 px-2 text-[#6b6b6b] text-xs">
                 {leads.length.toLocaleString()} shown of {totalLeads.toLocaleString()} records
               </td>
             </tr>
@@ -616,38 +651,26 @@ export default function AdminLeads() {
                       className="accent-[#dfff03]"
                     />
                   </Td>
-                  <Td>
-                    <div onDoubleClick={e => { e.stopPropagation(); setEditingCustomerNumberId(lead.id); setEditingCustomerNumber(String(lead.customerNumber ?? '')); }}>
-                      {editingCustomerNumberId === lead.id ? (
-                        <input
-                          autoFocus
-                          type="number"
-                          min="1"
-                          value={editingCustomerNumber}
-                          onChange={e => setEditingCustomerNumber(e.target.value)}
-                          onBlur={() => saveCustomerNumber(lead.id)}
-                          onKeyDown={e => { if (e.key === 'Enter') saveCustomerNumber(lead.id); if (e.key === 'Escape') setEditingCustomerNumberId(null); }}
-                          onClick={e => e.stopPropagation()}
-                          className="w-24 bg-[#1a1a1a] border border-[#dfff03] rounded px-2 py-1 text-xs text-white focus:outline-none"
-                        />
-                      ) : (
-                        <span className="font-mono text-xs text-[#a0a0a0] cursor-text">{lead.customerNumber ?? '—'}</span>
-                      )}
-                    </div>
-                  </Td>
-                  <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.quantity ?? 0}</span></Td>
                   <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
                   <Td><span className="font-medium text-white">{lead.name}</span></Td>
                   <Td>
                     {lead.phone ? (
-                      <span className="font-mono text-xs">{lead.phone}</span>
+                      <span className="inline-flex items-center gap-1 font-mono text-xs" onDoubleClick={e => copyPhone(e, lead.phone)}>
+                        {lead.phone}
+                        <button type="button" title="Copy phone" onClick={e => copyPhone(e, lead.phone)} className="text-[#6b6b6b] hover:text-[#dfff03]">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></svg>
+                        </button>
+                      </span>
                     ) : (
                       <span className="text-[#4a4a4a] text-xs">—</span>
                     )}
                   </Td>
-                  <Td><span className="text-[#a0a0a0]">{lead.company || '—'}</span></Td>
                   <Td><WebsiteLink url={lead.website} className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block" /></Td>
-                  <Td><span className="text-[#a0a0a0]">{lead.region || '—'}</span></Td>
+                  <Td>
+                    <button type="button" onClick={e => { e.stopPropagation(); toggleWebsiteStatus(lead); }} className={`px-2 py-1 rounded text-xs font-medium transition-colors ${lead.websiteStatus === 'working' ? 'bg-[#64dc78]/15 text-[#64dc78]' : lead.websiteStatus === 'not_working' ? 'bg-[#ff6464]/15 text-[#ff6464]' : 'bg-[#2a2a2a] text-[#6b6b6b]'}`}>
+                      {lead.websiteStatus === 'working' ? 'Working' : lead.websiteStatus === 'not_working' ? 'Not Working' : 'Not Checked'}
+                    </button>
+                  </Td>
                   <Td>
                     <span className={lead.isSallaStore ? 'text-[#dfff03] text-xs' : 'text-[#6b6b6b] text-xs'}>
                       {lead.isSallaStore ? 'Yes' : 'No'}

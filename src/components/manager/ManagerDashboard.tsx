@@ -184,7 +184,7 @@ export default function ManagerDashboard({ userId }: Props) {
 
   const savePhone = async (leadId: string) => {
     const phone = editingPhone.trim();
-    const { error } = await supabase.from('leads').update({ phone: phone || null, updated_at: new Date().toISOString() }).eq('id', leadId);
+    const { error } = await supabase.from('leads').update({ phone: phone || null, phone_source: phone ? 'manual' : null, updated_at: new Date().toISOString() }).eq('id', leadId);
     if (error) { setErrorMsg(error.message); return; }
     setAllLeads(prev => prev.map(lead => lead.id === leadId ? { ...lead, phone } : lead));
   };

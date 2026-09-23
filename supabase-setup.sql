@@ -145,6 +145,18 @@ alter table public.leads
   add column if not exists data_quality text not null default 'normal'
   check (data_quality in ('high', 'medium', 'normal'));
 
+alter table public.leads
+  add column if not exists website_status text
+  check (website_status in ('working', 'not_working'));
+
+alter table public.leads
+  add column if not exists phone_source text
+  check (phone_source in ('manual', 'website'));
+
+update public.leads
+set phone_source = 'manual'
+where phone is not null and phone_source is null;
+
 create table if not exists public.client_comments (
   id uuid primary key default gen_random_uuid(),
   lead_id uuid not null references public.leads(id) on delete cascade,

@@ -76,7 +76,7 @@ export default function SalesDashboard({ userId }: Props) {
 
   const saveCustomerPhone = async () => {
     const phone = customerPhoneInput.trim();
-    const { error } = await supabase.from('leads').update({ phone: phone || null, updated_at: new Date().toISOString() }).eq('id', detail?.leadId);
+    const { error } = await supabase.from('leads').update({ phone: phone || null, phone_source: phone ? 'manual' : null, updated_at: new Date().toISOString() }).eq('id', detail?.leadId);
     if (!error) setCustomerPhone(phone);
   };
 

@@ -46,6 +46,8 @@ export interface Lead {
   id: string;
   customerNumber?: number;
   website?: string;
+  websiteStatus?: 'working' | 'not_working';
+  phoneSource?: 'manual' | 'website';
   quantity?: number;
   clientCode: string;
   name: string;

@@ -102,8 +102,24 @@ async function main() {
   while (true) {
     let query = supabase.from('leads').select('id, website, phone, website_status_source').not('website', 'is', null).neq('website', '').order('id', { ascending: true }).limit(pageSize);
     if (lastId) query = query.gt('id', lastId);
-    const { data: leads, error } = await query;
-    if (error) throw error;
+    let leads;
+    {
+      let lastErr;
+      for (let attempt = 0; attempt <= 3; attempt++) {
+        try {
+          const result = await query;
+          if (result.error) throw result.error;
+          leads = result.data;
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          console.error(`Batch fetch failed (attempt ${attempt + 1}/4): ${err?.message || err}`);
+          if (attempt < 3) await sleep(1000 * (attempt + 1));
+        }
+      }
+      if (lastErr) throw lastErr;
+    }
     if (!leads?.length) break;
     let cursor = 0;
     const worker = async () => {

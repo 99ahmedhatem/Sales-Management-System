@@ -13,6 +13,7 @@ const concurrency = 6;
 const delayBetweenBatchesMs = 750;
 const timeoutMs = 10_000;
 const force = process.argv.includes('--force');
+const fromStart = process.argv.includes('--from-start');
 const userAgent = 'SalesManagementSystemWebsiteChecker/1.0';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -66,9 +67,7 @@ async function checkWebsite(website) {
   const homepage = websiteUrl(website);
   let url;
   try { url = new URL(homepage); } catch { return { status: 'not_working', phone: null }; }
-  const head = await fetchPage(homepage, 'HEAD');
-  let homepageResult = head;
-  if (!head.response || [405, 501].includes(head.response.status)) homepageResult = await fetchPage(homepage, 'GET');
+  const homepageResult = await fetchPage(homepage, 'GET');
   const status = homepageResult.response && homepageResult.response.status >= 200 && homepageResult.response.status < 400 ? 'working' : 'not_working';
   let phone = extractPhones(homepageResult.html)[0] || null;
   if (!phone) {
@@ -82,10 +81,10 @@ async function checkWebsite(website) {
 }
 
 async function main() {
-  const checkpoint = await readCheckpoint();
-  const stats = { processed: 0, found: 0, unreachable: 0, noNumber: 0, checked: 0, working: 0, not_working: 0, skippedManual: 0 };
+  const checkpoint = fromStart ? {} : await readCheckpoint();
+  const stats = { processed: 0, found: 0, unreachable: 0, noNumber: 0, checked: 0, working: 0, not_working: 0, preservedManualStatus: 0 };
   let lastId = checkpoint.lastId;
-  console.log(`Starting website checks${force ? ' with --force' : ''}${lastId ? ` after checkpoint ${lastId}` : ''}.`);
+  console.log(`Starting website checks${fromStart ? ' from the beginning' : lastId ? ` after checkpoint ${lastId}` : ''}${force ? ' with --force' : ''}.`);
   while (true) {
     let query = supabase.from('leads').select('id, website, phone, website_status_source').not('website', 'is', null).neq('website', '').order('id', { ascending: true }).limit(pageSize);
     if (lastId) query = query.gt('id', lastId);
@@ -98,9 +97,14 @@ async function main() {
         const index = cursor++;
         if (index >= leads.length) return;
         const lead = leads[index];
-        if (!force && lead.website_status_source === 'manual') { stats.skippedManual += 1; continue; }
         const result = await checkWebsite(lead.website);
-        const update = { website_status: result.status, website_status_source: 'auto_checked', updated_at: new Date().toISOString() };
+        const update = { updated_at: new Date().toISOString() };
+        if (force || lead.website_status_source !== 'manual') {
+          update.website_status = result.status;
+          update.website_status_source = 'auto_checked';
+        } else {
+          stats.preservedManualStatus += 1;
+        }
         if (!lead.phone && result.phone) { update.phone = result.phone; update.phone_source = 'website'; stats.found += 1; }
         const saved = await supabase.from('leads').update(update).eq('id', lead.id);
         if (saved.error) throw saved.error;
@@ -114,10 +118,10 @@ async function main() {
     await Promise.all(Array.from({ length: Math.min(concurrency, leads.length) }, worker));
     lastId = leads[leads.length - 1].id;
     await writeCheckpoint(lastId, stats);
-    console.log(`${stats.processed} processed, ${stats.checked} checked, ${stats.working} working, ${stats.not_working} not_working, ${stats.found} numbers found, ${stats.skippedManual} skipped manually set.`);
+    console.log(`${stats.processed} processed, ${stats.checked} checked, ${stats.working} working, ${stats.not_working} not_working, ${stats.found} numbers found, ${stats.preservedManualStatus} manual statuses preserved.`);
     if (leads.length === pageSize) await sleep(delayBetweenBatchesMs);
   }
-  console.log(`Finished. Total checked: ${stats.checked}; working: ${stats.working}; not_working: ${stats.not_working}; skipped-because-manually-set: ${stats.skippedManual}; numbers found: ${stats.found}; no number found: ${stats.noNumber}.`);
+  console.log(`Finished. Total checked: ${stats.checked}; working: ${stats.working}; not_working: ${stats.not_working}; manual statuses preserved: ${stats.preservedManualStatus}; numbers found: ${stats.found}; no number found: ${stats.noNumber}.`);
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

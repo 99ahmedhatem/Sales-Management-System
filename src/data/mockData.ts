@@ -48,7 +48,7 @@ export interface Lead {
   website?: string;
   websiteStatus?: 'working' | 'not_working';
   websiteStatusSource?: 'manual' | 'auto_checked';
-  phoneSource?: 'manual' | 'website';
+  phoneSource?: 'manual' | 'website' | 'auto_scraped';
   quantity?: number;
   clientCode: string;
   name: string;

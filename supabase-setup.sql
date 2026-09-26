@@ -157,6 +157,13 @@ alter table public.leads
   add column if not exists phone_source text
   check (phone_source in ('manual', 'website'));
 
+alter table public.leads
+  drop constraint if exists leads_phone_source_check;
+
+alter table public.leads
+  add constraint leads_phone_source_check
+  check (phone_source in ('manual', 'website', 'auto_scraped'));
+
 update public.leads
 set phone_source = 'manual'
 where phone is not null and phone_source is null;

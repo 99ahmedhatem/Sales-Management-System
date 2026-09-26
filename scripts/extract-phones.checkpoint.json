@@ -1,0 +1,12 @@
+{
+  "lastId": "c14cda8d-43df-49ee-bdf7-c3b2a094c33b",
+  "processed": 23000,
+  "found": 4377,
+  "unreachable": 14058,
+  "noNumber": 15037,
+  "checked": 23000,
+  "working": 8942,
+  "not_working": 14058,
+  "preservedManualStatus": 0,
+  "errors": 0
+}

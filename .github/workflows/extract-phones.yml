@@ -6,7 +6,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: extract-phones-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   extract-phones:
@@ -22,7 +26,21 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run extract:phones -- --from-start
+      - run: pnpm run extract:phones
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      - name: Save checkpoint
+        if: always()
+        run: |
+          if [ ! -f scripts/extract-phones.checkpoint.json ]; then
+            echo "No checkpoint file to save."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f scripts/extract-phones.checkpoint.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(scraper): update extraction checkpoint"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi

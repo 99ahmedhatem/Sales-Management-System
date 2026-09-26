@@ -105,7 +105,7 @@ async function main() {
         } else {
           stats.preservedManualStatus += 1;
         }
-        if (!lead.phone && result.phone) { update.phone = result.phone; update.phone_source = 'website'; stats.found += 1; }
+        if (!lead.phone && result.phone) { update.phone = result.phone; update.phone_source = 'auto_scraped'; stats.found += 1; }
         const saved = await supabase.from('leads').update(update).eq('id', lead.id);
         if (saved.error) throw saved.error;
         stats.checked += 1;

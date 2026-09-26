@@ -80,9 +80,23 @@ async function checkWebsite(website) {
   return { status, phone };
 }
 
+// إعادة محاولة لعملية الحفظ في Supabase لو فشلت بسبب مشكلة شبكة مؤقتة
+async function updateLeadWithRetry(lead, update, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const saved = await supabase.from('leads').update(update).eq('id', lead.id);
+      if (saved.error) throw saved.error;
+      return;
+    } catch (err) {
+      if (attempt === retries) throw err;
+      await sleep(500 * (attempt + 1));
+    }
+  }
+}
+
 async function main() {
   const checkpoint = fromStart ? {} : await readCheckpoint();
-  const stats = { processed: 0, found: 0, unreachable: 0, noNumber: 0, checked: 0, working: 0, not_working: 0, preservedManualStatus: 0 };
+  const stats = { processed: 0, found: 0, unreachable: 0, noNumber: 0, checked: 0, working: 0, not_working: 0, preservedManualStatus: 0, errors: 0 };
   let lastId = checkpoint.lastId;
   console.log(`Starting website checks${fromStart ? ' from the beginning' : lastId ? ` after checkpoint ${lastId}` : ''}${force ? ' with --force' : ''}.`);
   while (true) {
@@ -97,31 +111,39 @@ async function main() {
         const index = cursor++;
         if (index >= leads.length) return;
         const lead = leads[index];
-        const result = await checkWebsite(lead.website);
-        const update = { updated_at: new Date().toISOString() };
-        if (force || lead.website_status_source !== 'manual') {
-          update.website_status = result.status;
-          update.website_status_source = 'auto_checked';
-        } else {
-          stats.preservedManualStatus += 1;
+        try {
+          const result = await checkWebsite(lead.website);
+          const update = { updated_at: new Date().toISOString() };
+          if (force || lead.website_status_source !== 'manual') {
+            update.website_status = result.status;
+            update.website_status_source = 'auto_checked';
+          } else {
+            stats.preservedManualStatus += 1;
+          }
+          if (!lead.phone && result.phone) { update.phone = result.phone; update.phone_source = 'auto_scraped'; stats.found += 1; }
+          await updateLeadWithRetry(lead, update);
+          stats.checked += 1;
+          stats.processed += 1;
+          stats[result.status] += 1;
+          if (result.status === 'not_working') stats.unreachable += 1;
+          if (!result.phone) stats.noNumber += 1;
+        } catch (err) {
+          stats.errors += 1;
+          stats.processed += 1;
+          console.error(`Skipping lead ${lead.id} (${lead.website}): ${err?.message || err}`);
         }
-        if (!lead.phone && result.phone) { update.phone = result.phone; update.phone_source = 'auto_scraped'; stats.found += 1; }
-        const saved = await supabase.from('leads').update(update).eq('id', lead.id);
-        if (saved.error) throw saved.error;
-        stats.checked += 1;
-        stats.processed += 1;
-        stats[result.status] += 1;
-        if (result.status === 'not_working') stats.unreachable += 1;
-        if (!result.phone) stats.noNumber += 1;
       }
     };
     await Promise.all(Array.from({ length: Math.min(concurrency, leads.length) }, worker));
     lastId = leads[leads.length - 1].id;
     await writeCheckpoint(lastId, stats);
-    console.log(`${stats.processed} processed, ${stats.checked} checked, ${stats.working} working, ${stats.not_working} not_working, ${stats.found} numbers found, ${stats.preservedManualStatus} manual statuses preserved.`);
+    console.log(`${stats.processed} processed, ${stats.checked} checked, ${stats.working} working, ${stats.not_working} not_working, ${stats.found} numbers found, ${stats.preservedManualStatus} manual statuses preserved, ${stats.errors} errors.`);
     if (leads.length === pageSize) await sleep(delayBetweenBatchesMs);
   }
-  console.log(`Finished. Total checked: ${stats.checked}; working: ${stats.working}; not_working: ${stats.not_working}; manual statuses preserved: ${stats.preservedManualStatus}; numbers found: ${stats.found}; no number found: ${stats.noNumber}.`);
+  console.log(`Finished. Total checked: ${stats.checked}; working: ${stats.working}; not_working: ${stats.not_working}; manual statuses preserved: ${stats.preservedManualStatus}; numbers found: ${stats.found}; no number found: ${stats.noNumber}; errors: ${stats.errors}.`);
 }
 
-main().catch(error => { console.error(error); process.exitCode = 1; });
+main().catch(error => {
+  console.error('Website check failed:', error);
+  process.exitCode = 1;
+});

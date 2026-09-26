@@ -1,21 +1,15 @@
-name: Extract website phone numbers
+name: extract-phones
 
 on:
-  schedule:
-    - cron: '17 2 * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
 
-concurrency:
-  group: extract-phones-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   extract-phones:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -37,10 +31,10 @@ jobs:
             echo "No checkpoint file to save."
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.email "actions@github.com"
+          git config --global user.name "github-actions"
           git add -f scripts/extract-phones.checkpoint.json
           if ! git diff --cached --quiet; then
-            git commit -m "chore(scraper): update extraction checkpoint"
+            git commit -m "chore: update scraper checkpoint [skip ci]"
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi

@@ -80,46 +80,45 @@ async function checkWebsite(website) {
   return { status, phone };
 }
 
-// إعادة محاولة لعملية الحفظ في Supabase لو فشلت بسبب مشكلة شبكة مؤقتة
-async function updateLeadWithRetry(lead, update, retries = 2) {
+// إعادة محاولة عامة لأي عملية شبكة (قراءة أو كتابة) — بتحاول 5 مرات قبل ما تستسلم
+async function withRetry(label, fn, retries = 5) {
+  let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const saved = await supabase.from('leads').update(update).eq('id', lead.id);
-      if (saved.error) throw saved.error;
-      return;
+      return await fn();
     } catch (err) {
-      if (attempt === retries) throw err;
-      await sleep(500 * (attempt + 1));
+      lastErr = err;
+      console.error(`${label} failed (attempt ${attempt + 1}/${retries + 1}): ${err?.message || err}`);
+      await sleep(Math.min(2000 * (attempt + 1), 15000));
     }
   }
+  throw lastErr;
 }
 
-async function main() {
+async function fetchBatch(lastId) {
+  return withRetry('Batch fetch', async () => {
+    let query = supabase.from('leads').select('id, website, phone, website_status_source').not('website', 'is', null).neq('website', '').order('id', { ascending: true }).limit(pageSize);
+    if (lastId) query = query.gt('id', lastId);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data;
+  });
+}
+
+async function saveLead(lead, update) {
+  return withRetry(`Save lead ${lead.id}`, async () => {
+    const { error } = await supabase.from('leads').update(update).eq('id', lead.id);
+    if (error) throw error;
+  });
+}
+
+async function runOnce() {
   const checkpoint = fromStart ? {} : await readCheckpoint();
   const stats = { processed: 0, found: 0, unreachable: 0, noNumber: 0, checked: 0, working: 0, not_working: 0, preservedManualStatus: 0, errors: 0 };
   let lastId = checkpoint.lastId;
   console.log(`Starting website checks${fromStart ? ' from the beginning' : lastId ? ` after checkpoint ${lastId}` : ''}${force ? ' with --force' : ''}.`);
   while (true) {
-    let query = supabase.from('leads').select('id, website, phone, website_status_source').not('website', 'is', null).neq('website', '').order('id', { ascending: true }).limit(pageSize);
-    if (lastId) query = query.gt('id', lastId);
-    let leads;
-    {
-      let lastErr;
-      for (let attempt = 0; attempt <= 3; attempt++) {
-        try {
-          const result = await query;
-          if (result.error) throw result.error;
-          leads = result.data;
-          lastErr = null;
-          break;
-        } catch (err) {
-          lastErr = err;
-          console.error(`Batch fetch failed (attempt ${attempt + 1}/4): ${err?.message || err}`);
-          if (attempt < 3) await sleep(1000 * (attempt + 1));
-        }
-      }
-      if (lastErr) throw lastErr;
-    }
+    const leads = await fetchBatch(lastId);
     if (!leads?.length) break;
     let cursor = 0;
     const worker = async () => {
@@ -137,7 +136,7 @@ async function main() {
             stats.preservedManualStatus += 1;
           }
           if (!lead.phone && result.phone) { update.phone = result.phone; update.phone_source = 'auto_scraped'; stats.found += 1; }
-          await updateLeadWithRetry(lead, update);
+          await saveLead(lead, update);
           stats.checked += 1;
           stats.processed += 1;
           stats[result.status] += 1;
@@ -146,7 +145,7 @@ async function main() {
         } catch (err) {
           stats.errors += 1;
           stats.processed += 1;
-          console.error(`Skipping lead ${lead.id} (${lead.website}): ${err?.message || err}`);
+          console.error(`Skipping lead ${lead.id} (${lead.website}) after retries: ${err?.message || err}`);
         }
       }
     };
@@ -159,7 +158,7 @@ async function main() {
   console.log(`Finished. Total checked: ${stats.checked}; working: ${stats.working}; not_working: ${stats.not_working}; manual statuses preserved: ${stats.preservedManualStatus}; numbers found: ${stats.found}; no number found: ${stats.noNumber}; errors: ${stats.errors}.`);
 }
 
-main().catch(error => {
+runOnce().catch(error => {
   console.error('Website check failed:', error);
   process.exitCode = 1;
 });

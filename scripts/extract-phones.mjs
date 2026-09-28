@@ -12,8 +12,10 @@ const pageSize = 500;
 const concurrency = 6;
 const delayBetweenBatchesMs = 750;
 const timeoutMs = 10_000;
+const repairTimeoutMs = 6_000;
 const force = process.argv.includes('--force');
 const fromStart = process.argv.includes('--from-start');
+const repairOnly = process.argv.includes('--repair-only');
 const userAgent = 'SalesManagementSystemWebsiteChecker/1.0';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -45,9 +47,9 @@ function extractPhones(html) {
   return phones;
 }
 
-async function fetchPage(url, method = 'GET') {
+async function fetchPage(url, method = 'GET', limit = timeoutMs) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(() => controller.abort(), limit);
   try {
     const response = await fetch(url, { method, headers: { 'user-agent': userAgent, accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8' }, redirect: 'follow', signal: controller.signal });
     return { response, html: method === 'GET' && response.ok ? await response.text() : '' };
@@ -63,12 +65,44 @@ function websiteUrl(value) {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
-async function checkWebsite(website) {
+const isWorking = response => Boolean(response && response.status >= 200 && response.status < 400);
+
+function repairCandidates(raw, homepage) {
+  const cleaned = String(raw)
+    .replace(/[\s\u200b-\u200f\u202a-\u202e\ufeff]+/g, '')
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .replace(/^(?:https?[^\p{L}\p{N}]+)+/iu, '');
+  const match = cleaned.match(/^((?:[\p{L}\p{N}][\p{L}\p{N}-]*\.)+\p{L}{2,})/u);
+  if (!match) return [];
+  const host = match[1].toLowerCase();
+  const alt = host.startsWith('www.') ? host.slice(4) : `www.${host}`;
+  let tested;
+  try { tested = new URL(homepage).href; } catch { tested = homepage; }
+  const list = [`https://${host}/`, `https://${alt}/`, `http://${host}/`];
+  return [...new Set(list)].filter(candidate => candidate !== tested).slice(0, 3);
+}
+
+async function checkWebsite(website, canRepair = false) {
   const homepage = websiteUrl(website);
   let url;
-  try { url = new URL(homepage); } catch { return { status: 'not_working', phone: null }; }
-  const homepageResult = await fetchPage(homepage, 'GET');
-  const status = homepageResult.response && homepageResult.response.status >= 200 && homepageResult.response.status < 400 ? 'working' : 'not_working';
+  try { url = new URL(homepage); } catch { url = null; }
+  let homepageResult = url ? await fetchPage(homepage, 'GET') : { response: null, html: '' };
+  let working = isWorking(homepageResult.response);
+  let fixedWebsite = null;
+  if (!working && canRepair) {
+    for (const candidate of repairCandidates(website, homepage)) {
+      const result = await fetchPage(candidate, 'GET', repairTimeoutMs);
+      if (isWorking(result.response)) {
+        homepageResult = result;
+        url = new URL(candidate);
+        working = true;
+        fixedWebsite = candidate;
+        break;
+      }
+    }
+  }
+  if (!url) return { status: 'not_working', phone: null, fixedWebsite: null };
+  const status = working ? 'working' : 'not_working';
   let phone = extractPhones(homepageResult.html)[0] || null;
   if (!phone) {
     for (const path of ['/contact', '/contact-us']) {
@@ -77,7 +111,7 @@ async function checkWebsite(website) {
       if (phone) break;
     }
   }
-  return { status, phone };
+  return { status, phone, fixedWebsite };
 }
 
 // إعادة محاولة عامة لأي عملية شبكة (قراءة أو كتابة) — بتحاول 5 مرات قبل ما تستسلم
@@ -88,6 +122,7 @@ async function withRetry(label, fn, retries = 5) {
       return await fn();
     } catch (err) {
       lastErr = err;
+      if (err?.code === '23505' || err?.code === '23514') throw err;
       console.error(`${label} failed (attempt ${attempt + 1}/${retries + 1}): ${err?.message || err}`);
       await sleep(Math.min(2000 * (attempt + 1), 15000));
     }
@@ -99,6 +134,7 @@ async function fetchBatch(lastId) {
   return withRetry('Batch fetch', async () => {
     let query = supabase.from('leads').select('id, website, phone, website_status_source').not('website', 'is', null).neq('website', '').order('id', { ascending: true }).limit(pageSize);
     if (lastId) query = query.gt('id', lastId);
+    if (repairOnly) query = query.eq('website_status', 'not_working');
     const { data, error } = await query;
     if (error) throw error;
     return data;
@@ -114,9 +150,9 @@ async function saveLead(lead, update) {
 
 async function runOnce() {
   const checkpoint = fromStart ? {} : await readCheckpoint();
-  const stats = { processed: 0, found: 0, unreachable: 0, noNumber: 0, checked: 0, working: 0, not_working: 0, preservedManualStatus: 0, errors: 0 };
+  const stats = { processed: 0, found: 0, unreachable: 0, noNumber: 0, checked: 0, working: 0, not_working: 0, preservedManualStatus: 0, repaired: 0, errors: 0 };
   let lastId = checkpoint.lastId;
-  console.log(`Starting website checks${fromStart ? ' from the beginning' : lastId ? ` after checkpoint ${lastId}` : ''}${force ? ' with --force' : ''}.`);
+  console.log(`Starting website checks${fromStart ? ' from the beginning' : lastId ? ` after checkpoint ${lastId}` : ''}${force ? ' with --force' : ''}${repairOnly ? ' (repair only)' : ''}.`);
   while (true) {
     const leads = await fetchBatch(lastId);
     if (!leads?.length) break;
@@ -127,7 +163,7 @@ async function runOnce() {
         if (index >= leads.length) return;
         const lead = leads[index];
         try {
-          const result = await checkWebsite(lead.website);
+          const result = await checkWebsite(lead.website, force || lead.website_status_source !== 'manual');
           const update = { updated_at: new Date().toISOString() };
           if (force || lead.website_status_source !== 'manual') {
             update.website_status = result.status;
@@ -135,8 +171,21 @@ async function runOnce() {
           } else {
             stats.preservedManualStatus += 1;
           }
+          if (result.fixedWebsite) { update.website = result.fixedWebsite; stats.repaired += 1; }
           if (!lead.phone && result.phone) { update.phone = result.phone; update.phone_source = 'auto_scraped'; stats.found += 1; }
-          await saveLead(lead, update);
+          try {
+            await saveLead(lead, update);
+          } catch (err) {
+            if (update.website && err?.code === '23505') {
+              delete update.website;
+              update.website_status = 'not_working';
+              result.status = 'not_working';
+              stats.repaired -= 1;
+              await saveLead(lead, update);
+            } else {
+              throw err;
+            }
+          }
           stats.checked += 1;
           stats.processed += 1;
           stats[result.status] += 1;
@@ -152,10 +201,10 @@ async function runOnce() {
     await Promise.all(Array.from({ length: Math.min(concurrency, leads.length) }, worker));
     lastId = leads[leads.length - 1].id;
     await writeCheckpoint(lastId, stats);
-    console.log(`${stats.processed} processed, ${stats.checked} checked, ${stats.working} working, ${stats.not_working} not_working, ${stats.found} numbers found, ${stats.preservedManualStatus} manual statuses preserved, ${stats.errors} errors.`);
+    console.log(`${stats.processed} processed, ${stats.checked} checked, ${stats.working} working, ${stats.not_working} not_working, ${stats.repaired} repaired, ${stats.found} numbers found, ${stats.preservedManualStatus} manual statuses preserved, ${stats.errors} errors.`);
     if (leads.length === pageSize) await sleep(delayBetweenBatchesMs);
   }
-  console.log(`Finished. Total checked: ${stats.checked}; working: ${stats.working}; not_working: ${stats.not_working}; manual statuses preserved: ${stats.preservedManualStatus}; numbers found: ${stats.found}; no number found: ${stats.noNumber}; errors: ${stats.errors}.`);
+  console.log(`Finished. Total checked: ${stats.checked}; working: ${stats.working}; not_working: ${stats.not_working}; repaired: ${stats.repaired}; manual statuses preserved: ${stats.preservedManualStatus}; numbers found: ${stats.found}; no number found: ${stats.noNumber}; errors: ${stats.errors}.`);
 }
 
 runOnce().catch(error => {

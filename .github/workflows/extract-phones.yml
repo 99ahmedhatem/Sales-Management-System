@@ -7,6 +7,10 @@ on:
         description: 'Start from the first website (true) or resume from checkpoint (false)'
         type: boolean
         default: true
+      repair_only:
+        description: 'Only re-check and repair websites currently marked not_working'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -30,12 +34,12 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           FROM_START: ${{ inputs.from_start }}
+          REPAIR_ONLY: ${{ inputs.repair_only }}
         run: |
-          if [ "$FROM_START" = "true" ]; then
-            pnpm run extract:phones -- --from-start
-          else
-            pnpm run extract:phones
-          fi
+          ARGS=""
+          if [ "$FROM_START" = "true" ] || [ "$REPAIR_ONLY" = "true" ]; then ARGS="$ARGS --from-start"; fi
+          if [ "$REPAIR_ONLY" = "true" ]; then ARGS="$ARGS --repair-only"; fi
+          pnpm run extract:phones -- $ARGS
       - name: Save checkpoint
         if: always()
         run: |

@@ -1,12 +1,12 @@
 {
-  "lastId": "c14cda8d-43df-49ee-bdf7-c3b2a094c33b",
-  "processed": 23000,
-  "found": 4377,
-  "unreachable": 14058,
-  "noNumber": 15037,
-  "checked": 23000,
-  "working": 8942,
-  "not_working": 14058,
+  "lastId": "ffffa0ea-e82e-4ca5-a982-08472c722636",
+  "processed": 7698,
+  "found": 2463,
+  "unreachable": 4462,
+  "noNumber": 4731,
+  "checked": 7698,
+  "working": 3236,
+  "not_working": 4462,
   "preservedManualStatus": 0,
   "errors": 0
 }

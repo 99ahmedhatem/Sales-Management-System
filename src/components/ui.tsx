@@ -44,6 +44,12 @@ export function StatusBadge({ status }: { status: string }) {
     'No-Show': 'meeting-noshow',
     'active': 'status-interested',
     'inactive': 'status-not-interested',
+    'Draft': 'status-assigned',
+    'Contract Uploaded': 'status-callback',
+    'Pending Approval': 'status-callback',
+    'Approved': 'status-interested',
+    'Active': 'status-interested',
+    'Cancelled': 'status-not-interested',
   };
   return <Badge className={map[status] || 'status-no-answer'}>{status}</Badge>;
 }

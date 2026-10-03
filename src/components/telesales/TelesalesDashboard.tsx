@@ -35,6 +35,8 @@ import {
   WebsiteStatusToggle,
 } from "../shared/LeadRowControls"
 
+import DealCreateModal from "../shared/DealCreateModal"
+
 import { exportRowsToExcel } from "../shared/exportExcel"
 
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
@@ -325,6 +327,8 @@ export default function TelesalesDashboard({ userId }: Props) {
   const [commentModal, setCommentModal] = useState<Lead | null>(null)
 
   const [detailModal, setDetailModal] = useState<Lead | null>(null)
+
+  const [dealLeadId, setDealLeadId] = useState<string | null>(null)
 
   const [editingCustomerNumberId, setEditingCustomerNumberId] =
     useState<string | null>(null)
@@ -1194,6 +1198,15 @@ export default function TelesalesDashboard({ userId }: Props) {
                       </Button>
                     )
                   )}
+                  {["Interested", "Free Trial"].includes(lead.status) && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setDealLeadId(lead.id)}
+                    >
+                      Close deal myself
+                    </Button>
+                  )}
                 </div>
               </Td>
             </Tr>
@@ -1515,6 +1528,12 @@ export default function TelesalesDashboard({ userId }: Props) {
           </div>
         )}
       </Modal>
+      <DealCreateModal
+        open={Boolean(dealLeadId)}
+        onClose={() => setDealLeadId(null)}
+        onCreated={() => setRefreshVersion((version) => version + 1)}
+        initialLeadId={dealLeadId ?? undefined}
+      />
     </div>
   )
 }

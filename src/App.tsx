@@ -42,6 +42,10 @@ const AdminPackages = lazy(() => import("./components/admin/AdminPackages"))
 
 const PackagesList = lazy(() => import("./components/shared/PackagesList"))
 
+const MeetingRequestsManagement = lazy(
+  () => import("./components/shared/MeetingRequestsManagement"),
+)
+
 interface AppSession {
   role: Role
 
@@ -142,7 +146,9 @@ export default function App() {
           {session.role === "admin" && page === "leads" && <AdminLeads />}
           {session.role === "admin" && page === "activity" && <AdminActivity />}
           {session.role === "admin" && page === "users" && <AdminUsers />}
-          {session.role === "admin" && page === "meetings" && <AdminMeetings />}
+          {session.role === "admin" && page === "meetings" && (
+            <AdminMeetings userId={session.userId} />
+          )}
           {session.role === "admin" && page === "reports" && <AdminReports />}
           {session.role === "admin" && page === "contracts" && (
             <ContractsModule userId={session.userId} role="admin" />
@@ -150,6 +156,9 @@ export default function App() {
           {session.role === "admin" && page === "packages" && <AdminPackages />}
           {session.role === "manager" && page === "dashboard" && (
             <ManagerDashboard userId={session.userId} />
+          )}
+          {session.role === "manager" && page === "meetings" && (
+            <MeetingRequestsManagement role="manager" userId={session.userId} />
           )}
           {session.role === "manager" && page === "contracts" && (
             <ContractsModule userId={session.userId} role="manager" />

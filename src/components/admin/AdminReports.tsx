@@ -1,169 +1,538 @@
-import { LEADS, MEETINGS, USERS, CALL_LOGS } from '../../data/mockData';
-import { Card, KpiCard } from '../ui';
+import { useEffect, useState } from "react"
+
+import { supabase } from "../../supabaseClient"
+
+import { LeadStatus, User } from "../../data/crmTypes"
+
+import { Card, KpiCard } from "../ui"
+
+interface LeadReportRow {
+  id: string
+
+  assigned_to: string | null
+
+  status: LeadStatus
+
+  source: string | null
+}
+
+interface MeetingReportRow {
+  id: string
+
+  assigned_sales_id: string
+
+  outcome: string
+}
+
+interface CallReportRow {
+  id: string
+
+  actor_id: string
+}
+
+interface CallReport {
+  id: string
+
+  actorId: string
+}
+
+interface ReportData {
+  leads: LeadReport[]
+
+  meetings: MeetingReport[]
+
+  calls: CallReport[]
+
+  users: Pick<User, "id" | "fullName" | "role">[]
+}
+
+interface LeadReport {
+  id: string
+
+  assignedTo: string | null
+
+  status: LeadStatus
+
+  source: string | null
+}
+
+interface MeetingReport {
+  id: string
+
+  assignedSalesId: string
+
+  outcome: string
+}
+
+const EMPTY_REPORT: ReportData = {
+  leads: [],
+  meetings: [],
+  calls: [],
+  users: [],
+}
+
+const PAGE_SIZE = 1000
+
+function mapLeadReport(row: LeadReportRow): LeadReport {
+  return {
+    id: row.id,
+    assignedTo: row.assigned_to,
+    status: row.status,
+    source: row.source,
+  }
+}
+
+function mapMeetingReport(row: MeetingReportRow): MeetingReport {
+  return {
+    id: row.id,
+    assignedSalesId: row.assigned_sales_id,
+    outcome: row.outcome,
+  }
+}
+
+function mapCallReport(row: CallReportRow): CallReport {
+  return { id: row.id, actorId: row.actor_id }
+}
+
+function mapReportUser(row: {
+  id: string
+  full_name: string
+  role: User["role"]
+}): Pick<User, "id" | "fullName" | "role"> {
+  return { id: row.id, fullName: row.full_name, role: row.role }
+}
+
+async function loadAllPages<T>(
+  readPage: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const rows: T[] = []
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await readPage(from, from + PAGE_SIZE - 1)
+
+    if (error) throw new Error(error.message)
+
+    rows.push(...(data ?? []))
+
+    if (!data || data.length < PAGE_SIZE) break
+  }
+
+  return rows
+}
 
 export default function AdminReports() {
-  const totalLeads = LEADS.length;
-  const convertedLeads = LEADS.filter(l => l.status === 'Converted').length;
-  const conversionRate = totalLeads > 0 ? ((convertedLeads / totalLeads) * 100).toFixed(1) : '0.0';
-  const wonDeals = MEETINGS.filter(m => m.outcome === 'Deal Closed – Won').length;
-  const lostDeals = MEETINGS.filter(m => m.outcome === 'Deal Lost').length;
+  const [report, setReport] = useState(EMPTY_REPORT)
 
-  const telesalesUsers = USERS.filter(u => u.role === 'telesales');
-  const salesUsers = USERS.filter(u => u.role === 'sales');
+  const [loading, setLoading] = useState(true)
 
-  const agentStats = telesalesUsers.map(agent => {
-    const myLeads = LEADS.filter(l => l.assignedTo === agent.id);
-    const converted = myLeads.filter(l => l.status === 'Converted').length;
-    const callsMade = CALL_LOGS.filter(c => c.agentId === agent.id).length;
-    const convRate = myLeads.length > 0 ? ((converted / myLeads.length) * 100).toFixed(1) : '0';
-    return { agent, total: myLeads.length, converted, callsMade, convRate };
-  });
+  const [error, setError] = useState("")
 
-  const salesStats = salesUsers.map(agent => {
-    const myMeetings = MEETINGS.filter(m => m.assignedSalesId === agent.id);
-    const won = myMeetings.filter(m => m.outcome === 'Deal Closed – Won').length;
-    const lost = myMeetings.filter(m => m.outcome === 'Deal Lost').length;
-    const winRate = myMeetings.length > 0 ? ((won / myMeetings.length) * 100).toFixed(1) : '0';
-    return { agent, total: myMeetings.length, won, lost, winRate };
-  });
+  useEffect(() => {
+    let active = true
 
-  const sources = [...new Set(LEADS.map(l => l.source || 'Unknown'))];
-  const sourceData = sources.map(s => ({
-    source: s,
-    count: LEADS.filter(l => l.source === s).length,
-    converted: LEADS.filter(l => l.source === s && l.status === 'Converted').length,
-  })).sort((a, b) => b.count - a.count);
+    async function loadReport() {
+      setLoading(true)
+
+      setError("")
+
+      try {
+        const [leads, meetings, calls, users] = await Promise.all([
+          loadAllPages<LeadReportRow>((from, to) =>
+            supabase
+
+              .from("leads")
+
+              .select("id, assigned_to, status, source")
+
+              .order("id")
+
+              .range(from, to),
+          ),
+
+          loadAllPages<MeetingReportRow>((from, to) =>
+            supabase
+
+              .from("meetings")
+
+              .select("id, assigned_sales_id, outcome")
+
+              .order("id")
+
+              .range(from, to),
+          ),
+
+          loadAllPages<CallReportRow>((from, to) =>
+            supabase
+
+              .from("activity_logs")
+
+              .select("id, actor_id")
+
+              .eq("activity_type", "call")
+
+              .order("id")
+
+              .range(from, to),
+          ),
+
+          loadAllPages<{ id: string; full_name: string; role: User["role"] }>(
+            (from, to) =>
+              supabase
+
+                .from("users")
+
+                .select("id, full_name, role")
+
+                .order("full_name")
+
+                .range(from, to),
+          ),
+        ])
+
+        if (!active) return
+
+        setReport({
+          leads: leads.map(mapLeadReport),
+
+          meetings: meetings.map(mapMeetingReport),
+
+          calls: calls.map(mapCallReport),
+
+          users: users.map(mapReportUser),
+        })
+      } catch (loadError) {
+        if (!active) return
+
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Could not load reports.",
+        )
+
+        setReport(EMPTY_REPORT)
+      }
+
+      setLoading(false)
+    }
+
+    loadReport()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const totalLeads = report.leads.length
+
+  const convertedLeads = report.leads.filter(
+    (lead) => lead.status === "Converted",
+  ).length
+
+  const conversionRate =
+    totalLeads > 0 ? ((convertedLeads / totalLeads) * 100).toFixed(1) : "0.0"
+
+  const wonDeals = report.meetings.filter(
+    (meeting) => meeting.outcome === "Deal Closed – Won",
+  ).length
+
+  const lostDeals = report.meetings.filter(
+    (meeting) => meeting.outcome === "Deal Lost",
+  ).length
+
+  const telesalesUsers = report.users.filter(
+    (user) => user.role === "telesales",
+  )
+
+  const salesUsers = report.users.filter((user) => user.role === "sales")
+
+  const agentStats = telesalesUsers.map((agent) => {
+    const myLeads = report.leads.filter((lead) => lead.assignedTo === agent.id)
+
+    const converted = myLeads.filter(
+      (lead) => lead.status === "Converted",
+    ).length
+
+    const callsMade = report.calls.filter(
+      (call) => call.actorId === agent.id,
+    ).length
+
+    const convRate =
+      myLeads.length > 0 ? ((converted / myLeads.length) * 100).toFixed(1) : "0"
+
+    return { agent, total: myLeads.length, converted, callsMade, convRate }
+  })
+
+  const salesStats = salesUsers.map((agent) => {
+    const myMeetings = report.meetings.filter(
+      (meeting) => meeting.assignedSalesId === agent.id,
+    )
+
+    const won = myMeetings.filter(
+      (meeting) => meeting.outcome === "Deal Closed – Won",
+    ).length
+
+    const lost = myMeetings.filter(
+      (meeting) => meeting.outcome === "Deal Lost",
+    ).length
+
+    const winRate =
+      myMeetings.length > 0 ? ((won / myMeetings.length) * 100).toFixed(1) : "0"
+
+    return { agent, total: myMeetings.length, won, lost, winRate }
+  })
+
+  const sources = [
+    ...new Set(report.leads.map((lead) => lead.source || "Unknown")),
+  ]
+
+  const sourceData = sources
+    .map((source) => ({
+      source,
+
+      count: report.leads.filter(
+        (lead) => (lead.source || "Unknown") === source,
+      ).length,
+
+      converted: report.leads.filter(
+        (lead) =>
+          (lead.source || "Unknown") === source && lead.status === "Converted",
+      ).length,
+    }))
+    .sort((a, b) => b.count - a.count)
+
+  const assignedLeads = report.leads.filter((lead) => lead.assignedTo).length
+
+  const contactedLeads = report.leads.filter((lead) =>
+    [
+      "Contacted",
+      "Interested",
+      "Not Interested",
+      "Converted",
+      "Call Back Later",
+      "No Answer",
+    ].includes(lead.status),
+  ).length
+
+  const interestedLeads = report.leads.filter(
+    (lead) => lead.status === "Interested",
+  ).length
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-white text-2xl font-bold">Reports & Analytics</h1>
-          <p className="text-[#6b6b6b] text-sm mt-0.5">Performance overview — Sep 2026</p>
+          <h1 className="text-2xl font-bold text-white">Reports & Analytics</h1>
+          <p className="mt-0.5 text-sm text-[#6b6b6b]">Performance overview</p>
         </div>
-        <button className="flex items-center gap-2 bg-[#1e1e1e] border border-[#2a2a2a] text-[#a0a0a0] hover:text-white rounded-lg px-4 py-2 text-sm transition-colors">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
+        <button className="flex items-center gap-2 rounded-lg border border-[#2a2a2a] bg-[#1e1e1e] px-4 py-2 text-sm text-[#a0a0a0] transition-colors hover:text-white">
           Export CSV
         </button>
       </div>
 
-      {/* Summary KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="Total Leads" value={totalLeads} sub="All batches" />
-        <KpiCard label="Conversion Rate" value={`${conversionRate}%`} sub={`${convertedLeads} converted`} accent />
-        <KpiCard label="Deals Won" value={wonDeals} sub={`${lostDeals} lost`} />
-        <KpiCard label="Win Rate" value={`${wonDeals + lostDeals > 0 ? ((wonDeals / (wonDeals + lostDeals)) * 100).toFixed(1) : 0}%`} sub="Meetings to close" />
+      {error && (
+        <div
+          role="alert"
+          className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
+        >
+          {error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <KpiCard
+          label="Total Leads"
+          value={loading ? "—" : totalLeads}
+          sub="All assigned leads"
+        />
+        <KpiCard
+          label="Conversion Rate"
+          value={loading ? "—" : `${conversionRate}%`}
+          sub={`${convertedLeads} converted`}
+          accent
+        />
+        <KpiCard
+          label="Deals Won"
+          value={loading ? "—" : wonDeals}
+          sub={`${lostDeals} lost`}
+        />
+        <KpiCard
+          label="Win Rate"
+          value={
+            loading
+              ? "—"
+              : `${
+                  wonDeals + lostDeals > 0
+                    ? ((wonDeals / (wonDeals + lostDeals)) * 100).toFixed(1)
+                    : 0
+                }%`
+          }
+          sub="Meetings to close"
+        />
       </div>
 
-      {/* Lead Sources */}
       <Card className="p-5">
-        <h3 className="text-white font-semibold mb-4">Lead Sources</h3>
-        <div className="space-y-3">
-          {sourceData.map(s => (
-            <div key={s.source} className="flex items-center gap-4">
-              <div className="w-32 text-[#a0a0a0] text-sm truncate">{s.source}</div>
-              <div className="flex-1 h-2 bg-[#1e1e1e] rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-[#dfff03] rounded-full"
-                  style={{ width: `${totalLeads > 0 ? (s.count / totalLeads) * 100 : 0}%` }}
-                />
+        <h3 className="mb-4 font-semibold text-white">Lead Sources</h3>
+        {loading ? (
+          <div className="text-sm text-[#6b6b6b]">Loading report data...</div>
+        ) : sourceData.length === 0 ? (
+          <div className="text-sm text-[#6b6b6b]">No lead source data.</div>
+        ) : (
+          <div className="space-y-3">
+            {sourceData.map((source) => (
+              <div key={source.source} className="flex items-center gap-4">
+                <div className="w-32 truncate text-sm text-[#a0a0a0]">
+                  {source.source}
+                </div>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#1e1e1e]">
+                  <div
+                    className="h-full rounded-full bg-[#dfff03]"
+                    style={{
+                      width: `${
+                        totalLeads > 0 ? (source.count / totalLeads) * 100 : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+                <div className="w-20 text-right">
+                  <span className="text-sm font-medium text-white">
+                    {source.count}
+                  </span>
+                  <span className="text-xs text-[#6b6b6b]"> leads</span>
+                </div>
+                <div className="w-16 text-right">
+                  <span className="text-sm font-medium text-[#64dc78]">
+                    {source.converted}
+                  </span>
+                  <span className="text-xs text-[#6b6b6b]"> cvt</span>
+                </div>
               </div>
-              <div className="w-20 text-right">
-                <span className="text-white text-sm font-medium">{s.count}</span>
-                <span className="text-[#6b6b6b] text-xs"> leads</span>
-              </div>
-              <div className="w-16 text-right">
-                <span className="text-[#64dc78] text-sm font-medium">{s.converted}</span>
-                <span className="text-[#6b6b6b] text-xs"> cvt</span>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Telesales Performance */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card className="p-5">
-          <h3 className="text-white font-semibold mb-4">Telesales Performance</h3>
-          <div className="space-y-3">
-            <div className="grid grid-cols-4 text-xs text-[#6b6b6b] font-medium uppercase tracking-wide pb-2 border-b border-[#1e1e1e]">
-              <span className="col-span-2">Agent</span>
-              <span className="text-right">Calls</span>
-              <span className="text-right">Conv. Rate</span>
+          <h3 className="mb-4 font-semibold text-white">
+            Telesales Performance
+          </h3>
+          {loading ? (
+            <div className="text-sm text-[#6b6b6b]">Loading...</div>
+          ) : agentStats.length === 0 ? (
+            <div className="text-sm text-[#6b6b6b]">
+              No telesales users found.
             </div>
-            {agentStats.map(({ agent, total, converted, callsMade, convRate }) => (
-              <div key={agent.id} className="grid grid-cols-4 items-center">
-                <div className="col-span-2">
-                  <div className="text-white text-sm font-medium">{agent.fullName}</div>
-                  <div className="text-[#6b6b6b] text-xs">{total} leads · {converted} converted</div>
-                </div>
-                <div className="text-right">
-                  <span className="text-[#a0a0a0] font-mono text-sm">{callsMade}</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[#dfff03] font-mono font-bold text-sm">{convRate}%</span>
-                </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-4 border-b border-[#1e1e1e] pb-2 text-xs font-medium uppercase tracking-wide text-[#6b6b6b]">
+                <span className="col-span-2">Agent</span>
+                <span className="text-right">Calls</span>
+                <span className="text-right">Conv. Rate</span>
               </div>
-            ))}
-          </div>
+              {agentStats.map(
+                ({ agent, total, converted, callsMade, convRate }) => (
+                  <div key={agent.id} className="grid grid-cols-4 items-center">
+                    <div className="col-span-2">
+                      <div className="text-sm font-medium text-white">
+                        {agent.fullName}
+                      </div>
+                      <div className="text-xs text-[#6b6b6b]">
+                        {total} leads · {converted} converted
+                      </div>
+                    </div>
+                    <div className="text-right font-mono text-sm text-[#a0a0a0]">
+                      {callsMade}
+                    </div>
+                    <div className="text-right font-mono text-sm font-bold text-[#dfff03]">
+                      {convRate}%
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
         </Card>
 
-        {/* Sales Performance */}
         <Card className="p-5">
-          <h3 className="text-white font-semibold mb-4">Sales Performance</h3>
-          <div className="space-y-3">
-            <div className="grid grid-cols-4 text-xs text-[#6b6b6b] font-medium uppercase tracking-wide pb-2 border-b border-[#1e1e1e]">
-              <span className="col-span-2">Agent</span>
-              <span className="text-right">Meetings</span>
-              <span className="text-right">Win Rate</span>
-            </div>
-            {salesStats.map(({ agent, total, won, lost, winRate }) => (
-              <div key={agent.id} className="grid grid-cols-4 items-center">
-                <div className="col-span-2">
-                  <div className="text-white text-sm font-medium">{agent.fullName}</div>
-                  <div className="text-[#6b6b6b] text-xs">{won} won · {lost} lost</div>
-                </div>
-                <div className="text-right">
-                  <span className="text-[#a0a0a0] font-mono text-sm">{total}</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[#64dc78] font-mono font-bold text-sm">{winRate}%</span>
-                </div>
+          <h3 className="mb-4 font-semibold text-white">Sales Performance</h3>
+          {loading ? (
+            <div className="text-sm text-[#6b6b6b]">Loading...</div>
+          ) : salesStats.length === 0 ? (
+            <div className="text-sm text-[#6b6b6b]">No sales users found.</div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-4 border-b border-[#1e1e1e] pb-2 text-xs font-medium uppercase tracking-wide text-[#6b6b6b]">
+                <span className="col-span-2">Agent</span>
+                <span className="text-right">Meetings</span>
+                <span className="text-right">Win Rate</span>
               </div>
-            ))}
-          </div>
+              {salesStats.map(({ agent, total, won, lost, winRate }) => (
+                <div key={agent.id} className="grid grid-cols-4 items-center">
+                  <div className="col-span-2">
+                    <div className="text-sm font-medium text-white">
+                      {agent.fullName}
+                    </div>
+                    <div className="text-xs text-[#6b6b6b]">
+                      {won} won · {lost} lost
+                    </div>
+                  </div>
+                  <div className="text-right font-mono text-sm text-[#a0a0a0]">
+                    {total}
+                  </div>
+                  <div className="text-right font-mono text-sm font-bold text-[#64dc78]">
+                    {winRate}%
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       </div>
 
-      {/* Pipeline Funnel */}
       <Card className="p-5">
-        <h3 className="text-white font-semibold mb-5">Pipeline Funnel</h3>
-        <div className="flex items-end gap-2 h-32">
+        <h3 className="mb-5 font-semibold text-white">Pipeline Funnel</h3>
+        <div className="flex h-32 items-end gap-2">
           {[
-            { label: 'Total', value: totalLeads, color: '#6495ed' },
-            { label: 'Assigned', value: LEADS.filter(l => l.assignedTo).length, color: '#dfff03' },
-            { label: 'Contacted', value: LEADS.filter(l => ['Contacted', 'Interested', 'Not Interested', 'Converted', 'Call Back Later', 'No Answer'].includes(l.status)).length, color: '#64c8ff' },
-            { label: 'Interested', value: LEADS.filter(l => l.status === 'Interested').length, color: '#ffc832' },
-            { label: 'Converted', value: convertedLeads, color: '#64dc78' },
-            { label: 'Won Deals', value: wonDeals, color: '#dfff03' },
-          ].map((s, i) => (
-            <div key={s.label} className="flex-1 flex flex-col items-center gap-2">
-              <span className="text-white font-mono font-bold text-sm">{s.value}</span>
+            { label: "Total", value: totalLeads, color: "#6495ed" },
+
+            { label: "Assigned", value: assignedLeads, color: "#dfff03" },
+
+            { label: "Contacted", value: contactedLeads, color: "#64c8ff" },
+
+            { label: "Interested", value: interestedLeads, color: "#ffc832" },
+
+            { label: "Converted", value: convertedLeads, color: "#64dc78" },
+
+            { label: "Won Deals", value: wonDeals, color: "#dfff03" },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              className="flex flex-1 flex-col items-center gap-2"
+            >
+              <span className="font-mono text-sm font-bold text-white">
+                {loading ? "—" : stat.value}
+              </span>
               <div
-                className="w-full rounded-t transition-all"
+                className="w-full rounded-t opacity-85 transition-all"
                 style={{
-                  height: `${totalLeads > 0 ? Math.max(8, (s.value / totalLeads) * 100) : 8}px`,
-                  background: s.color,
-                  opacity: 0.85,
+                  height: `${
+                    loading || totalLeads === 0
+                      ? 8
+                      : Math.max(8, (stat.value / totalLeads) * 100)
+                  }px`,
+                  background: stat.color,
                 }}
               />
-              <span className="text-[#6b6b6b] text-xs text-center leading-tight">{s.label}</span>
+              <span className="text-center text-xs leading-tight text-[#6b6b6b]">
+                {stat.label}
+              </span>
             </div>
           ))}
         </div>
       </Card>
     </div>
-  );
+  )
 }

@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react"
 import { SalesPackage, SalesPackageRow, mapSalesPackage } from "../../data/packages"
+import {
+  invokeContractReview,
+  requestContractReview,
+} from "../../data/contractReviewActions"
 import { supabase } from "../../supabaseClient"
 import { Button, Modal } from "../ui"
 
@@ -53,6 +57,9 @@ export default function DealCreateModal({
   const [createdDealId, setCreatedDealId] = useState("")
   const [recordingAttached, setRecordingAttached] = useState(false)
   const [contractAttached, setContractAttached] = useState(false)
+  const [contractReviewId, setContractReviewId] = useState("")
+  const [reviewStatus, setReviewStatus] = useState("")
+  const [retryingReview, setRetryingReview] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
 
@@ -210,18 +217,39 @@ export default function DealCreateModal({
       setAttachingContract(false)
       return
     }
-    const { error: attachError } = await supabase.rpc("attach_contract", {
+    const { data: reviewId, error: attachError } = await supabase.rpc("attach_contract", {
       target_deal_id: createdDealId,
       target_contract_path: objectPath,
     })
-    if (attachError) {
-      setError(`Contract uploaded but could not be attached: ${attachError.message}`)
+    if (attachError || typeof reviewId !== "string") {
+      setError(`Contract uploaded but could not be attached: ${attachError?.message ?? "No review ID was returned."}`)
       setAttachingContract(false)
       return
     }
     setContractAttached(true)
-    setSuccess("Deal and contract are saved. Contract review will be started after the review service is configured.")
+    setContractReviewId(reviewId)
+    const result = await invokeContractReview(reviewId)
+    if (result.error) {
+      setError(`Contract attached, but AI review failed: ${result.error}`)
+    } else {
+      setReviewStatus(result.status?.replace("_", " ") ?? "submitted")
+      setSuccess(`Contract attached. AI review status: ${result.status?.replace("_", " ") ?? "submitted"}.`)
+    }
     setAttachingContract(false)
+  }
+
+  async function retryContractReview() {
+    if (!createdDealId || retryingReview) return
+    setError("")
+    setRetryingReview(true)
+    const result = await requestContractReview(createdDealId)
+    if (result.error) {
+      setError(result.error)
+    } else {
+      setReviewStatus(result.status?.replace("_", " ") ?? "submitted")
+      setSuccess(`AI review status: ${result.status?.replace("_", " ") ?? "submitted"}.`)
+    }
+    setRetryingReview(false)
   }
 
   function closeModal() {
@@ -231,6 +259,8 @@ export default function DealCreateModal({
     setCreatedDealId("")
     setRecordingAttached(false)
     setContractAttached(false)
+    setContractReviewId("")
+    setReviewStatus("")
     setLeadSearch("")
     setLeadId(initialLeadId ?? "")
     setPackageId("")
@@ -284,6 +314,20 @@ export default function DealCreateModal({
             </label>
             <Button disabled={!contractFile || attachingContract} onClick={() => void attachContract()}>
               {attachingContract ? "Uploading contract..." : "Upload & Attach Contract"}
+            </Button>
+          </div>
+        )}
+        {createdDealId && contractAttached && (
+          <div className="space-y-2 rounded border border-[#2a2a2a] p-3">
+            <div className="text-sm text-[#a0a0a0]">
+              Contract review: {reviewStatus || (contractReviewId ? "submitted" : "not started")}
+            </div>
+            <Button
+              variant="secondary"
+              disabled={retryingReview}
+              onClick={() => void retryContractReview()}
+            >
+              {retryingReview ? "Retrying review..." : "Retry AI review"}
             </Button>
           </div>
         )}

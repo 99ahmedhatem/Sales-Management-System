@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState } from "react"
 import { Deal, loadDealsPage } from "../../data/deals"
+import {
+  ContractReview,
+  ContractReviewRow,
+  mapContractReview,
+} from "../../data/contractReviews"
+import {
+  invokeContractReview,
+  requestContractReview,
+} from "../../data/contractReviewActions"
 import { supabase } from "../../supabaseClient"
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 import { Button, Card, Modal, Pagination, SearchInput, StatusBadge, Table, Td, Tr } from "../ui"
@@ -33,6 +42,11 @@ export default function ContractsModule({ userId, role }: Props) {
   const [error, setError] = useState("")
   const [search, setSearch] = useState("")
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null)
+  const [review, setReview] = useState<ContractReview | null>(null)
+  const [loadingReview, setLoadingReview] = useState(false)
+  const [reviewAction, setReviewAction] = useState(false)
+  const [approvalOverrideOpen, setApprovalOverrideOpen] = useState(false)
+  const [overrideReason, setOverrideReason] = useState("")
   const [createOpen, setCreateOpen] = useState(false)
   const [contractFile, setContractFile] = useState<File | null>(null)
   const [signedRecordingUrl, setSignedRecordingUrl] = useState("")
@@ -60,6 +74,43 @@ export default function ContractsModule({ userId, role }: Props) {
   }, [load])
 
   useRealtimeRefresh(["deals"], () => void load())
+
+  useEffect(() => {
+    if (!selectedDeal) return
+    const latest = deals.find((deal) => deal.id === selectedDeal.id)
+    if (latest && latest !== selectedDeal) setSelectedDeal(latest)
+  }, [deals, selectedDeal])
+
+  async function loadReview(dealId: string) {
+    setLoadingReview(true)
+    const { data, error: queryError } = await supabase
+      .from("contract_reviews")
+      .select("id, deal_id, status, extracted, mismatches, summary, error, model, created_at, completed_at")
+      .eq("deal_id", dealId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (queryError) {
+      setError(queryError.message)
+      setReview(null)
+    } else {
+      setReview(data ? mapContractReview(data as ContractReviewRow) : null)
+    }
+    setLoadingReview(false)
+  }
+
+  useRealtimeRefresh(
+    ["contract_reviews"],
+    () => {
+      if (selectedDeal) void loadReview(selectedDeal.id)
+    },
+  )
+
+  useEffect(() => {
+    if (selectedDeal) void loadReview(selectedDeal.id)
+    else setReview(null)
+  }, [selectedDeal])
 
   useEffect(() => {
     let active = true
@@ -102,6 +153,11 @@ export default function ContractsModule({ userId, role }: Props) {
   const canCreateDeal = role === "sales" || role === "telesales"
   const canUploadContract =
     canCreateDeal && selectedDeal?.closedByUserId === userId
+  const canApprove = role === "admin" || role === "manager"
+  const canRequestReview =
+    role === "admin" ||
+    role === "manager" ||
+    selectedDeal?.closedByUserId === userId
 
   async function uploadContract() {
     if (!selectedDeal || !contractFile || uploadingContract) return
@@ -117,18 +173,59 @@ export default function ContractsModule({ userId, role }: Props) {
       setUploadingContract(false)
       return
     }
-    const { error: attachError } = await supabase.rpc("attach_contract", {
+    const { data: reviewId, error: attachError } = await supabase.rpc("attach_contract", {
       target_deal_id: selectedDeal.id,
       target_contract_path: path,
     })
-    if (attachError) {
-      setError(`Contract uploaded but could not be attached: ${attachError.message}`)
+    if (attachError || typeof reviewId !== "string") {
+      setError(
+        `Contract uploaded but could not be attached: ${attachError?.message ?? "No review ID was returned."}`,
+      )
       setUploadingContract(false)
       return
     }
     setSelectedDeal({ ...selectedDeal, contractPath: path, status: "contract_uploaded" })
     setContractFile(null)
+    await loadReview(selectedDeal.id)
+    const reviewResult = await invokeContractReview(reviewId)
+    if (reviewResult.error) {
+      setError(`Contract attached, but AI review failed: ${reviewResult.error}`)
+    } else if (reviewResult.status === "passed") {
+      setError("")
+    } else if (reviewResult.status === "needs_attention" || reviewResult.status === "failed") {
+      setError("")
+    }
     setUploadingContract(false)
+    void load()
+  }
+
+  async function rerunReview() {
+    if (!selectedDeal || reviewAction) return
+    setError("")
+    setReviewAction(true)
+    const result =
+      review?.status === "queued"
+        ? await invokeContractReview(review.id)
+        : await requestContractReview(selectedDeal.id)
+    if (result.error) setError(result.error)
+    await loadReview(selectedDeal.id)
+    setReviewAction(false)
+  }
+
+  async function approveDeal(reason?: string) {
+    if (!selectedDeal) return
+    setError("")
+    const { error: approvalError } = await supabase.rpc("approve_deal", {
+      target_deal_id: selectedDeal.id,
+      override_reason_text: reason ?? null,
+    })
+    if (approvalError) {
+      setError(approvalError.message)
+      return
+    }
+    setSelectedDeal({ ...selectedDeal, status: "approved" })
+    setApprovalOverrideOpen(false)
+    setOverrideReason("")
     void load()
   }
 
@@ -252,6 +349,12 @@ export default function ContractsModule({ userId, role }: Props) {
                 <p className="mt-1 whitespace-pre-wrap text-sm text-[#d0d0d0]">{selectedDeal.notes}</p>
               </div>
             )}
+            {selectedDeal.approvalOverrideReason && (
+              <div className="rounded border border-[#ffc832]/30 bg-[#ffc832]/10 p-3">
+                <div className="text-xs font-semibold text-[#ffc832]">Admin approval override</div>
+                <p className="mt-1 text-sm text-[#d0d0d0]">{selectedDeal.approvalOverrideReason}</p>
+              </div>
+            )}
             <div className="space-y-2 rounded bg-[#1a1a1a] p-3">
               <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">Private files</div>
               {signingUrls ? (
@@ -267,10 +370,75 @@ export default function ContractsModule({ userId, role }: Props) {
                 </>
               )}
             </div>
-            {canUploadContract && !selectedDeal.contractPath && (
+            <div className="space-y-3 rounded border border-[#2a2a2a] p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">AI contract review</div>
+                  <div className="mt-1 text-sm text-white">
+                    {loadingReview
+                      ? "Loading review..."
+                      : review
+                        ? review.status.replace("_", " ")
+                        : "No review submitted"}
+                  </div>
+                </div>
+                {canRequestReview && selectedDeal.contractPath && review && review.status !== "processing" && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={reviewAction}
+                    onClick={() => void rerunReview()}
+                  >
+                    {reviewAction ? "Reviewing..." : "Re-run review"}
+                  </Button>
+                )}
+              </div>
+              {review?.summary && (
+                <p className="text-sm leading-relaxed text-[#d0d0d0]">{review.summary}</p>
+              )}
+              {review?.error && (
+                <div className="rounded bg-[#ff6464]/10 p-2 text-sm text-[#ff8888]">{review.error}</div>
+              )}
+              {review?.mismatches.length ? (
+                <div className="space-y-2">
+                  {review.mismatches.map((mismatch, index) => (
+                    <div key={`${mismatch.field}-${index}`} className="rounded bg-[#0f0f0f] p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-white">{mismatch.field.replace(/_/g, " ")}</span>
+                        <span className={mismatch.severity === "high" ? "text-xs font-semibold text-[#ff8888]" : "text-xs font-semibold text-[#ffc832]"}>
+                          {mismatch.severity.toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="mt-1 grid grid-cols-2 gap-2 text-xs">
+                        <div className="break-all text-[#a0a0a0]">Expected: {JSON.stringify(mismatch.expected) ?? "—"}</div>
+                        <div className="break-all text-[#a0a0a0]">Found: {JSON.stringify(mismatch.found) ?? "—"}</div>
+                      </div>
+                      {mismatch.note && <div className="mt-1 text-xs text-[#6b6b6b]">{mismatch.note}</div>}
+                    </div>
+                  ))}
+                </div>
+              ) : review && review.status === "passed" ? (
+                <div className="text-sm text-[#64dc78]">No mismatches found.</div>
+              ) : null}
+              {review?.extracted && Object.keys(review.extracted).length > 0 && (
+                <details className="rounded bg-[#0f0f0f] p-3">
+                  <summary className="cursor-pointer text-xs text-[#a0a0a0]">Extracted contract fields</summary>
+                  <pre className="mt-2 overflow-auto whitespace-pre-wrap break-words text-xs text-[#d0d0d0]">
+                    {JSON.stringify(review.extracted, null, 2)}
+                  </pre>
+                </details>
+              )}
+            </div>
+            {canApprove && review?.status === "passed" && selectedDeal.status === "pending_approval" && (
+              <Button onClick={() => void approveDeal()}>Approve deal</Button>
+            )}
+            {role === "admin" && review && !["passed", "queued", "processing"].includes(review.status) && selectedDeal.status !== "approved" && selectedDeal.status !== "active" && selectedDeal.status !== "cancelled" && (
+              <Button variant="danger" onClick={() => setApprovalOverrideOpen(true)}>Approve anyway</Button>
+            )}
+            {canUploadContract && (
               <div className="space-y-2 rounded border border-[#2a2a2a] p-3">
                 <label className="block text-xs text-[#a0a0a0]">
-                  Upload signed contract (PDF or image)
+                  Upload or replace signed contract (PDF or image)
                   <input
                     type="file"
                     accept="application/pdf,image/jpeg,image/png,image/webp"
@@ -279,14 +447,42 @@ export default function ContractsModule({ userId, role }: Props) {
                   />
                 </label>
                 <Button disabled={!contractFile || uploadingContract} onClick={() => void uploadContract()}>
-                  {uploadingContract ? "Uploading..." : "Upload & Attach Contract"}
+                  {uploadingContract ? "Uploading and reviewing..." : "Upload, attach & review"}
                 </Button>
-                <p className="text-xs text-[#6b6b6b]">Contract review will be available after the review service is configured.</p>
+                <p className="text-xs text-[#6b6b6b]">The uploaded contract is private and starts a new AI review.</p>
               </div>
             )}
             <Button variant="ghost" onClick={() => { setSelectedDeal(null); setContractFile(null) }}>Close</Button>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={approvalOverrideOpen}
+        onClose={() => setApprovalOverrideOpen(false)}
+        title="Admin approval override"
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-[#ffc832]">
+            Only use this when the latest contract review has not passed. The reason is recorded for audit.
+          </p>
+          <label className="block text-xs text-[#a0a0a0]">
+            Reason (at least five words) *
+            <textarea
+              rows={4}
+              value={overrideReason}
+              onChange={(event) => setOverrideReason(event.target.value)}
+              className="mt-1 w-full resize-y rounded border border-[#2a2a2a] bg-[#1a1a1a] px-3 py-2 text-sm text-white"
+            />
+          </label>
+          <Button
+            variant="danger"
+            disabled={overrideReason.trim().split(/\s+/).filter(Boolean).length < 5}
+            onClick={() => void approveDeal(overrideReason.trim())}
+          >
+            Approve with override
+          </Button>
+        </div>
       </Modal>
 
       {canCreateDeal && (

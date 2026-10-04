@@ -171,10 +171,10 @@ export default function App() {
           {session.role === "admin" && page === "insights" && <InsightsDashboard role="admin" />}
           {session.role === "manager" && page === "insights" && <InsightsDashboard role="manager" />}
           {(session.role === "admin" || session.role === "manager") && page === "team" && (
-            <TeamPerformance mode="team" userId={session.userId} />
+            <TeamPerformance mode="team" userId={session.userId} role={session.role} />
           )}
           {(session.role === "sales" || session.role === "telesales") && page === "earnings" && (
-            <TeamPerformance mode="mine" userId={session.userId} />
+            <TeamPerformance mode="mine" userId={session.userId} role={session.role} />
           )}
           {session.role === "admin" && page === "leads" && <AdminLeads />}
           {session.role === "admin" && page === "activity" && <AdminActivity />}

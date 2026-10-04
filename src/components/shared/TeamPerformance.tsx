@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useI18n } from '../../i18n/I18nProvider';
 import { Empty, ErrorNote, Kpi, Panel, SimpleTable, nf } from './charts';
+import TargetProgress from './TargetProgress';
 
 /** One row of get_team_performance (018). Numeric columns arrive as numbers or numeric strings. */
 interface PerformanceRow {
@@ -36,7 +37,7 @@ const monthEnd = (ym: string) => {
  * Team performance (admin/manager) or "My earnings" (sales/telesales).
  * get_team_performance filters by role itself: admin sees everyone, a manager sees himself and his team, others see themselves.
  */
-export default function TeamPerformance({ mode, userId }: { mode: 'team' | 'mine'; userId: string }) {
+export default function TeamPerformance({ mode, userId, role }: { mode: 'team' | 'mine'; userId: string; role: string }) {
   const { t, dir } = useI18n();
   const [month, setMonth] = useState(thisMonth());
   const [allTime, setAllTime] = useState(false);
@@ -107,6 +108,8 @@ export default function TeamPerformance({ mode, userId }: { mode: 'team' | 'mine
             <Kpi label={t('Deals closed')} value={nf(me.deals_count)} sub={money(me.deals_value_sar, 'SAR')} />
             <Kpi label={t('Collected (SAR)')} value={money(me.collected_sar, 'SAR')} sub={money(me.collected_egp, 'EGP')} />
           </div>
+          {/* Targets are monthly: with "All time" the current month is shown. */}
+          <TargetProgress month={allTime ? thisMonth() : month} canEdit={role === 'admin'} />
           <Panel title={t('My rates')} hint={t('Set by the admin')}>
             <SimpleTable
               head={[t('Commission %'), ...(me.role === 'telesales' ? [t('Lead %')] : []), t('Manager %')]}
@@ -124,6 +127,7 @@ export default function TeamPerformance({ mode, userId }: { mode: 'team' | 'mine
             <Kpi label={t('Commission (SAR)')} value={money(sum('commission_sar'), 'SAR')} sub={money(sum('commission_egp'), 'EGP')} />
             <Kpi label={t('Team members')} value={nf(visible.length)} />
           </div>
+          <TargetProgress month={allTime ? thisMonth() : month} canEdit={role === 'admin'} />
           <Panel title={t('Per employee')} hint={t('Commission follows the deal snapshot taken at approval; cancelled deals are excluded')}>
             <SimpleTable
               head={[

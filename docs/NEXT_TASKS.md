@@ -1,28 +1,32 @@
-# Next Tasks (frontend for the money layer + cleanup)
+# Next Tasks
 
-Prerequisite (done by the user in Supabase): `supabase-FIX-ALL.sql` ran successfully, an exchange rate row exists, secrets + `review-contract` Edge Function deployed.
-Do **one task per branch**. Use only names from `supabase/migrations/008_money_commissions_payroll.sql`. Test as every role.
+One task per branch. Read `AGENTS.md` and the SQL in `supabase/migrations` first; use exact names. Test as admin, manager, sales, telesales. Run `pnpm build` and `pnpm exec tsc --noEmit`.
 
-## Task A — Commission settings in Users
+## Money layer (migration 008) — not built yet
 
-`AdminUsers.tsx`: per employee form → upsert `user_commission_rates` (`closer_percent`, `lead_percent`, `manager_percent`, `base_salary`, `base_currency`). When a manager is picked for a sales/telesales, show "Manager % on this employee". Admin-only. Add a settings field for `app_settings.commission_basis`.
+- **A. Users screen**: per employee upsert into `user_commission_rates` (closer_percent, lead_percent, manager_percent, base_salary, base_currency); show "Manager % on this employee" when a manager is selected; admin editor for `app_settings.commission_basis`.
+- **B. Payments** on the deal page: `record_payment`, receipts upload to bucket `receipts/<deal_id>/…`, `deal_balances`; admin "Pending payments" → `confirm_payment`.
+- **C. Revenue page** (admin): `get_month_revenue`, `monthly_revenue`, `monthly_revenue_by_sales`, add row to `exchange_rates`, Excel export.
+- **D. Payroll page**: `get_payroll(month)` + `get_commission_lines`; "My earnings" card per role; admin `set_deal_commission` and `cancel_deal`.
 
-## Task B — Payments on the deal page (`ContractsModule.tsx`)
+## Monitoring layer (migration 009)
 
-Only when `status` is `approved`/`active`: list payments, "Add payment" (amount, SAR/EGP, method, reference, receipt upload to `receipts/<deal_id>/…`) → `record_payment`. Show `deal_balances` (paid / pending / remaining). Admin: "Pending payments" screen → `confirm_payment`.
+- **E. Needs-attention screen** (admin/manager home widget + full page): list from `get_attention_items()` grouped by kind, high severity first, link each row to the lead/meeting/deal. Telesales and sales see the same widget (RLS limits it to their own items).
+- **F. Performance page**: `get_funnel_stats` with date range, per-employee funnel table and conversion %, show the 4 timing columns; managers see their team only.
+- **G. Targets + leaderboard**: admin screen to set `user_targets` per employee per month; progress bars from `get_target_progress`; leaderboard from `get_leaderboard`.
+- **H. Loss reasons**: when a sales marks a meeting as lost use a modal with reasons from `loss_reasons` and call `mark_meeting_lost`; telesales sets `leads.loss_reason` when choosing Not Interested / Did Not Subscribe; admin report page from `get_loss_report`.
+- **I. Distribution tools** (Leads page, admin/manager): "Distribute evenly" dialog (choose telesales users + optional max open leads per user) → `distribute_leads_evenly`, show leftovers; "Move all leads from user X to Y / unassign" → `reassign_user_leads`.
+- **J. Source quality**: table from `get_source_performance` (leads, contacted, interested, deals, revenue, conversion %).
+- **K. Audit log viewer** (admin): read `audit_log` newest first with filters by table and user.
+- **L. Daily summary** card on admin home from `get_daily_summary`.
+- **M. Leads page performance**: remove the three parallel exact counts; use `count: 'estimated'` when no filter is active; keep `.range()` paging.
 
-## Task C — Revenue page (admin)
+## Cleanup
 
-`get_month_revenue(month)`: confirmed SAR, confirmed EGP, pending, new deals; last 12 months from `monthly_revenue`; per employee from `monthly_revenue_by_sales`; add-exchange-rate form (insert into `exchange_rates`); Excel export.
+- **N.** Remove remaining `mockData` imports (move types to `src/data/crmTypes.ts`), delete `src/data/mockData.*`, remove any leftover forward-to-sales logic that reassigns leads to sales.
 
-## Task D — Payroll page
+### Prompt template
 
-`get_payroll(month)` table (admin: all, manager: self+team, others: self) in SAR and EGP + drill-down with `get_commission_lines`. "My earnings" card on sales/telesales/manager dashboards. Admin: per-deal override via `set_deal_commission`, and `cancel_deal`.
+> Read AGENTS.md and docs/NEXT_TASKS.md. Do **Task X** only. Read the SQL in supabase/migrations first and use exact names. No mock data, no hardcoded rates or percentages. Run pnpm build and pnpm exec tsc --noEmit, then list the changed files and how to test each role.
 
-## Task E — Cleanup
-
-Remove remaining `mockData` imports (types can move to `src/data/crmTypes.ts`), delete `src/data/mockData.*`, remove the "Converted" forward-to-sales logic left in `TelesalesDashboard.tsx` if it still reassigns leads, add `upcoming_renewals` card.
-
-### Prompt
-
-> Read `AGENTS.md`, `docs/PRODUCT_SPEC.md`, `docs/NEXT_TASKS.md`. Do **Task X** only. Read the SQL in `supabase/migrations` first and use exact names. RPCs only for protected tables. No mock/AED/hardcoded rates. Run `pnpm build` and `pnpm exec tsc --noEmit`, then list changed files and how to test each role.
+=== END ===

@@ -192,8 +192,8 @@ export function Tr({ children, onClick }: { children: ReactNode; onClick?: () =>
   );
 }
 
-export function Td({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <td className={`py-3 px-4 text-[#d0d0d0] ${className}`}>{children}</td>;
+export function Td({ children, className = '', onClick }: { children: ReactNode; className?: string; onClick?: React.MouseEventHandler<HTMLTableCellElement> }) {
+  return <td onClick={onClick} className={`py-3 px-4 text-[#d0d0d0] ${className}`}>{children}</td>;
 }
 
 export function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
@@ -262,5 +262,22 @@ export function EmptyState({ message }: { message: string }) {
       </svg>
       <p className="text-sm">{message}</p>
     </div>
+  );
+}
+
+export function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${checked ? 'bg-[#dfff03]' : 'bg-[#2a2a2a]'}`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`}
+      />
+    </button>
   );
 }

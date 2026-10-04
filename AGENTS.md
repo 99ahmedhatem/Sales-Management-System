@@ -74,3 +74,24 @@ Dark theme, accent `#dfff03`. Reuse `src/components/ui.tsx`. Page routing = `pag
 ## Do not
 
 Reassign leads to sales · mark money received before `confirm_payment` · compute commissions in the client · skip or auto-pass the AI review · put files in public buckets.
+
+## Management & monitoring tools (migration 009)
+
+Use these exact names (read `supabase/migrations/009_management_tools.sql` for details). Never invent columns.
+
+- `leads.assigned_at` (set by trigger when `assigned_to` changes), `loss_reasons(code, label_ar, is_active, sort_order)`, `leads.loss_reason/loss_note`, `meetings.loss_reason/loss_note`.
+- `app_settings` SLA keys: `sla_first_call_hours`, `sla_request_response_hours`, `meeting_no_outcome_hours`, `deal_draft_days`, `deal_approval_days`, `payment_confirm_days` (admin edits; read with `setting_num`).
+- RPCs (all return tables; RLS/role filtering is done inside):
+
+- `get_attention_items()` → kind, severity, entity_id, lead_id, lead_name, owner_id, owner_name, since, age_hours, detail
+- `get_funnel_stats(p_from date, p_to date)` → per telesales/sales: leads_received, leads_contacted, leads_interested, meeting_requests, requests_received, meetings_held, deals_count, revenue_sar, avg_hours_to_first_call, avg_hours_to_respond, avg_days_meeting_to_deal, avg_days_deal_to_payment
+- `get_target_progress(p_month date)` + table `user_targets(user_id, month /*first day of month*/, calls_target, meetings_target, deals_target, revenue_target_sar)` (admin upserts)
+- `get_leaderboard(p_month date)` (revenue is null for non admin/manager)
+- `mark_meeting_lost(target_meeting_id, p_reason_code, p_note)` and `get_loss_report(p_from, p_to)`
+- `distribute_leads_evenly(p_lead_ids uuid[], p_user_ids uuid[], p_max_open_per_user int)` → rows (user_id, assigned_count); a row with `user_id = null` = leads that could not be assigned
+- `reassign_user_leads(p_from_user, p_to_user /*null = unassign*/, p_only_open)` → number moved
+- `get_source_performance(p_from, p_to)`, `get_daily_summary(p_date)`
+- `audit_log` is admin read-only. `notify_due_followups()` / `notify_upcoming_renewals()` are for scheduled jobs only (service_role), never call from the browser.
+- Performance rule: lists of leads must use `.range()`, order by `created_at desc, id desc`, and use `count: 'estimated'` when no filters are applied (exact counts on 30k+ rows are slow).
+
+=== END ===

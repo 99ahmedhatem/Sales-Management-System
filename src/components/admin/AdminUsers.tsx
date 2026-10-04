@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 import { generateCode, User, Role } from '../../data/mockData';
-import { Avatar, Badge, Button, Card, Modal, SearchInput, Select, StatusBadge, Table, Td, Tr } from '../ui';
+import { Avatar, Badge, Button, Card, Modal, SearchInput, Select, StatusBadge, Table, Td, Toggle, Tr } from '../ui';
 import { EditablePhoneCell } from '../shared/LeadRowControls';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
@@ -21,6 +21,8 @@ function mapUser(row: any): User {
 
 export default function AdminUsers() {
   const [users, setUsers] = useState<User[]>([]);
+  const [emailConfirmed, setEmailConfirmed] = useState<Record<string, boolean>>({});
+  const [togglingEmail, setTogglingEmail] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
   const [addModal, setAddModal] = useState(false);
@@ -47,9 +49,10 @@ export default function AdminUsers() {
   async function loadUsers() {
     setLoading(true);
     setErrorMsg('');
-    const [usersRes, leadsRes] = await Promise.all([
+    const [usersRes, leadsRes, emailRes] = await Promise.all([
       supabase.from('users').select('*').neq('role', 'admin').order('full_name'),
       supabase.from('leads').select('id, customer_number, client_code, name, phone, company, quantity, status, assigned_to, updated_at').not('assigned_to', 'is', null).order('updated_at', { ascending: false }),
+      supabase.rpc('list_email_confirmations'),
     ]);
     if (usersRes.error) setErrorMsg(usersRes.error.message);
     else {
@@ -59,6 +62,11 @@ export default function AdminUsers() {
     }
     if (leadsRes.error) setErrorMsg(leadsRes.error.message);
     else setAssignedLeads((leadsRes.data ?? []).map(mapAssignedLead));
+    if (!emailRes.error) {
+      const map: Record<string, boolean> = {};
+      for (const row of (emailRes.data ?? []) as { id: string; confirmed: boolean }[]) map[row.id] = row.confirmed;
+      setEmailConfirmed(map);
+    }
     setLoading(false);
   }
 
@@ -145,10 +153,16 @@ export default function AdminUsers() {
     await loadUsers();
   };
 
-  const confirmEmail = async (u: User) => {
-    setResetMessage('');
-    const { error } = await supabase.rpc('confirm_user_email', { target_user_id: u.id });
-    setResetMessage(error ? error.message : `${u.fullName}'s email is now confirmed. They can log in directly.`);
+  const toggleEmailConfirmed = async (u: User) => {
+    const next = !emailConfirmed[u.id];
+    setTogglingEmail(prev => ({ ...prev, [u.id]: true }));
+    const { error } = await supabase.rpc('set_user_email_confirmed', { target_user_id: u.id, should_confirm: next });
+    if (error) {
+      setErrorMsg(error.message);
+    } else {
+      setEmailConfirmed(prev => ({ ...prev, [u.id]: next }));
+    }
+    setTogglingEmail(prev => ({ ...prev, [u.id]: false }));
   };
 
   const deleteUser = async (u: User) => {
@@ -214,7 +228,7 @@ export default function AdminUsers() {
       </div>
 
       <Card>
-        <Table headers={['User', 'Username', 'Role', 'Password', 'Commission %', 'Team / Manager', 'Status', 'Last Login', 'Actions']}>
+        <Table headers={['User', 'Username', 'Role', 'Password', 'Commission %', 'Team / Manager', 'Status', 'Email Confirmed', 'Last Login', 'Actions']}>
           {filtered.map(u => (
             <Tr key={u.id} onClick={() => setDetailUser(u)}>
               <Td>
@@ -260,13 +274,15 @@ export default function AdminUsers() {
                 )}
               </Td>
               <Td><StatusBadge status={u.status} /></Td>
+              <Td onClick={event => event.stopPropagation()}>
+                <Toggle checked={!!emailConfirmed[u.id]} onChange={() => toggleEmailConfirmed(u)} disabled={!!togglingEmail[u.id]} />
+              </Td>
               <Td><span className="font-mono text-xs text-[#6b6b6b]">{u.lastLogin ? u.lastLogin.slice(0, 10) : 'Never'}</span></Td>
               <Td>
                 <div className="flex gap-2 flex-wrap">
                   <Button variant="ghost" size="sm" onClick={() => toggleStatus(u)}>
                     {u.status === 'active' ? 'Deactivate' : 'Activate'}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => confirmEmail(u)}>Confirm Email</Button>
                   <Button variant="ghost" size="sm" onClick={() => sendPasswordReset(u)}>Change Password</Button>
                   <Button variant="ghost" size="sm" onClick={() => deleteUser(u)}>Delete</Button>
                 </div>

@@ -63,14 +63,30 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false)
 
   async function loadProfile(authId: string, email: string) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("users")
       .select("*")
       .eq("id", authId)
       .maybeSingle()
 
-    if (data) {
-      setSession({ role: data.role, userId: data.id })
+    let profile = data
+
+    if (!profile && email) {
+      const { data: byEmail } = await supabase
+        .from("users")
+        .select("*")
+        .ilike("email", email)
+        .maybeSingle()
+
+      profile = byEmail ?? null
+    }
+
+    if (error && error.code !== "PGRST116") {
+      console.warn("Profile lookup failed:", error.message)
+    }
+
+    if (profile) {
+      setSession({ role: profile.role, userId: profile.id })
 
       setNeedsProfile(null)
     } else {

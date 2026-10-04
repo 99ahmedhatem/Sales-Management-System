@@ -15,6 +15,7 @@ function mapUser(row: any): User {
     email: row.email,
     lastLogin: row.last_login ?? undefined,
     managerId: row.manager_id ?? undefined,
+    commissionPercent: row.commission_percent !== null && row.commission_percent !== undefined ? Number(row.commission_percent) : 0,
   };
 }
 
@@ -31,7 +32,7 @@ export default function AdminUsers() {
   const [assignedLeads, setAssignedLeads] = useState<AssignedLead[]>([]);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [clientSearch, setClientSearch] = useState('');
-  const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'telesales' as Role, managerId: '' });
+  const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'telesales' as Role, managerId: '', commissionPercent: '' });
 
   const saveAssignedLeadPhone = async (lead: AssignedLead, value: string) => {
     const phone = value.replace(/[^\d+]/g, '');
@@ -103,6 +104,7 @@ export default function AdminUsers() {
       role: newUser.role,
       status: 'active',
       manager_id: ['sales', 'telesales'].includes(newUser.role) && newUser.managerId ? newUser.managerId : null,
+      commission_percent: Number(newUser.commissionPercent) || 0,
     });
     if (error) {
       setErrorMsg(error.message);
@@ -110,7 +112,7 @@ export default function AdminUsers() {
     }
     await loadUsers();
     setCreatedCredentials({ username: employeeCode, email: newUser.email.trim(), password: newUser.password });
-    setNewUser({ fullName: '', email: '', password: '', role: 'telesales', managerId: '' });
+    setNewUser({ fullName: '', email: '', password: '', role: 'telesales', managerId: '', commissionPercent: '' });
     setAddModal(false);
   };
 
@@ -131,6 +133,22 @@ export default function AdminUsers() {
       return;
     }
     await loadUsers();
+  };
+
+  const saveCommission = async (u: User, value: string) => {
+    const percent = Math.min(100, Math.max(0, Number(value) || 0));
+    const { error } = await supabase.from('users').update({ commission_percent: percent }).eq('id', u.id);
+    if (error) {
+      setErrorMsg(error.message);
+      return;
+    }
+    await loadUsers();
+  };
+
+  const confirmEmail = async (u: User) => {
+    setResetMessage('');
+    const { error } = await supabase.rpc('confirm_user_email', { target_user_id: u.id });
+    setResetMessage(error ? error.message : `${u.fullName}'s email is now confirmed. They can log in directly.`);
   };
 
   const deleteUser = async (u: User) => {
@@ -196,7 +214,7 @@ export default function AdminUsers() {
       </div>
 
       <Card>
-        <Table headers={['User', 'Username', 'Role', 'Password', 'Team / Manager', 'Status', 'Last Login', 'Actions']}>
+        <Table headers={['User', 'Username', 'Role', 'Password', 'Commission %', 'Team / Manager', 'Status', 'Last Login', 'Actions']}>
           {filtered.map(u => (
             <Tr key={u.id} onClick={() => setDetailUser(u)}>
               <Td>
@@ -216,6 +234,23 @@ export default function AdminUsers() {
                 <span className="text-[#6b6b6b] text-xs">Hidden for security</span>
               </Td>
               <Td>
+                <div onClick={event => event.stopPropagation()}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.1"
+                    defaultValue={u.commissionPercent ?? 0}
+                    onBlur={event => {
+                      const value = event.target.value;
+                      if (Number(value) !== (u.commissionPercent ?? 0)) saveCommission(u, value);
+                    }}
+                    className="w-16 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-[#dfff03]/60"
+                  />
+                  <span className="text-[#6b6b6b] text-xs ml-1">%</span>
+                </div>
+              </Td>
+              <Td>
                 {u.role === 'manager' ? (
                   <span className="text-[#6b6b6b] text-xs">{users.filter(x => x.managerId === u.id).length} team members</span>
                 ) : u.managerId ? (
@@ -227,10 +262,11 @@ export default function AdminUsers() {
               <Td><StatusBadge status={u.status} /></Td>
               <Td><span className="font-mono text-xs text-[#6b6b6b]">{u.lastLogin ? u.lastLogin.slice(0, 10) : 'Never'}</span></Td>
               <Td>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <Button variant="ghost" size="sm" onClick={() => toggleStatus(u)}>
                     {u.status === 'active' ? 'Deactivate' : 'Activate'}
                   </Button>
+                  <Button variant="ghost" size="sm" onClick={() => confirmEmail(u)}>Confirm Email</Button>
                   <Button variant="ghost" size="sm" onClick={() => sendPasswordReset(u)}>Change Password</Button>
                   <Button variant="ghost" size="sm" onClick={() => deleteUser(u)}>Delete</Button>
                 </div>
@@ -301,6 +337,7 @@ export default function AdminUsers() {
             { label: 'Full Name *', key: 'fullName', placeholder: 'Diana Reeves' },
             { label: 'Email', key: 'email', placeholder: 'diana@company.com' },
             { label: 'Password * (min. 8 characters)', key: 'password', placeholder: 'Create a password', type: 'password' },
+            { label: 'Commission % (of each deal price)', key: 'commissionPercent', placeholder: '10' },
           ].map(f => (
             <div key={f.key}>
               <label className="block text-xs text-[#a0a0a0] mb-1">{f.label}</label>

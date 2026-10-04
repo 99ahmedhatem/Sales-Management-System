@@ -31,6 +31,7 @@ export interface User {
   lastLogin: string;
   email: string;
   managerId?: string; // for sales/telesales: which manager they report to
+  commissionPercent?: number; // % of the deal price this user earns directly
 }
 
 export interface ClientComment {

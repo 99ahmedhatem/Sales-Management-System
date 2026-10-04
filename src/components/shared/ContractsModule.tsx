@@ -150,7 +150,7 @@ export default function ContractsModule({ userId, role }: Props) {
       deal.packageName.toLowerCase().includes(query)
     )
   })
-  const canCreateDeal = role === "sales" || role === "telesales"
+  const canCreateDeal = role === "sales" || role === "telesales" || role === "manager"
   const canUploadContract =
     canCreateDeal && selectedDeal?.closedByUserId === userId
   const canApprove = role === "admin" || role === "manager"
@@ -490,6 +490,7 @@ export default function ContractsModule({ userId, role }: Props) {
           open={createOpen}
           onClose={() => setCreateOpen(false)}
           onCreated={() => void load()}
+          role={role === "manager" ? "manager" : undefined}
         />
       )}
     </div>

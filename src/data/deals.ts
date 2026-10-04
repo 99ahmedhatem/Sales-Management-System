@@ -11,6 +11,8 @@ export type DealStatus =
 export interface Deal {
   id: string
   leadId: string
+  commissionPercent: number | null
+  commissionSar: number | null
   leadName: string
   leadPhone: string
   salesUserId: string | null
@@ -38,6 +40,8 @@ export interface Deal {
 export interface DealRow {
   id: string
   lead_id: string
+  commission_percent: number | string | null
+  commission_sar: number | string | null
   sales_user_id: string | null
   telesales_user_id: string
   closed_by_user_id: string
@@ -92,6 +96,8 @@ export function mapDeal(row: DealRow, summaries: DealSummaryMaps): Deal {
     approvalOverrideReason: row.approval_override_reason,
     status: row.status,
     createdAt: row.created_at,
+    commissionPercent: row.commission_percent === null ? null : Number(row.commission_percent),
+    commissionSar: row.commission_sar === null ? null : Number(row.commission_sar),
   }
 }
 
@@ -100,7 +106,7 @@ export async function loadDealsPage(page: number, pageSize: number) {
   const { data, error, count } = await supabase
     .from("deals")
     .select(
-      "id, lead_id, sales_user_id, telesales_user_id, closed_by_user_id, package_id, package_name, package_duration_months, list_price_sar, min_price_sar, price_sar, below_min_price, start_date, end_date, notes, recording_path, contract_path, approval_override_reason, status, created_at",
+      "id, lead_id, sales_user_id, telesales_user_id, closed_by_user_id, package_id, package_name, package_duration_months, list_price_sar, min_price_sar, price_sar, below_min_price, start_date, end_date, notes, recording_path, contract_path, approval_override_reason, status, created_at, commission_percent, commission_sar",
       { count: "exact" },
     )
     .order("created_at", { ascending: false })

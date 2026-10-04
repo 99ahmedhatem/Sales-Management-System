@@ -12,6 +12,7 @@ interface Props {
   onClose: () => void
   onCreated: (dealId: string) => void
   initialLeadId?: string
+  role?: "manager"
 }
 
 interface LeadOption {
@@ -40,6 +41,7 @@ export default function DealCreateModal({
   onClose,
   onCreated,
   initialLeadId,
+  role,
 }: Props) {
   const [leads, setLeads] = useState<LeadOption[]>([])
   const [leadSearch, setLeadSearch] = useState("")
@@ -132,8 +134,13 @@ export default function DealCreateModal({
     setError("")
     setSuccess("")
     const numericPrice = Number(priceSar)
-    if (!leadId || !packageId || !Number.isFinite(numericPrice) || numericPrice < 0 || !startDate || !recording) {
-      setError("Choose a lead and package, enter the closing price and start date, and attach a meeting recording.")
+    const recordingRequired = role !== "manager"
+    if (!leadId || !packageId || !Number.isFinite(numericPrice) || numericPrice < 0 || !startDate || (recordingRequired && !recording)) {
+      setError(
+        recordingRequired
+          ? "Choose a lead and package, enter the closing price and start date, and attach a meeting recording."
+          : "Choose a lead and package, and enter the closing price and start date."
+      )
       return
     }
 
@@ -153,6 +160,12 @@ export default function DealCreateModal({
 
     setCreatedDealId(dealId)
     onCreated(dealId)
+    if (!recording) {
+      setSuccess("Deal created.")
+      setRecordingAttached(true)
+      setSaving(false)
+      return
+    }
     const objectPath = `${dealId}/${crypto.randomUUID()}-${safeFilename(recording.name)}`
     const { error: uploadError } = await supabase.storage
       .from("recordings")
@@ -414,7 +427,7 @@ export default function DealCreateModal({
               </div>
             )}
             <label className="block text-xs text-[#a0a0a0]">
-              Meeting recording *
+              {role === "manager" ? "Meeting recording (optional)" : "Meeting recording *"}
               <input
                 type="file"
                 accept="audio/*,video/*"

@@ -35,10 +35,6 @@ export default function ManagerDashboard({ userId }: Props) {
 
   // My team: all Sales/Telesales who have managerId = me
   const myTeam = users.filter(u => u.managerId === userId);
-  const myTeamIds = myTeam.map(u => u.id);
-
-  // My leads: leads assigned to any of my team members OR directly to me
-  const myLeads = allLeads.filter(l => l.assignedTo && (myTeamIds.includes(l.assignedTo) || l.assignedTo === userId));
 
   // Team meetings come from the real meetings table (exact counts per sales agent).
   const [salesMeetingCounts, setSalesMeetingCounts] = useState<Record<string, { total: number; won: number }>>({});
@@ -46,7 +42,11 @@ export default function ManagerDashboard({ userId }: Props) {
   const teamMeetingTotal = Object.values(salesMeetingCounts).reduce((sum, row) => sum + row.total, 0);
   const won = Object.values(salesMeetingCounts).reduce((sum, row) => sum + row.won, 0);
 
-  const converted = myLeads.filter(l => ['Subscribed', 'Converted'].includes(l.status)).length;
+  // Exact per-user lead counts (get_team_lead_stats), not just the leads on the current page.
+  const [leadStats, setLeadStats] = useState<Record<string, { total: number; contacted: number; converted: number }>>({});
+  const statsFor = (id: string) => leadStats[id] ?? { total: 0, contacted: 0, converted: 0 };
+  const teamLeadTotal = Object.values(leadStats).reduce((sum, row) => sum + row.total, 0);
+  const converted = Object.values(leadStats).reduce((sum, row) => sum + row.converted, 0);
 
   const telesalesTeam = myTeam.filter(u => u.role === 'telesales');
   const assignableTelesales = telesalesTeam.filter(u => u.status === 'active');
@@ -132,18 +132,21 @@ export default function ManagerDashboard({ userId }: Props) {
           if (outcome) query = query.eq('outcome', outcome);
           return query;
         };
-        const [receivedRes, distributedRes, workedRes, upcomingRes, ...salesCountRes] = await Promise.all([
+        const [receivedRes, distributedRes, workedRes, leadStatsRes, upcomingRes, ...salesCountRes] = await Promise.all([
           supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', userId),
           teamIds.length ? supabase.from('leads').select('id', { count: 'exact', head: true }).in('assigned_to', teamIds) : Promise.resolve({ count: 0, error: null }),
           teamIds.length ? supabase.rpc('get_worked_clients_count', { p_user_ids: teamIds }) : Promise.resolve({ data: 0, error: null }),
+          supabase.rpc('get_team_lead_stats', { p_user_ids: [userId, ...teamIds] }),
           salesIds.length
             ? loadMeetingsPage({ page: 0, pageSize: 10, assignedSalesIds: salesIds, outcome: 'Scheduled', proposedAfter: new Date().toISOString() })
             : Promise.resolve({ data: [] as Meeting[], count: 0, error: null }),
           ...salesIds.flatMap(id => [meetingCount(id), meetingCount(id, 'Deal Closed – Won')]),
         ]);
         const countError = receivedRes.error?.message || distributedRes.error?.message || workedRes.error?.message
-          || upcomingRes.error || salesCountRes.find(res => res.error)?.error?.message;
+          || leadStatsRes.error?.message || upcomingRes.error || salesCountRes.find(res => res.error)?.error?.message;
         if (countError) setErrorMsg(countError);
+        setLeadStats(Object.fromEntries(((leadStatsRes.data ?? []) as { user_id: string; total: number; contacted: number; converted: number }[])
+          .map(row => [row.user_id, { total: Number(row.total), contacted: Number(row.contacted), converted: Number(row.converted) }])));
         setReceivedCount(receivedRes.count ?? 0);
         setDistributedCount(distributedRes.count ?? 0);
         setWorkedClientCount(Number(workedRes.data ?? 0));
@@ -161,9 +164,8 @@ export default function ManagerDashboard({ userId }: Props) {
   useRealtimeRefresh(['leads', 'users', 'meetings'], () => setRefreshVersion(version => version + 1));
 
   const agentStats = telesalesTeam.map(agent => {
-    const leads = myLeads.filter(l => l.assignedTo === agent.id);
-    const conv = leads.filter(l => ['Subscribed', 'Converted'].includes(l.status)).length;
-    return { agent, total: leads.length, contacted: leads.filter(l => !['New', 'Assigned'].includes(l.status)).length, converted: conv, rate: leads.length ? Math.round(conv / leads.length * 100) : 0 };
+    const { total, contacted, converted: conv } = statsFor(agent.id);
+    return { agent, total, contacted, converted: conv, rate: total ? Math.round(conv / total * 100) : 0 };
   });
 
   const salesStats = salesTeam.map(agent => {
@@ -341,7 +343,7 @@ export default function ManagerDashboard({ userId }: Props) {
         <KpiCard label="Team Members" value={myTeam.length} sub={t('{a} telesales · {b} sales', { a: telesalesTeam.length, b: salesTeam.length })} />
         <KpiCard label="Received from Admin" value={receivedCount} sub="Waiting in your pool" />
         <KpiCard label="Distributed" value={distributedCount} sub="Assigned to your team" />
-        <KpiCard label="Converted" value={converted} accent sub={t('{n}% rate', { n: myLeads.length > 0 ? Math.round(converted / myLeads.length * 100) : 0 })} />
+        <KpiCard label="Converted" value={converted} accent sub={t('{n}% rate', { n: teamLeadTotal > 0 ? Math.round(converted / teamLeadTotal * 100) : 0 })} />
         <KpiCard label="Deals Won" value={won} sub={t('{n} total meetings', { n: teamMeetingTotal })} />
       </div>
 
@@ -525,7 +527,7 @@ export default function ManagerDashboard({ userId }: Props) {
             <label className="block text-xs text-[#a0a0a0] mb-2">{t('Assign to:')}</label>
             <div className="space-y-2">
               {assignableTelesales.map(u => {
-                const count = myLeads.filter(l => l.assignedTo === u.id).length;
+                const count = statsFor(u.id).total;
                 return (
                   <button
                     key={u.id}

@@ -2,133 +2,56 @@ import { useEffect, useState } from "react"
 
 import { supabase } from "../../supabaseClient"
 
-import { LeadStatus, User } from "../../data/crmTypes"
-
 import { Card, KpiCard } from "../ui"
 
 import { useI18n } from "../../i18n/I18nProvider"
 
-interface LeadReportRow {
-  id: string
-
-  assigned_to: string | null
-
-  status: LeadStatus
-
-  source: string | null
-}
-
-interface MeetingReportRow {
-  id: string
-
-  assigned_sales_id: string
-
-  outcome: string
-}
-
-interface CallReportRow {
-  id: string
-
-  actor_id: string
-}
-
-interface CallReport {
-  id: string
-
-  actorId: string
-}
-
-interface ReportData {
-  leads: LeadReport[]
-
-  meetings: MeetingReport[]
-
-  calls: CallReport[]
-
-  users: Pick<User, "id" | "fullName" | "role">[]
-}
-
-interface LeadReport {
-  id: string
-
-  assignedTo: string | null
-
-  status: LeadStatus
-
-  source: string | null
-}
-
-interface MeetingReport {
-  id: string
-
-  assignedSalesId: string
-
-  outcome: string
-}
-
-const EMPTY_REPORT: ReportData = {
-  leads: [],
-  meetings: [],
-  calls: [],
-  users: [],
-}
-
-const PAGE_SIZE = 1000
-
-function mapLeadReport(row: LeadReportRow): LeadReport {
-  return {
-    id: row.id,
-    assignedTo: row.assigned_to,
-    status: row.status,
-    source: row.source,
-  }
-}
-
-function mapMeetingReport(row: MeetingReportRow): MeetingReport {
-  return {
-    id: row.id,
-    assignedSalesId: row.assigned_sales_id,
-    outcome: row.outcome,
-  }
-}
-
-function mapCallReport(row: CallReportRow): CallReport {
-  return { id: row.id, actorId: row.actor_id }
-}
-
-function mapReportUser(row: {
-  id: string
-  full_name: string
-  role: User["role"]
-}): Pick<User, "id" | "fullName" | "role"> {
-  return { id: row.id, fullName: row.full_name, role: row.role }
-}
-
-async function loadAllPages<T>(
-  readPage: (
-    from: number,
-    to: number,
-  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
-): Promise<T[]> {
-  const rows: T[] = []
-
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await readPage(from, from + PAGE_SIZE - 1)
-
-    if (error) throw new Error(error.message)
-
-    rows.push(...(data ?? []))
-
-    if (!data || data.length < PAGE_SIZE) break
+/** Shape returned by get_reports_summary() (020). All counts are computed in the database. */
+interface ReportsSummary {
+  leads: {
+    total: number
+    assigned: number
+    contacted: number
+    interested: number
+    converted: number
   }
 
-  return rows
+  meetings: { won: number; lost: number }
+
+  sources: { source: string; count: number; converted: number }[]
+
+  telesales: {
+    user_id: string
+    full_name: string
+    total: number
+    converted: number
+    calls: number
+  }[]
+
+  sales: {
+    user_id: string
+    full_name: string
+    total: number
+    won: number
+    lost: number
+  }[]
 }
+
+const EMPTY_SUMMARY: ReportsSummary = {
+  leads: { total: 0, assigned: 0, contacted: 0, interested: 0, converted: 0 },
+  meetings: { won: 0, lost: 0 },
+  sources: [],
+  telesales: [],
+  sales: [],
+}
+
+const rate = (part: number, whole: number, empty: string) =>
+  whole > 0 ? ((part / whole) * 100).toFixed(1) : empty
 
 export default function AdminReports() {
   const { t } = useI18n()
 
-  const [report, setReport] = useState(EMPTY_REPORT)
+  const [summary, setSummary] = useState(EMPTY_SUMMARY)
 
   const [loading, setLoading] = useState(true)
 
@@ -142,81 +65,16 @@ export default function AdminReports() {
 
       setError("")
 
-      try {
-        const [leads, meetings, calls, users] = await Promise.all([
-          loadAllPages<LeadReportRow>((from, to) =>
-            supabase
+      const { data, error: rpcError } = await supabase.rpc("get_reports_summary")
 
-              .from("leads")
+      if (!active) return
 
-              .select("id, assigned_to, status, source")
+      if (rpcError) {
+        setError(rpcError.message)
 
-              .order("id")
-
-              .range(from, to),
-          ),
-
-          loadAllPages<MeetingReportRow>((from, to) =>
-            supabase
-
-              .from("meetings")
-
-              .select("id, assigned_sales_id, outcome")
-
-              .order("id")
-
-              .range(from, to),
-          ),
-
-          loadAllPages<CallReportRow>((from, to) =>
-            supabase
-
-              .from("activity_logs")
-
-              .select("id, actor_id")
-
-              .eq("activity_type", "call")
-
-              .order("id")
-
-              .range(from, to),
-          ),
-
-          loadAllPages<{ id: string; full_name: string; role: User["role"] }>(
-            (from, to) =>
-              supabase
-
-                .from("users")
-
-                .select("id, full_name, role")
-
-                .order("full_name")
-
-                .range(from, to),
-          ),
-        ])
-
-        if (!active) return
-
-        setReport({
-          leads: leads.map(mapLeadReport),
-
-          meetings: meetings.map(mapMeetingReport),
-
-          calls: calls.map(mapCallReport),
-
-          users: users.map(mapReportUser),
-        })
-      } catch (loadError) {
-        if (!active) return
-
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Could not load reports.",
-        )
-
-        setReport(EMPTY_REPORT)
+        setSummary(EMPTY_SUMMARY)
+      } else {
+        setSummary({ ...EMPTY_SUMMARY, ...(data as ReportsSummary | null) })
       }
 
       setLoading(false)
@@ -229,100 +87,35 @@ export default function AdminReports() {
     }
   }, [])
 
-  const totalLeads = report.leads.length
+  const {
+    total: totalLeads,
+    assigned: assignedLeads,
+    contacted: contactedLeads,
+    interested: interestedLeads,
+    converted: convertedLeads,
+  } = summary.leads
 
-  const convertedLeads = report.leads.filter(
-    (lead) => lead.status === "Converted",
-  ).length
+  const conversionRate = rate(convertedLeads, totalLeads, "0.0")
 
-  const conversionRate =
-    totalLeads > 0 ? ((convertedLeads / totalLeads) * 100).toFixed(1) : "0.0"
+  const { won: wonDeals, lost: lostDeals } = summary.meetings
 
-  const wonDeals = report.meetings.filter(
-    (meeting) => meeting.outcome === "Deal Closed – Won",
-  ).length
+  const agentStats = summary.telesales.map((row) => ({
+    agent: { id: row.user_id, fullName: row.full_name },
+    total: row.total,
+    converted: row.converted,
+    callsMade: row.calls,
+    convRate: rate(row.converted, row.total, "0"),
+  }))
 
-  const lostDeals = report.meetings.filter(
-    (meeting) => meeting.outcome === "Deal Lost",
-  ).length
+  const salesStats = summary.sales.map((row) => ({
+    agent: { id: row.user_id, fullName: row.full_name },
+    total: row.total,
+    won: row.won,
+    lost: row.lost,
+    winRate: rate(row.won, row.total, "0"),
+  }))
 
-  const telesalesUsers = report.users.filter(
-    (user) => user.role === "telesales",
-  )
-
-  const salesUsers = report.users.filter((user) => user.role === "sales")
-
-  const agentStats = telesalesUsers.map((agent) => {
-    const myLeads = report.leads.filter((lead) => lead.assignedTo === agent.id)
-
-    const converted = myLeads.filter(
-      (lead) => lead.status === "Converted",
-    ).length
-
-    const callsMade = report.calls.filter(
-      (call) => call.actorId === agent.id,
-    ).length
-
-    const convRate =
-      myLeads.length > 0 ? ((converted / myLeads.length) * 100).toFixed(1) : "0"
-
-    return { agent, total: myLeads.length, converted, callsMade, convRate }
-  })
-
-  const salesStats = salesUsers.map((agent) => {
-    const myMeetings = report.meetings.filter(
-      (meeting) => meeting.assignedSalesId === agent.id,
-    )
-
-    const won = myMeetings.filter(
-      (meeting) => meeting.outcome === "Deal Closed – Won",
-    ).length
-
-    const lost = myMeetings.filter(
-      (meeting) => meeting.outcome === "Deal Lost",
-    ).length
-
-    const winRate =
-      myMeetings.length > 0 ? ((won / myMeetings.length) * 100).toFixed(1) : "0"
-
-    return { agent, total: myMeetings.length, won, lost, winRate }
-  })
-
-  const sources = [
-    ...new Set(report.leads.map((lead) => lead.source || "Unknown")),
-  ]
-
-  const sourceData = sources
-    .map((source) => ({
-      source,
-
-      count: report.leads.filter(
-        (lead) => (lead.source || "Unknown") === source,
-      ).length,
-
-      converted: report.leads.filter(
-        (lead) =>
-          (lead.source || "Unknown") === source && lead.status === "Converted",
-      ).length,
-    }))
-    .sort((a, b) => b.count - a.count)
-
-  const assignedLeads = report.leads.filter((lead) => lead.assignedTo).length
-
-  const contactedLeads = report.leads.filter((lead) =>
-    [
-      "Contacted",
-      "Interested",
-      "Not Interested",
-      "Converted",
-      "Call Back Later",
-      "No Answer",
-    ].includes(lead.status),
-  ).length
-
-  const interestedLeads = report.leads.filter(
-    (lead) => lead.status === "Interested",
-  ).length
+  const sourceData = summary.sources
 
   return (
     <div className="space-y-6 p-6">

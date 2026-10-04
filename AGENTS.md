@@ -8,11 +8,11 @@ Stack: React 19 + Vite + Tailwind v4 + TypeScript · Supabase (Postgres, Auth, R
 
 Before writing any query or RPC call, open `supabase/migrations/*.sql` and use the **exact** table, column and function names there. **Never invent a column or RPC name.** If something you need doesn't exist, add a new numbered migration file (`009_...sql`) and tell the user to run it. Past bug: the UI queried `deals.sales_user_id` / `meeting_requests.assigned_sales_id` while the live DB had different names, so every screen failed.
 
-Migration order: `supabase-setup.sql` (base) → `000b` → `001_packages` → `004_meetings` → `005_meeting_requests` → `006_deals` → `007_contract_reviews` → `008_money_commissions_payroll` → `009_management_tools` → `010_performance_security` → `011_repair` → `012_users_rls` → `013_leads_counts` → `014_repair_fixes` → `015_lead_status_counts` → `016_audit_everything` → `017_worked_clients_count` → `018_team_performance`.
+Migration order: `supabase-setup.sql` (base) → `000b` → `001_packages` → `004_meetings` → `005_meeting_requests` → `006_deals` → `007_contract_reviews` → `008_money_commissions_payroll` → `009_management_tools` → `010_performance_security` → `011_repair` → `012_users_rls` → `013_leads_counts` → `014_repair_fixes` → `015_lead_status_counts` → `016_audit_everything` → `017_worked_clients_count` → `018_team_performance` → `020_reports_summary` (019 is reserved for `019_dedupe_leads`).
 
 **Every database change = a numbered migration file in the repo.** Never run SQL only from a chat / the SQL editor without saving it as the next numbered file in `supabase/migrations/`. If it isn't in the repo, it doesn't exist.
 
-Not in the repo yet: `000b`. Add it to `supabase/migrations/` as soon as you have it. Migrations not run yet on Supabase are collected in `supabase/RUN_PENDING.sql` (currently 014 → 015 → 016 → 017 → 018).
+Not in the repo yet: `000b`. Add it to `supabase/migrations/` as soon as you have it. Migrations not run yet on Supabase are collected in `supabase/RUN_PENDING.sql` (currently 014 → 015 → 016 → 017 → 018 → 020).
 
 **SQL in a PR:** any PR that adds SQL must end its description with this exact text, followed by the list: "الملفات الجديدة اللي لازم تتشغّل في Supabase بالترتيب" (the new files to run in Supabase, in order).
 
@@ -108,6 +108,8 @@ Use these exact names (read `supabase/migrations/009_management_tools.sql` for d
   - `get_leads_counts()` (013, admin only) → `total, unassigned, without_phone`
   - `get_lead_status_counts()` (015, admin only) → one row per `status, total`
   - `get_worked_clients_count(p_user_ids uuid[], p_activity_types text[] default {call,forward})` (017) → distinct leads worked; admin for anyone, otherwise yourself or your team
+  - `get_reports_summary()` (020, admin only) → one jsonb with `leads`, `meetings`, `sources`, `telesales`, `sales` for the Reports page. Never page through a whole table in the browser to compute a report.
+  - `get_team_lead_stats(p_user_ids uuid[])` (020) → per user `user_id, total, contacted, converted`; admin for anyone, otherwise yourself or your team. Use it for per-agent numbers instead of counting the leads on the current page.
 
 ## Audit log & stability (016)
 

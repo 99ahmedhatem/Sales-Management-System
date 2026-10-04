@@ -693,4 +693,5 @@ export const ar: Record<string, string> = {
   "Commission % must be between 0 and 100": "نسبة العمولة لازم تكون بين 0 و 100",
   "Lead % must be between 0 and 100": "نسبة العميل لازم تكون بين 0 و 100",
   "Manager % must be between 0 and 100": "نسبة المانجر لازم تكون بين 0 و 100",
+  "Only admin can read reports": "التقارير متاحة لمدير النظام فقط",
 };

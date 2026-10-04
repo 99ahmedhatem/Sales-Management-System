@@ -8,11 +8,11 @@ Stack: React 19 + Vite + Tailwind v4 + TypeScript · Supabase (Postgres, Auth, R
 
 Before writing any query or RPC call, open `supabase/migrations/*.sql` and use the **exact** table, column and function names there. **Never invent a column or RPC name.** If something you need doesn't exist, add a new numbered migration file (`009_...sql`) and tell the user to run it. Past bug: the UI queried `deals.sales_user_id` / `meeting_requests.assigned_sales_id` while the live DB had different names, so every screen failed.
 
-Migration order: `supabase-setup.sql` (base) → `000b` → `001_packages` → `004_meetings` → `005_meeting_requests` → `006_deals` → `007_contract_reviews` → `008_money_commissions_payroll` → `009_management_tools` → `010_performance_security` → `011_repair` → `012_users_rls` → `013_leads_counts` → `014_repair_fixes` → `015_lead_status_counts` → `016_audit_everything` → `017_worked_clients_count`.
+Migration order: `supabase-setup.sql` (base) → `000b` → `001_packages` → `004_meetings` → `005_meeting_requests` → `006_deals` → `007_contract_reviews` → `008_money_commissions_payroll` → `009_management_tools` → `010_performance_security` → `011_repair` → `012_users_rls` → `013_leads_counts` → `014_repair_fixes` → `015_lead_status_counts` → `016_audit_everything` → `017_worked_clients_count` → `018_team_performance`.
 
 **Every database change = a numbered migration file in the repo.** Never run SQL only from a chat / the SQL editor without saving it as the next numbered file in `supabase/migrations/`. If it isn't in the repo, it doesn't exist.
 
-Not in the repo yet: `000b`. Add it to `supabase/migrations/` as soon as you have it. Migrations not run yet on Supabase are collected in `supabase/RUN_PENDING.sql` (currently 014 → 015 → 016 → 017).
+Not in the repo yet: `000b`. Add it to `supabase/migrations/` as soon as you have it. Migrations not run yet on Supabase are collected in `supabase/RUN_PENDING.sql` (currently 014 → 015 → 016 → 017 → 018).
 
 **SQL in a PR:** any PR that adds SQL must end its description with this exact text, followed by the list: "الملفات الجديدة اللي لازم تتشغّل في Supabase بالترتيب" (the new files to run in Supabase, in order).
 
@@ -56,6 +56,7 @@ Telesales may also close a deal himself (`create_deal` as telesales): `closed_by
 - Percentages are **snapshotted into `deal_commissions` automatically when a deal becomes `approved`** (DB trigger). Changing rates later doesn't touch old deals.
 - Admin override for one deal: `set_deal_commission(p_deal_id, p_user_id, p_role_in_deal, p_percent, p_source_user_id)`.
 - Salary = base + commissions → **`get_payroll(p_month)`** and `get_commission_lines(p_user_id, p_month)`. Never compute in the client. Cancelled deals drop out automatically (`cancel_deal`, admin).
+- Team performance / my earnings (018): `get_team_performance(p_from date, p_to date)` (nulls = all time; admin all, manager self + team, others self). Admin edits salary and rates with `admin_set_user_pay(p_user_id, p_base_salary, p_base_currency, p_closer_percent, p_lead_percent, p_manager_percent)`; `admin-create-user` also accepts `base_salary, base_currency, commission_percent, lead_percent, manager_percent`.
 - `app_settings.commission_basis`: `deal_value` (default; month of `approved_at`) or `collected`.
 
 ## Writes go through RPCs only

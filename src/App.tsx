@@ -30,6 +30,8 @@ const AdminReports = lazy(() => import("./components/admin/AdminReports"))
 
 const AdminAuditLog = lazy(() => import("./components/admin/AdminAuditLog"))
 
+const TeamPerformance = lazy(() => import("./components/shared/TeamPerformance"))
+
 const ManagerDashboard = lazy(
   () => import("./components/manager/ManagerDashboard"),
 )
@@ -168,6 +170,12 @@ export default function App() {
           )}
           {session.role === "admin" && page === "insights" && <InsightsDashboard role="admin" />}
           {session.role === "manager" && page === "insights" && <InsightsDashboard role="manager" />}
+          {(session.role === "admin" || session.role === "manager") && page === "team" && (
+            <TeamPerformance mode="team" userId={session.userId} />
+          )}
+          {(session.role === "sales" || session.role === "telesales") && page === "earnings" && (
+            <TeamPerformance mode="mine" userId={session.userId} />
+          )}
           {session.role === "admin" && page === "leads" && <AdminLeads />}
           {session.role === "admin" && page === "activity" && <AdminActivity />}
           {session.role === "admin" && page === "users" && <AdminUsers />}

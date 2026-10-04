@@ -370,6 +370,26 @@ const packagesNavItem: NavItem = {
   ),
 }
 
+const teamNavItem: NavItem = {
+  key: "team",
+  label: "Team performance",
+  icon: (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M9 20H4v-2a3 3 0 015.356-1.857M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0zm2.356 6.143A5 5 0 0117 18v2H7v-2a5 5 0 012.356-1.857z" />
+    </svg>
+  ),
+}
+
+const earningsNavItem: NavItem = {
+  key: "earnings",
+  label: "My earnings",
+  icon: (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ),
+}
+
 interface Props {
   role: Role
 
@@ -392,7 +412,12 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
           ? managerNav
           : telesalesNav
 
-  const nav = role === "manager" ? roleNav : [...roleNav, packagesNavItem]
+  const nav =
+    role === "manager"
+      ? [...roleNav, teamNavItem]
+      : role === "admin"
+        ? [...roleNav, teamNavItem, packagesNavItem]
+        : [...roleNav, earningsNavItem, packagesNavItem]
 
   const defaultPage = nav[0].key
 

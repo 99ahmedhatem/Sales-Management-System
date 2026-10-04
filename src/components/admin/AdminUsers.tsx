@@ -43,7 +43,12 @@ export default function AdminUsers() {
   const [debouncedClientSearch, setDebouncedClientSearch] = useState('');
   const [creatingUser, setCreatingUser] = useState(false);
   const clientsRequestId = useRef(0);
-  const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'telesales' as Role, managerId: '', commissionPercent: '' });
+  const [newUser, setNewUser] = useState(EMPTY_NEW_USER);
+  const [payUser, setPayUser] = useState<User | null>(null);
+  const [payForm, setPayForm] = useState<PayForm>(EMPTY_PAY);
+  const [payLoading, setPayLoading] = useState(false);
+  const [paySaving, setPaySaving] = useState(false);
+  const [payError, setPayError] = useState('');
 
   const saveAssignedLeadPhone = async (lead: AssignedLead, value: string) => {
     const phone = value.replace(/[^\d+]/g, '');
@@ -140,7 +145,11 @@ export default function AdminUsers() {
         full_name: newUser.fullName.trim(),
         role: newUser.role,
         manager_id: ['sales', 'telesales'].includes(newUser.role) && newUser.managerId ? newUser.managerId : null,
-        commission_percent: Number(newUser.commissionPercent) || 0,
+        base_salary: Number(newUser.baseSalary) || 0,
+        base_currency: newUser.baseCurrency,
+        commission_percent: newUser.role === 'manager' ? 0 : Number(newUser.commissionPercent) || 0,
+        lead_percent: newUser.role === 'telesales' ? Number(newUser.leadPercent) || 0 : 0,
+        manager_percent: newUser.role === 'manager' ? 0 : Number(newUser.managerPercent) || 0,
       },
     });
     setCreatingUser(false);
@@ -150,8 +159,54 @@ export default function AdminUsers() {
     }
     await loadUsers();
     setCreatedCredentials({ username: data.username, email: data.email ?? newUser.email.trim(), password: newUser.password });
-    setNewUser({ fullName: '', email: '', password: '', role: 'telesales', managerId: '', commissionPercent: '' });
+    setNewUser(EMPTY_NEW_USER);
     setAddModal(false);
+  };
+
+  const openPay = async (u: User) => {
+    setPayUser(u);
+    setPayError('');
+    setPayForm(EMPTY_PAY);
+    setPayLoading(true);
+    const { data, error } = await supabase
+      .from('user_commission_rates')
+      .select('base_salary, base_currency, closer_percent, lead_percent, manager_percent')
+      .eq('user_id', u.id)
+      .maybeSingle();
+    if (error) setPayError(error.message);
+    else if (data) {
+      setPayForm({
+        baseSalary: String(data.base_salary ?? 0),
+        baseCurrency: data.base_currency === 'SAR' ? 'SAR' : 'EGP',
+        commissionPercent: String(data.closer_percent ?? 0),
+        leadPercent: String(data.lead_percent ?? 0),
+        managerPercent: String(data.manager_percent ?? 0),
+      });
+    } else {
+      setPayForm({ ...EMPTY_PAY, commissionPercent: String(u.commissionPercent ?? 0) });
+    }
+    setPayLoading(false);
+  };
+
+  const savePay = async () => {
+    if (!payUser) return;
+    setPaySaving(true);
+    setPayError('');
+    const { error } = await supabase.rpc('admin_set_user_pay', {
+      p_user_id: payUser.id,
+      p_base_salary: Number(payForm.baseSalary) || 0,
+      p_base_currency: payForm.baseCurrency,
+      p_closer_percent: payUser.role === 'manager' ? 0 : Number(payForm.commissionPercent) || 0,
+      p_lead_percent: payUser.role === 'telesales' ? Number(payForm.leadPercent) || 0 : 0,
+      p_manager_percent: payUser.role === 'manager' ? 0 : Number(payForm.managerPercent) || 0,
+    });
+    setPaySaving(false);
+    if (error) {
+      setPayError(error.message);
+      return;
+    }
+    setPayUser(null);
+    await loadUsers();
   };
 
   const sendPasswordReset = async (u: User) => {
@@ -309,10 +364,11 @@ export default function AdminUsers() {
               </Td>
               <Td><span className="font-mono text-xs text-[#6b6b6b]">{u.lastLogin ? u.lastLogin.slice(0, 10) : t('Never')}</span></Td>
               <Td>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap" onClick={event => event.stopPropagation()}>
                   <Button variant="ghost" size="sm" onClick={() => toggleStatus(u)}>
                     {u.status === 'active' ? t('Deactivate') : t('Activate')}
                   </Button>
+                  <Button variant="ghost" size="sm" onClick={() => openPay(u)}>{t('Pay')}</Button>
                   <Button variant="ghost" size="sm" onClick={() => sendPasswordReset(u)}>{t('Change Password')}</Button>
                   <Button variant="ghost" size="sm" onClick={() => deleteUser(u)}>{t('Delete')}</Button>
                 </div>
@@ -385,7 +441,6 @@ export default function AdminUsers() {
             { label: 'Full Name *', key: 'fullName', placeholder: 'Diana Reeves' },
             { label: 'Email', key: 'email', placeholder: 'diana@company.com' },
             { label: 'Password * (min. 8 characters)', key: 'password', placeholder: 'Create a password', type: 'password' },
-            { label: 'Commission % (of each deal price)', key: 'commissionPercent', placeholder: '10' },
           ].map(f => (
             <div key={f.key}>
               <label className="block text-xs text-[#a0a0a0] mb-1">{t(f.label)}</label>
@@ -423,6 +478,7 @@ export default function AdminUsers() {
               </select>
             </div>
           )}
+          <PayFields role={newUser.role} value={newUser} onChange={patch => setNewUser(prev => ({ ...prev, ...patch }))} />
           <div className="flex gap-2 pt-2">
             <Button variant="primary" disabled={creatingUser || !newUser.email || !newUser.fullName || newUser.password.length < 8} onClick={handleAdd}>{creatingUser ? t('Creating…') : t('Register User')}</Button>
             <Button variant="ghost" onClick={() => setAddModal(false)}>{t('Cancel')}</Button>
@@ -449,6 +505,24 @@ export default function AdminUsers() {
               ))}
             </div>
             <Button variant="primary" onClick={() => setCreatedCredentials(null)}>{t('Done')}</Button>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={!!payUser} onClose={() => setPayUser(null)} title="Salary & Commission">
+        {payUser && (
+          <div className="space-y-3">
+            <div className="text-white text-sm font-medium">{payUser.fullName} · {t(roleLabel[payUser.role])}</div>
+            {payError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs rounded p-2 break-words">{t(payError)}</div>}
+            {payLoading ? (
+              <div className="text-[#6b6b6b] text-xs py-4">{t('Loading…')}</div>
+            ) : (
+              <PayFields role={payUser.role} value={payForm} onChange={patch => setPayForm(prev => ({ ...prev, ...patch }))} />
+            )}
+            <div className="flex gap-2 pt-2">
+              <Button variant="primary" disabled={payLoading || paySaving} onClick={savePay}>{paySaving ? t('Saving…') : t('Save')}</Button>
+              <Button variant="ghost" onClick={() => setPayUser(null)}>{t('Cancel')}</Button>
+            </div>
           </div>
         )}
       </Modal>
@@ -486,6 +560,55 @@ export default function AdminUsers() {
           {resetMessage}
         </div>
       )}
+    </div>
+  );
+}
+
+interface PayForm {
+  baseSalary: string;
+  baseCurrency: 'EGP' | 'SAR';
+  commissionPercent: string;
+  leadPercent: string;
+  managerPercent: string;
+}
+
+const EMPTY_PAY: PayForm = { baseSalary: '', baseCurrency: 'EGP', commissionPercent: '', leadPercent: '', managerPercent: '' };
+const EMPTY_NEW_USER = { fullName: '', email: '', password: '', role: 'telesales' as Role, managerId: '', ...EMPTY_PAY };
+
+/**
+ * Salary + percentages for one employee (stored in user_commission_rates).
+ * manager → salary only · sales → + commission, manager % · telesales → + lead %.
+ */
+function PayFields({ role, value, onChange }: { role: Role; value: PayForm; onChange: (patch: Partial<PayForm>) => void }) {
+  const { t } = useI18n();
+  const inputClass = 'w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60';
+  const percent = (key: 'commissionPercent' | 'leadPercent' | 'managerPercent', label: string, hint: string) => (
+    <div key={key}>
+      <label className="block text-xs text-[#a0a0a0] mb-1">{t(label)}</label>
+      <input type="number" min={0} max={100} step="0.1" value={value[key]} placeholder="0"
+        onChange={e => onChange({ [key]: e.target.value })} className={inputClass} />
+      <p className="text-[#6b6b6b] text-[11px] mt-1">{t(hint)}</p>
+    </div>
+  );
+  return (
+    <div className="space-y-3 border-t border-[#2a2a2a] pt-3">
+      <div className="grid grid-cols-3 gap-2">
+        <div className="col-span-2">
+          <label className="block text-xs text-[#a0a0a0] mb-1">{t('Base salary')}</label>
+          <input type="number" min={0} step="1" value={value.baseSalary} placeholder="0"
+            onChange={e => onChange({ baseSalary: e.target.value })} className={inputClass} />
+        </div>
+        <div>
+          <label className="block text-xs text-[#a0a0a0] mb-1">{t('Currency')}</label>
+          <select value={value.baseCurrency} onChange={e => onChange({ baseCurrency: e.target.value as PayForm['baseCurrency'] })} className={inputClass}>
+            <option value="EGP">{t('EGP')}</option>
+            <option value="SAR">{t('SAR')}</option>
+          </select>
+        </div>
+      </div>
+      {role !== 'manager' && role !== 'admin' && percent('commissionPercent', 'Commission %', 'Of each deal this employee closes')}
+      {role === 'telesales' && percent('leadPercent', 'Lead %', 'When a sales rep closes a deal on this employee’s lead')}
+      {role !== 'manager' && role !== 'admin' && percent('managerPercent', 'Manager %', 'What this employee’s manager earns from each of their deals')}
     </div>
   );
 }

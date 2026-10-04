@@ -231,7 +231,7 @@ export default function AdminLeads() {
 
     let leadsQuery = supabase
       .from('leads')
-      .select('*', { count: 'exact' })
+      .select('*', { count: 'estimated' })
       .order('created_at', { ascending: false })
       .order('id', { ascending: false }) // stable order so pages never overlap
       .range(nextPage * pageSize, (nextPage + 1) * pageSize - 1);
@@ -252,8 +252,8 @@ export default function AdminLeads() {
 
     const [leadsRes, allRes, unassignedRes] = await Promise.all([
       leadsQuery,
-      supabase.from('leads').select('id', { count: 'exact', head: true }),
-      supabase.from('leads').select('id', { count: 'exact', head: true }).is('assigned_to', null),
+      supabase.from('leads').select('id', { count: 'estimated', head: true }),
+      supabase.from('leads').select('id', { count: 'estimated', head: true }).is('assigned_to', null),
     ]);
 
     if (reqId !== requestId.current) return; // a newer request replaced this one

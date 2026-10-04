@@ -98,41 +98,41 @@ export default function AdminDashboard() {
         won,
         lost,
       ] = await Promise.all([
-        supabase.from("leads").select("id", { count: "exact", head: true }),
+        supabase.from("leads").select("id", { count: "estimated", head: true }),
 
         supabase
           .from("leads")
-          .select("id", { count: "exact", head: true })
+          .select("id", { count: "estimated", head: true })
           .not("assigned_to", "is", null),
 
         supabase
           .from("leads")
-          .select("id", { count: "exact", head: true })
+          .select("id", { count: "estimated", head: true })
           .eq("status", "Converted"),
 
         supabase
           .from("leads")
-          .select("id", { count: "exact", head: true })
+          .select("id", { count: "estimated", head: true })
           .in("status", ["New", "Assigned"]),
 
         supabase
           .from("leads")
-          .select("id", { count: "exact", head: true })
+          .select("id", { count: "estimated", head: true })
           .eq("status", "Contacted"),
 
         supabase
           .from("leads")
-          .select("id", { count: "exact", head: true })
+          .select("id", { count: "estimated", head: true })
           .eq("status", "Interested"),
 
         supabase
           .from("leads")
-          .select("id", { count: "exact", head: true })
+          .select("id", { count: "estimated", head: true })
           .eq("status", "Call Back Later"),
 
         supabase
           .from("leads")
-          .select("id", { count: "exact", head: true })
+          .select("id", { count: "estimated", head: true })
           .eq("status", "Not Interested"),
 
         loadMeetingsPage({
@@ -144,18 +144,18 @@ export default function AdminDashboard() {
 
         supabase
           .from("meetings")
-          .select("id", { count: "exact", head: true })
+          .select("id", { count: "estimated", head: true })
           .eq("outcome", "Scheduled")
           .gte("proposed_date", now),
 
         supabase
           .from("meetings")
-          .select("id", { count: "exact", head: true })
+          .select("id", { count: "estimated", head: true })
           .eq("outcome", "Deal Closed – Won"),
 
         supabase
           .from("meetings")
-          .select("id", { count: "exact", head: true })
+          .select("id", { count: "estimated", head: true })
           .eq("outcome", "Deal Lost"),
       ])
 

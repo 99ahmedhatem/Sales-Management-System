@@ -159,25 +159,25 @@ export default function SalesDashboard({ userId }: Props) {
 
       supabase
         .from("meetings")
-        .select("id", { count: "exact", head: true })
+        .select("id", { count: "estimated", head: true })
         .eq("assigned_sales_id", userId)
         .eq("outcome", "Scheduled"),
 
       supabase
         .from("meetings")
-        .select("id", { count: "exact", head: true })
+        .select("id", { count: "estimated", head: true })
         .eq("assigned_sales_id", userId)
         .eq("outcome", "Deal Closed – Won"),
 
       supabase
         .from("meetings")
-        .select("id", { count: "exact", head: true })
+        .select("id", { count: "estimated", head: true })
         .eq("assigned_sales_id", userId)
         .eq("outcome", "Deal Lost"),
 
       supabase
         .from("meetings")
-        .select("id", { count: "exact", head: true })
+        .select("id", { count: "estimated", head: true })
         .eq("assigned_sales_id", userId),
     ])
 

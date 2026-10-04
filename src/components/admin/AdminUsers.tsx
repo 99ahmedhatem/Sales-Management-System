@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
-import { generateCode, User, Role } from '../../data/mockData';
-import { Avatar, Badge, Button, Card, Modal, SearchInput, Select, StatusBadge, Table, Td, Toggle, Tr } from '../ui';
+import { User, Role } from '../../data/mockData';
+import { Avatar, Badge, Button, Card, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Toggle, Tr } from '../ui';
 import { EditablePhoneCell } from '../shared/LeadRowControls';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 
@@ -32,8 +32,14 @@ export default function AdminUsers() {
   const [tab, setTab] = useState<'all' | 'manager' | 'telesales' | 'sales'>('all');
   const [pageView, setPageView] = useState<'users' | 'clients'>('users');
   const [assignedLeads, setAssignedLeads] = useState<AssignedLead[]>([]);
+  const [clientCounts, setClientCounts] = useState({ total: 0, active: 0, converted: 0, matching: 0 });
+  const [clientPage, setClientPage] = useState(0);
+  const [clientsLoading, setClientsLoading] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [clientSearch, setClientSearch] = useState('');
+  const [debouncedClientSearch, setDebouncedClientSearch] = useState('');
+  const [creatingUser, setCreatingUser] = useState(false);
+  const clientsRequestId = useRef(0);
   const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'telesales' as Role, managerId: '', commissionPercent: '' });
 
   const saveAssignedLeadPhone = async (lead: AssignedLead, value: string) => {
@@ -49,9 +55,8 @@ export default function AdminUsers() {
   async function loadUsers() {
     setLoading(true);
     setErrorMsg('');
-    const [usersRes, leadsRes, emailRes] = await Promise.all([
+    const [usersRes, emailRes] = await Promise.all([
       supabase.from('users').select('*').neq('role', 'admin').order('full_name'),
-      supabase.from('leads').select('id, customer_number, client_code, name, phone, company, quantity, status, assigned_to, updated_at').not('assigned_to', 'is', null).order('updated_at', { ascending: false }),
       supabase.rpc('list_email_confirmations'),
     ]);
     if (usersRes.error) setErrorMsg(usersRes.error.message);
@@ -60,8 +65,6 @@ export default function AdminUsers() {
       setUsers(loadedUsers);
       setSelectedUserId(current => current || loadedUsers[0]?.id || '');
     }
-    if (leadsRes.error) setErrorMsg(leadsRes.error.message);
-    else setAssignedLeads((leadsRes.data ?? []).map(mapAssignedLead));
     if (!emailRes.error) {
       const map: Record<string, boolean> = {};
       for (const row of (emailRes.data ?? []) as { id: string; confirmed: boolean }[]) map[row.id] = row.confirmed;
@@ -74,52 +77,76 @@ export default function AdminUsers() {
     loadUsers();
   }, []);
 
-  useRealtimeRefresh(['users', 'leads'], loadUsers);
+  useRealtimeRefresh(['users'], loadUsers);
+
+  // Only the selected user's leads are loaded, one page at a time.
+  async function loadClients(nextPage = clientPage) {
+    if (!selectedUserId) return;
+    const reqId = ++clientsRequestId.current;
+    setClientsLoading(true);
+    let pageQuery = supabase
+      .from('leads')
+      .select('id, customer_number, client_code, name, phone, company, quantity, status, assigned_to, updated_at', { count: 'estimated' })
+      .eq('assigned_to', selectedUserId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(nextPage * CLIENT_PAGE_SIZE, (nextPage + 1) * CLIENT_PAGE_SIZE - 1);
+    const q = debouncedClientSearch.replace(/[%,()]/g, ' ').trim();
+    if (q) pageQuery = pageQuery.or(`name.ilike.%${q}%,phone.ilike.%${q}%,client_code.ilike.%${q}%,company.ilike.%${q}%`);
+    const countFor = () => supabase.from('leads').select('id', { count: 'estimated', head: true }).eq('assigned_to', selectedUserId);
+    const [pageRes, totalRes, closedRes, convertedRes] = await Promise.all([
+      pageQuery,
+      countFor(),
+      countFor().in('status', CLOSED_STATUSES),
+      countFor().in('status', CONVERTED_STATUSES),
+    ]);
+    if (reqId !== clientsRequestId.current) return;
+    const firstError = pageRes.error?.message || totalRes.error?.message || closedRes.error?.message || convertedRes.error?.message;
+    if (firstError) setErrorMsg(firstError);
+    else {
+      setAssignedLeads((pageRes.data ?? []).map(mapAssignedLead));
+      setClientPage(nextPage);
+      const total = totalRes.count ?? 0;
+      setClientCounts({ total, active: Math.max(0, total - (closedRes.count ?? 0)), converted: convertedRes.count ?? 0, matching: pageRes.count ?? 0 });
+    }
+    setClientsLoading(false);
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedClientSearch(clientSearch), 300);
+    return () => clearTimeout(timer);
+  }, [clientSearch]);
+
+  useEffect(() => {
+    if (pageView === 'clients') loadClients(0);
+  }, [pageView, selectedUserId, debouncedClientSearch]);
 
   const managers = users.filter(u => u.role === 'manager');
   const filtered = users.filter(u => tab === 'all' || u.role === tab);
   const selectedUser = users.find(user => user.id === selectedUserId);
-  const visibleAssignedLeads = assignedLeads.filter(lead => {
-    const query = clientSearch.toLowerCase();
-    return lead.assignedTo === selectedUserId
-      && (!query || lead.name.toLowerCase().includes(query) || lead.phone.includes(query) || lead.clientCode.toLowerCase().includes(query) || (lead.company || '').toLowerCase().includes(query));
-  });
 
   const handleAdd = async () => {
     if (!newUser.fullName || !newUser.email || newUser.password.length < 8) return;
     setErrorMsg('');
-    const employeeCode = generateCode('EMP');
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: newUser.email.trim(),
-      password: newUser.password,
-      options: {
-        data: {
-          employee_code: employeeCode,
-          full_name: newUser.fullName,
-        },
+    setCreatingUser(true);
+    // Created server-side so the admin's own browser session is never replaced.
+    const { data, error } = await supabase.functions.invoke('admin-create-user', {
+      body: {
+        email: newUser.email.trim(),
+        password: newUser.password,
+        full_name: newUser.fullName.trim(),
+        role: newUser.role,
+        manager_id: ['sales', 'telesales'].includes(newUser.role) && newUser.managerId ? newUser.managerId : null,
+        commission_percent: Number(newUser.commissionPercent) || 0,
       },
     });
-    if (authError || !authData.user) {
-      setErrorMsg(authError?.message || 'Could not create the login account.');
-      return;
-    }
-
-    const { error } = await supabase.from('users').insert({
-      id: authData.user.id,
-      full_name: newUser.fullName,
-      username: employeeCode,
-      email: newUser.email || null,
-      role: newUser.role,
-      status: 'active',
-      manager_id: ['sales', 'telesales'].includes(newUser.role) && newUser.managerId ? newUser.managerId : null,
-      commission_percent: Number(newUser.commissionPercent) || 0,
-    });
-    if (error) {
-      setErrorMsg(error.message);
+    setCreatingUser(false);
+    if (error || !data?.username) {
+      setErrorMsg(await functionErrorMessage(error, 'Could not create the user.'));
       return;
     }
     await loadUsers();
-    setCreatedCredentials({ username: employeeCode, email: newUser.email.trim(), password: newUser.password });
+    setCreatedCredentials({ username: data.username, email: data.email ?? newUser.email.trim(), password: newUser.password });
     setNewUser({ fullName: '', email: '', password: '', role: 'telesales', managerId: '', commissionPercent: '' });
     setAddModal(false);
   };
@@ -300,13 +327,13 @@ export default function AdminUsers() {
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Selected User</div><div className="text-white text-sm font-medium mt-1">{selectedUser?.fullName || '—'}</div></Card>
-          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Assigned Clients</div><div className="text-[#dfff03] text-2xl font-bold mt-1">{visibleAssignedLeads.length}</div></Card>
-          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Active</div><div className="text-white text-2xl font-bold mt-1">{visibleAssignedLeads.filter(lead => !['Converted', 'Subscribed', 'Did Not Subscribe'].includes(lead.status)).length}</div></Card>
-          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Converted</div><div className="text-white text-2xl font-bold mt-1">{visibleAssignedLeads.filter(lead => ['Converted', 'Subscribed'].includes(lead.status)).length}</div></Card>
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Assigned Clients</div><div className="text-[#dfff03] text-2xl font-bold mt-1">{clientCounts.total.toLocaleString()}</div></Card>
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Active</div><div className="text-white text-2xl font-bold mt-1">{clientCounts.active.toLocaleString()}</div></Card>
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Converted</div><div className="text-white text-2xl font-bold mt-1">{clientCounts.converted.toLocaleString()}</div></Card>
         </div>
         <Card>
           <Table headers={['No.', 'Code', 'Client', 'Phone', 'Company', 'Quantity', 'Status', 'Last Updated']}>
-            {visibleAssignedLeads.map(lead => (
+            {assignedLeads.map(lead => (
               <Tr key={lead.id}>
                 <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.customerNumber ?? '—'}</span></Td>
                 <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
@@ -319,7 +346,9 @@ export default function AdminUsers() {
               </Tr>
             ))}
           </Table>
-          {visibleAssignedLeads.length === 0 && <div className="p-8 text-center text-[#4a4a4a] text-sm">No clients are assigned to this user.</div>}
+          {!clientsLoading && assignedLeads.length === 0 && <div className="p-8 text-center text-[#4a4a4a] text-sm">No clients are assigned to this user.</div>}
+          {clientsLoading && <div className="p-4 text-center text-[#6b6b6b] text-xs">Loading clients…</div>}
+          <Pagination page={clientPage} pageSize={CLIENT_PAGE_SIZE} total={clientCounts.matching} onChange={next => loadClients(next)} />
         </Card>
       </>}
 
@@ -392,7 +421,7 @@ export default function AdminUsers() {
             </div>
           )}
           <div className="flex gap-2 pt-2">
-            <Button variant="primary" disabled={!newUser.email || !newUser.fullName || newUser.password.length < 8} onClick={handleAdd}>Register User</Button>
+            <Button variant="primary" disabled={creatingUser || !newUser.email || !newUser.fullName || newUser.password.length < 8} onClick={handleAdd}>{creatingUser ? 'Creating…' : 'Register User'}</Button>
             <Button variant="ghost" onClick={() => setAddModal(false)}>Cancel</Button>
           </div>
         </div>
@@ -456,6 +485,23 @@ export default function AdminUsers() {
       )}
     </div>
   );
+}
+
+const CLIENT_PAGE_SIZE = 50;
+const CLOSED_STATUSES = ['Converted', 'Subscribed', 'Did Not Subscribe'];
+const CONVERTED_STATUSES = ['Converted', 'Subscribed'];
+
+async function functionErrorMessage(error: unknown, fallback: string): Promise<string> {
+  const context = (error as { context?: Response } | null)?.context;
+  if (context && typeof context.json === 'function') {
+    try {
+      const body = await context.json();
+      if (body?.error) return String(body.error);
+    } catch {
+      // fall through to the generic message
+    }
+  }
+  return error instanceof Error ? error.message : fallback;
 }
 
 interface AssignedLead {

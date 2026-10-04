@@ -14,6 +14,8 @@ import AppShell from "./components/AppShell"
 
 const AdminDashboard = lazy(() => import("./components/admin/AdminDashboard"))
 
+const InsightsDashboard = lazy(() => import("./components/shared/InsightsDashboard"))
+
 const AdminLeads = lazy(() => import("./components/admin/AdminLeads"))
 
 const AdminActivity = lazy(() => import("./components/admin/AdminActivity"))
@@ -159,6 +161,8 @@ export default function App() {
           {session.role === "admin" && page === "dashboard" && (
             <AdminDashboard />
           )}
+          {session.role === "admin" && page === "insights" && <InsightsDashboard role="admin" />}
+          {session.role === "manager" && page === "insights" && <InsightsDashboard role="manager" />}
           {session.role === "admin" && page === "leads" && <AdminLeads />}
           {session.role === "admin" && page === "activity" && <AdminActivity />}
           {session.role === "admin" && page === "users" && <AdminUsers />}

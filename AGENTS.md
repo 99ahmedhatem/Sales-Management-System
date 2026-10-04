@@ -8,7 +8,9 @@ Stack: React 19 + Vite + Tailwind v4 + TypeScript · Supabase (Postgres, Auth, R
 
 Before writing any query or RPC call, open `supabase/migrations/*.sql` and use the **exact** table, column and function names there. **Never invent a column or RPC name.** If something you need doesn't exist, add a new numbered migration file (`009_...sql`) and tell the user to run it. Past bug: the UI queried `deals.sales_user_id` / `meeting_requests.assigned_sales_id` while the live DB had different names, so every screen failed.
 
-Migration order: `supabase-setup.sql` (base) → `001_packages` → `004_meetings` → `005_meeting_requests` → `006_deals` → `007_contract_reviews` → `008_money_commissions_payroll`.
+Migration order: `supabase-setup.sql` (base) → `000b` → `001_packages` → `004_meetings` → `005_meeting_requests` → `006_deals` → `007_contract_reviews` → `008_money_commissions_payroll` → `009_management_tools` → `010_performance_security` → `011_repair` → `012_repair_fixes`.
+
+**Every database change = a numbered migration file in the repo.** Never run SQL only from a chat / the SQL editor without saving it as the next numbered file in `supabase/migrations/`. If it isn't in the repo, it doesn't exist.
 
 ## Flow
 
@@ -29,6 +31,8 @@ Telesales may also close a deal himself (`create_deal` as telesales): `closed_by
 ## Key tables (see migrations for full columns)
 
 - `deals`: `lead_id, package_id, sales_user_id, telesales_user_id, closed_by_user_id, price_sar (closing price), list_price_sar, min_price_sar, below_min_price, start_date, end_date, recording_path, contract_path, status (draft|contract_uploaded|pending_approval|approved|active|cancelled), approved_by, approved_at, fx_at_approval`
+  - `deals.commission_percent`, `deals.commission_sar` (011): a cache kept up to date automatically by the DB. **Read-only** — never write them from the client.
+- `users.commission_percent` (011): kept in sync with `user_commission_rates.closer_percent`.
 - `meeting_requests`: `lead_id, requested_by, assigned_sales_id, notes, preferred_date, status (pending|accepted|declined|cancelled)`
 - `meetings`: `lead_id, booked_by, assigned_sales_id, proposed_date, telesales_notes, outcome`
 - `packages`: `name, description, features text[], duration_months, price_sar, min_price_sar, is_active`
@@ -53,6 +57,8 @@ Telesales may also close a deal himself (`create_deal` as telesales): `closed_by
 ## Writes go through RPCs only
 
 No direct insert/update on `deals, payments, meetings, meeting_requests, deal_commissions, contract_reviews`. RPCs: `request_meeting, accept_meeting_request, decline_meeting_request, cancel_meeting_request, reassign_meeting_request, update_meeting_outcome, create_deal, attach_recording, attach_contract, request_contract_review, approve_deal, cancel_deal, record_payment, confirm_payment, set_deal_commission`. (Admin may write directly to `user_commission_rates`, `exchange_rates`, `app_settings`, `packages`.)
+
+Admin user tools: `list_email_confirmations()`, `set_user_email_confirmed(target_user_id, should_confirm)`, `fill_missing_phones(rows jsonb)`. New users are created only through the Edge Function `admin-create-user` (checks `my_role() = 'admin'`, uses `auth.admin.createUser` with the service role inside the function). Never call `supabase.auth.signUp` from the admin screen — it replaces the admin's session.
 
 ## Storage
 

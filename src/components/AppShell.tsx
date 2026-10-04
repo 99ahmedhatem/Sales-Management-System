@@ -24,6 +24,16 @@ interface NavItem {
 
 const adminNav: NavItem[] = [
   {
+    key: "insights",
+    label: "Insights",
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 19V9m6 10V5m6 14v-7m4 7H2" />
+      </svg>
+    ),
+  },
+
+  {
     key: "dashboard",
 
     label: "Dashboard",
@@ -225,6 +235,16 @@ const salesNav: NavItem[] = [
 ]
 
 const managerNav: NavItem[] = [
+  {
+    key: "insights",
+    label: "Insights",
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 19V9m6 10V5m6 14v-7m4 7H2" />
+      </svg>
+    ),
+  },
+
   {
     key: "dashboard",
 

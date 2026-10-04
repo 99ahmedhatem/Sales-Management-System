@@ -107,7 +107,7 @@ export async function loadDealsPage(page: number, pageSize: number) {
     .from("deals")
     .select(
       "id, lead_id, sales_user_id, telesales_user_id, closed_by_user_id, package_id, package_name, package_duration_months, list_price_sar, min_price_sar, price_sar, below_min_price, start_date, end_date, notes, recording_path, contract_path, approval_override_reason, status, created_at, commission_percent, commission_sar",
-      { count: "exact" },
+      { count: "estimated" },
     )
     .order("created_at", { ascending: false })
     .range(from, from + pageSize - 1)

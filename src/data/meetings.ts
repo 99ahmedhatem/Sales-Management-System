@@ -231,7 +231,7 @@ export async function loadMeetingsPage(options: {
 
     .select(
       "id, lead_id, booked_by, assigned_sales_id, proposed_date, telesales_notes, outcome, created_at",
-      { count: "exact" },
+      { count: "estimated" },
     )
 
     .order("proposed_date", { ascending: options.outcome === "Scheduled" })
@@ -286,7 +286,7 @@ export async function loadMeetingRequestsPage(options: {
 
     .select(
       "id, lead_id, requested_by, assigned_sales_id, notes, preferred_date, created_at",
-      { count: "exact" },
+      { count: "estimated" },
     )
 
     .eq("assigned_sales_id", options.assignedSalesId)
@@ -332,7 +332,7 @@ export async function loadManageableMeetingRequestsPage(options: {
     .from("meeting_requests")
     .select(
       "id, lead_id, requested_by, assigned_sales_id, notes, preferred_date, created_at",
-      { count: "exact" },
+      { count: "estimated" },
     )
     .eq("status", "pending")
     .order("created_at", { ascending: false })

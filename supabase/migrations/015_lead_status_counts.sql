@@ -1,8 +1,5 @@
--- =====================================================================
 -- 015 — عدّ دقيق للعملاء حسب الحالة (لوحة تحكم الأدمن) في استعلام واحد
--- بدل 8 استعلامات count منفصلة على leads. آمن لو اتشغّل تاني، مفيش تعديل لبيانات.
--- لازم يتشغّل بعد 013 (بيعتمد على my_role()).
--- =====================================================================
+-- بدل 8 استعلامات count منفصلة على leads. آمن لو اتشغّل تاني، مفيش تعديل لبيانات. يعتمد على my_role().
 create or replace function public.get_lead_status_counts()
 returns table (status text, total bigint)
 language plpgsql stable security definer set search_path = public as $$

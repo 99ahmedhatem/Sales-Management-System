@@ -12,6 +12,10 @@ Migration order: `supabase-setup.sql` (base) → `000b` → `001_packages` → `
 
 **Every database change = a numbered migration file in the repo.** Never run SQL only from a chat / the SQL editor without saving it as the next numbered file in `supabase/migrations/`. If it isn't in the repo, it doesn't exist.
 
+Not in the repo yet: `000b`. Add it to `supabase/migrations/` as soon as you have it. Migrations not run yet on Supabase are collected in `supabase/RUN_PENDING.sql` (currently 014 → 015 → 016 → 017).
+
+**SQL in a PR:** any PR that adds SQL must end its description with this exact text, followed by the list: "الملفات الجديدة اللي لازم تتشغّل في Supabase بالترتيب" (the new files to run in Supabase, in order).
+
 ## Flow
 
 ```

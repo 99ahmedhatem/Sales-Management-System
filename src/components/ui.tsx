@@ -1,4 +1,5 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode } from 'react';
+import { useI18n } from '../i18n/I18nProvider';
 export function normalizeWebsiteUrl(url: string): string {
   const trimmed = url.trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
@@ -51,7 +52,8 @@ export function StatusBadge({ status }: { status: string }) {
     'Active': 'status-interested',
     'Cancelled': 'status-not-interested',
   };
-  return <Badge className={map[status] || 'status-no-answer'}>{status}</Badge>;
+  const { t } = useI18n();
+  return <Badge className={map[status] || 'status-no-answer'}>{t(status)}</Badge>;
 }
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
@@ -63,11 +65,12 @@ export function Card({ children, className = '' }: { children: ReactNode; classN
 }
 
 export function KpiCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: boolean }) {
+  const { t } = useI18n();
   return (
     <Card className="p-5">
-      <div className="text-[#6b6b6b] text-xs font-medium uppercase tracking-widest mb-2">{label}</div>
+      <div className="text-[#6b6b6b] text-xs font-medium uppercase tracking-widest mb-2">{t(label)}</div>
       <div className={`text-3xl font-bold leading-none mb-1 ${accent ? 'text-[#dfff03]' : 'text-white'}`}>{value}</div>
-      {sub && <div className="text-[#6b6b6b] text-xs">{sub}</div>}
+      {sub && <div className="text-[#6b6b6b] text-xs">{t(sub)}</div>}
     </Card>
   );
 }
@@ -137,26 +140,28 @@ export function Select({
   options: { value: string; label: string }[];
   className?: string;
 }) {
+  const { t } = useI18n();
   return (
     <select
       value={value}
       onChange={e => onChange(e.target.value)}
       className={`bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#dfff03]/60 transition-colors ${className}`}
     >
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      {options.map(o => <option key={o.value} value={o.value}>{t(o.label)}</option>)}
     </select>
   );
 }
 
 export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+  const { t } = useI18n();
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70" onClick={onClose} />
       <div className="relative bg-[#161616] border border-[#262626] rounded-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-[#262626]">
-          <h3 className="text-white font-semibold">{title}</h3>
-          <button onClick={onClose} className="text-[#6b6b6b] hover:text-white transition-colors text-xl leading-none">&times;</button>
+          <h3 className="text-white font-semibold">{t(title)}</h3>
+          <button onClick={onClose} aria-label={t('Close')} className="text-[#6b6b6b] hover:text-white transition-colors text-xl leading-none">&times;</button>
         </div>
         <div className="p-5">{children}</div>
       </div>
@@ -165,13 +170,14 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
 }
 
 export function Table({ headers, children }: { headers: string[]; children: ReactNode }) {
+  const { t } = useI18n();
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-[#262626]">
             {headers.map((h, i) => (
-              <th key={i} className="text-left text-[#6b6b6b] font-medium text-xs uppercase tracking-wider py-3 px-4">{h}</th>
+              <th key={i} className="text-start text-[#6b6b6b] font-medium text-xs uppercase tracking-wider py-3 px-4">{t(h)}</th>
             ))}
           </tr>
         </thead>
@@ -197,16 +203,17 @@ export function Td({ children, className = '', onClick }: { children: ReactNode;
 }
 
 export function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const { t } = useI18n();
   return (
     <div className="relative">
-      <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#4a4a4a]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#4a4a4a]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
       </svg>
       <input
         value={value}
         onChange={e => onChange(e.target.value)}
-        placeholder={placeholder || 'Search...'}
-        className="bg-[#1a1a1a] border border-[#2a2a2a] rounded pl-9 pr-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60 transition-colors w-full"
+        placeholder={t(placeholder || 'Search...')}
+        className="bg-[#1a1a1a] border border-[#2a2a2a] rounded ps-9 pe-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60 transition-colors w-full"
       />
     </div>
   );
@@ -214,13 +221,14 @@ export function SearchInput({ value, onChange, placeholder }: { value: string; o
 
 export function Pagination({ page, pageSize, total, onChange }: { page: number; pageSize: number; total: number; onChange: (page: number) => void }) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const { t } = useI18n();
   if (pageCount <= 1) return null;
   return (
     <div className="flex items-center justify-between border-t border-[#262626] px-4 py-3">
-      <span className="text-xs text-[#6b6b6b]">Page {page + 1} of {pageCount} · {total.toLocaleString()} records</span>
+      <span className="text-xs text-[#6b6b6b]">{t('Page {page} of {pages} · {total} records', { page: page + 1, pages: pageCount, total: total.toLocaleString('en-US') })}</span>
       <div className="flex gap-2">
-        <button disabled={page === 0} onClick={() => onChange(page - 1)} className="rounded border border-[#2a2a2a] px-3 py-1.5 text-xs text-[#a0a0a0] disabled:cursor-not-allowed disabled:opacity-30 hover:border-[#dfff03]">Previous</button>
-        <button disabled={page >= pageCount - 1} onClick={() => onChange(page + 1)} className="rounded border border-[#2a2a2a] px-3 py-1.5 text-xs text-[#a0a0a0] disabled:cursor-not-allowed disabled:opacity-30 hover:border-[#dfff03]">Next</button>
+        <button disabled={page === 0} onClick={() => onChange(page - 1)} className="rounded border border-[#2a2a2a] px-3 py-1.5 text-xs text-[#a0a0a0] disabled:cursor-not-allowed disabled:opacity-30 hover:border-[#dfff03]">{t('Previous')}</button>
+        <button disabled={page >= pageCount - 1} onClick={() => onChange(page + 1)} className="rounded border border-[#2a2a2a] px-3 py-1.5 text-xs text-[#a0a0a0] disabled:cursor-not-allowed disabled:opacity-30 hover:border-[#dfff03]">{t('Next')}</button>
       </div>
     </div>
   );
@@ -237,6 +245,7 @@ export function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md'
 }
 
 export function Tabs({ tabs, active, onChange }: { tabs: string[]; active: string; onChange: (t: string) => void }) {
+  const { t: tr } = useI18n();
   return (
     <div className="flex gap-1 bg-[#1a1a1a] rounded-lg p-1">
       {tabs.map(t => (
@@ -247,7 +256,7 @@ export function Tabs({ tabs, active, onChange }: { tabs: string[]; active: strin
             active === t ? 'bg-[#dfff03] text-black font-medium' : 'text-[#6b6b6b] hover:text-white'
           }`}
         >
-          {t}
+          {tr(t)}
         </button>
       ))}
     </div>
@@ -255,12 +264,13 @@ export function Tabs({ tabs, active, onChange }: { tabs: string[]; active: strin
 }
 
 export function EmptyState({ message }: { message: string }) {
+  const { t } = useI18n();
   return (
     <div className="flex flex-col items-center justify-center py-16 text-[#4a4a4a]">
       <svg className="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
       </svg>
-      <p className="text-sm">{message}</p>
+      <p className="text-sm">{t(message)}</p>
     </div>
   );
 }
@@ -276,7 +286,7 @@ export function Toggle({ checked, onChange, disabled }: { checked: boolean; onCh
       className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${checked ? 'bg-[#dfff03]' : 'bg-[#2a2a2a]'}`}
     >
       <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`}
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-4 rtl:-translate-x-4' : 'translate-x-0.5 rtl:-translate-x-0.5'}`}
       />
     </button>
   );

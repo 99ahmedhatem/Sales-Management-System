@@ -32,6 +32,10 @@ import { WebsiteLink } from "../ui"
 
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 
+import { useI18n } from "../../i18n/I18nProvider"
+
+import { dateLocale } from "../../i18n/locale"
+
 const PAGE_SIZE = 20
 
 interface Props {
@@ -47,6 +51,10 @@ const OUTCOME_OPTIONS: { value: MeetingOutcome; label: string }[] = [
 ]
 
 export default function SalesDashboard({ userId }: Props) {
+  const { t, lang } = useI18n()
+
+  const locale = dateLocale(lang)
+
   const [myName, setMyName] = useState("")
 
   const [meetings, setMeetings] = useState<Meeting[]>([])
@@ -422,7 +430,7 @@ export default function SalesDashboard({ userId }: Props) {
 
     if (error || !comment) {
       window.alert(
-        error || "Could not save the comment. Run supabase-setup.sql first.",
+        error || t("Could not save the comment. Run supabase-setup.sql first."),
       )
 
       return
@@ -449,9 +457,9 @@ export default function SalesDashboard({ userId }: Props) {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-white text-2xl font-bold">My Meetings</h1>
+        <h1 className="text-white text-2xl font-bold">{t("My Meetings")}</h1>
         <p className="text-[#6b6b6b] text-sm mt-0.5">
-          Welcome back, {myName || "Sales"}
+          {t("Welcome back, {name}", { name: myName || t("Sales") })}
         </p>
       </div>
 
@@ -460,7 +468,7 @@ export default function SalesDashboard({ userId }: Props) {
           role="alert"
           className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
         >
-          {error}
+          {t(error)}
         </div>
       )}
 
@@ -488,26 +496,26 @@ export default function SalesDashboard({ userId }: Props) {
       {/* Tabs */}
       <div className="flex gap-1 bg-[#1a1a1a] rounded-lg p-1 w-fit">
         {([
-          { key: "requests", label: `Requests (${totalRequests})` },
+          { key: "requests", label: t("Requests ({n})", { n: totalRequests }) },
 
-          { key: "upcoming", label: `Upcoming (${scheduledCount})` },
+          { key: "upcoming", label: t("Upcoming ({n})", { n: scheduledCount }) },
 
-          { key: "all", label: `All Meetings (${totalMeetings})` },
-        ] as const).map((t) => (
+          { key: "all", label: t("All Meetings ({n})", { n: totalMeetings }) },
+        ] as const).map((tabItem) => (
           <button
-            key={t.key}
+            key={tabItem.key}
             onClick={() => {
-              setTab(t.key)
+              setTab(tabItem.key)
               setPage(0)
               setRequestPage(0)
             }}
             className={`px-4 py-1.5 text-sm rounded-md transition-all ${
-              tab === t.key
+              tab === tabItem.key
                 ? "bg-[#dfff03] text-black font-medium"
                 : "text-[#6b6b6b] hover:text-white"
             }`}
           >
-            {t.label}
+            {tabItem.label}
           </button>
         ))}
       </div>
@@ -543,11 +551,11 @@ export default function SalesDashboard({ userId }: Props) {
         <Card>
           {loading ? (
             <div className="p-8 text-center text-sm text-[#6b6b6b]">
-              Loading meeting requests...
+              {t("Loading meeting requests...")}
             </div>
           ) : requests.length === 0 ? (
             <div className="p-8 text-center text-sm text-[#6b6b6b]">
-              No pending meeting requests.
+              {t("No pending meeting requests.")}
             </div>
           ) : (
             <div className="divide-y divide-[#1e1e1e]">
@@ -560,20 +568,20 @@ export default function SalesDashboard({ userId }: Props) {
                     <div className="font-medium text-white">
                       {request.leadName}
                     </div>
-                    <div className="mt-1 font-mono text-xs text-[#a0a0a0]">
+                    <div className="mt-1 font-mono text-xs text-[#a0a0a0]" dir="ltr">
                       {request.leadPhone}
                     </div>
                     <div className="mt-2 text-sm text-[#a0a0a0]">
-                      {request.notes || "No additional notes."}
+                      {request.notes || t("No additional notes.")}
                     </div>
                     {request.preferredDate && (
                       <div className="mt-1 text-xs text-[#ffc832]">
-                        Preferred:{" "}
-                        {new Date(request.preferredDate).toLocaleString()}
+                        {t("Preferred:")}{" "}
+                        {new Date(request.preferredDate).toLocaleString(locale)}
                       </div>
                     )}
                     <div className="mt-1 text-xs text-[#6b6b6b]">
-                      Requested by {request.requestedByName || "Telesales"}
+                      {t("Requested by {name}", { name: request.requestedByName || t("Telesales") })}
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -586,7 +594,7 @@ export default function SalesDashboard({ userId }: Props) {
                         setError("")
                       }}
                     >
-                      Accept & Schedule
+                      {t("Accept & Schedule")}
                     </Button>
                     <Button
                       variant="danger"
@@ -597,7 +605,7 @@ export default function SalesDashboard({ userId }: Props) {
                         setError("")
                       }}
                     >
-                      Decline
+                      {t("Decline")}
                     </Button>
                   </div>
                 </div>
@@ -631,7 +639,7 @@ export default function SalesDashboard({ userId }: Props) {
                   d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                 />
               </svg>
-              <p className="text-sm">No upcoming meetings</p>
+              <p className="text-sm">{t("No upcoming meetings")}</p>
             </div>
           )}
           {displayed.map((m) => {
@@ -646,7 +654,7 @@ export default function SalesDashboard({ userId }: Props) {
                     <h3 className="text-white font-semibold text-base">
                       {m.leadName}
                     </h3>
-                    <p className="text-[#dfff03] font-mono text-sm mt-0.5">
+                    <p className="text-[#dfff03] font-mono text-sm mt-0.5" dir="ltr">
                       {m.leadPhone}
                     </p>
                   </div>
@@ -670,7 +678,7 @@ export default function SalesDashboard({ userId }: Props) {
                 </div>
                 <div className="bg-[#1a1a1a] rounded p-3 mb-4">
                   <div className="text-[#6b6b6b] text-xs mb-1">
-                    Telesales Notes
+                    {t("Telesales Notes")}
                   </div>
                   <div className="text-[#d0d0d0] text-sm leading-relaxed">
                     {m.telesalesNotes}
@@ -680,7 +688,7 @@ export default function SalesDashboard({ userId }: Props) {
                   <div className="flex items-center gap-2">
                     <Avatar name={m.bookedByName} size="sm" />
                     <span className="text-[#6b6b6b] text-xs">
-                      Booked by {m.bookedByName || "Telesales"}
+                      {t("Booked by {name}", { name: m.bookedByName || t("Telesales") })}
                     </span>
                   </div>
                   <select
@@ -692,11 +700,11 @@ export default function SalesDashboard({ userId }: Props) {
                     className="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-[#dfff03]/60"
                   >
                     <option value={m.outcome} disabled>
-                      {m.outcome}
+                      {t(m.outcome)}
                     </option>
                     {OUTCOME_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>
-                        {o.label}
+                        {t(o.label)}
                       </option>
                     ))}
                   </select>
@@ -726,7 +734,7 @@ export default function SalesDashboard({ userId }: Props) {
                     <span className="font-medium text-white">{m.leadName}</span>
                   </Td>
                   <Td>
-                    <span className="font-mono text-xs">{m.leadPhone}</span>
+                    <span className="font-mono text-xs" dir="ltr">{m.leadPhone}</span>
                   </Td>
                   <Td>
                     <span className="font-mono text-xs text-[#dfff03]">
@@ -754,11 +762,11 @@ export default function SalesDashboard({ userId }: Props) {
                       className="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-[#dfff03]/60"
                     >
                       <option value={m.outcome} disabled>
-                        {m.outcome}
+                        {t(m.outcome)}
                       </option>
                       {OUTCOME_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>
-                          {o.label}
+                          {t(o.label)}
                         </option>
                       ))}
                     </select>
@@ -781,7 +789,7 @@ export default function SalesDashboard({ userId }: Props) {
 
       {(tab === "upcoming" || tab === "all") && loading && (
         <div className="py-8 text-center text-sm text-[#6b6b6b]">
-          Loading meetings...
+          {t("Loading meetings...")}
         </div>
       )}
 
@@ -790,15 +798,15 @@ export default function SalesDashboard({ userId }: Props) {
         onClose={() => {
           if (!savingRequest) setAcceptingRequest(null)
         }}
-        title={`Schedule ${acceptingRequest?.leadName ?? "meeting"}`}
+        title={acceptingRequest ? t("Schedule {name}", { name: acceptingRequest.leadName }) : t("Schedule meeting")}
       >
         {acceptingRequest && (
           <div className="space-y-4">
             <div className="text-sm text-[#a0a0a0]">
-              Choose a future date and time to accept this request.
+              {t("Choose a future date and time to accept this request.")}
             </div>
             <label className="block text-xs text-[#a0a0a0]">
-              Meeting date and time
+              {t("Meeting date and time")}
               <input
                 type="datetime-local"
                 value={proposedDate}
@@ -812,14 +820,14 @@ export default function SalesDashboard({ userId }: Props) {
                 disabled={!proposedDate || savingRequest}
                 onClick={acceptRequest}
               >
-                {savingRequest ? "Saving..." : "Accept & Schedule"}
+                {savingRequest ? t("Saving...") : t("Accept & Schedule")}
               </Button>
               <Button
                 variant="ghost"
                 disabled={savingRequest}
                 onClick={() => setAcceptingRequest(null)}
               >
-                Cancel
+                {t("Cancel")}
               </Button>
             </div>
           </div>
@@ -829,12 +837,12 @@ export default function SalesDashboard({ userId }: Props) {
       <Modal
         open={!!decliningRequest}
         onClose={() => setDecliningRequest(null)}
-        title={`Decline ${decliningRequest?.leadName ?? "meeting request"}`}
+        title={decliningRequest ? t("Decline {name}", { name: decliningRequest.leadName }) : t("Decline meeting request")}
       >
         {decliningRequest && (
           <div className="space-y-4">
             <label className="block text-xs text-[#a0a0a0]">
-              Reason for declining *
+              {t("Reason for declining *")}
               <textarea
                 value={declineReason}
                 onChange={(event) => setDeclineReason(event.target.value)}
@@ -849,13 +857,13 @@ export default function SalesDashboard({ userId }: Props) {
                 disabled={!declineReason.trim()}
                 onClick={() => void declineRequest()}
               >
-                Decline Request
+                {t("Decline Request")}
               </Button>
               <Button
                 variant="ghost"
                 onClick={() => setDecliningRequest(null)}
               >
-                Cancel
+                {t("Cancel")}
               </Button>
             </div>
           </div>
@@ -881,13 +889,13 @@ export default function SalesDashboard({ userId }: Props) {
                 ["Created", detail.createdAt],
               ].map(([k, v]) => (
                 <div key={k} className="bg-[#1a1a1a] rounded p-3">
-                  <div className="text-[#6b6b6b] text-xs mb-1">{k}</div>
+                  <div className="text-[#6b6b6b] text-xs mb-1">{t(k)}</div>
                   <div className="text-white text-sm font-medium">{v}</div>
                 </div>
               ))}
             </div>
             <div className="bg-[#1a1a1a] rounded p-3">
-              <div className="text-[#6b6b6b] text-xs mb-1">Customer Number</div>
+              <div className="text-[#6b6b6b] text-xs mb-1">{t("Customer Number")}</div>
               {editingCustomerNumber ? (
                 <div className="flex gap-2">
                   <input
@@ -907,7 +915,7 @@ export default function SalesDashboard({ userId }: Props) {
                     size="sm"
                     onClick={saveCustomerNumber}
                   >
-                    Save Number
+                    {t("Save Number")}
                   </Button>
                 </div>
               ) : (
@@ -920,26 +928,27 @@ export default function SalesDashboard({ userId }: Props) {
                   }}
                   className="text-[#dfff03] text-sm font-medium cursor-text"
                 >
-                  {customerNumber ?? "Add customer number"}
+                  {customerNumber ?? t("Add customer number")}
                 </button>
               )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-[#1a1a1a] rounded p-3">
-                <div className="text-[#6b6b6b] text-xs mb-1">Website</div>
+                <div className="text-[#6b6b6b] text-xs mb-1">{t("Website")}</div>
                 <WebsiteLink
                   url={customerWebsite}
                   className="text-white text-sm font-medium break-all"
                 />
               </div>
               <div className="bg-[#1a1a1a] rounded p-3">
-                <div className="text-[#6b6b6b] text-xs mb-1">Phone Number</div>
+                <div className="text-[#6b6b6b] text-xs mb-1">{t("Phone Number")}</div>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={customerPhoneInput}
                     onChange={(e) => setCustomerPhoneInput(e.target.value)}
-                    placeholder="Add phone number"
+                    placeholder={t("Add phone number")}
+                    dir="ltr"
                     className="flex-1 bg-[#0e0e0e] border border-[#2a2a2a] rounded px-2 py-1 text-sm text-white"
                   />
                   <Button
@@ -947,12 +956,12 @@ export default function SalesDashboard({ userId }: Props) {
                     size="sm"
                     onClick={saveCustomerPhone}
                   >
-                    Save Phone
+                    {t("Save Phone")}
                   </Button>
                 </div>
               </div>
               <div className="bg-[#1a1a1a] rounded p-3">
-                <div className="text-[#6b6b6b] text-xs mb-1">Quantity</div>
+                <div className="text-[#6b6b6b] text-xs mb-1">{t("Quantity")}</div>
                 <div className="text-white text-sm font-medium">
                   {customerQuantity}
                 </div>
@@ -960,7 +969,7 @@ export default function SalesDashboard({ userId }: Props) {
             </div>
             <div className="bg-[#1a1a1a] rounded p-3">
               <div className="text-[#6b6b6b] text-xs mb-1">
-                Telesales Qualifying Notes
+                {t("Telesales Qualifying Notes")}
               </div>
               <div className="text-[#d0d0d0] text-sm leading-relaxed">
                 {detail.telesalesNotes}
@@ -968,7 +977,7 @@ export default function SalesDashboard({ userId }: Props) {
             </div>
             <div>
               <label className="block text-xs text-[#a0a0a0] mb-1">
-                Update Outcome
+                {t("Update Outcome")}
               </label>
               <select
                 value={detail.outcome}
@@ -978,11 +987,11 @@ export default function SalesDashboard({ userId }: Props) {
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#dfff03]/60"
               >
                 <option value={detail.outcome} disabled>
-                  {detail.outcome}
+                  {t(detail.outcome)}
                 </option>
                 {OUTCOME_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
-                    {o.label}
+                    {t(o.label)}
                   </option>
                 ))}
               </select>
@@ -1000,10 +1009,10 @@ export default function SalesDashboard({ userId }: Props) {
                     })
                 }}
               >
-                💬 Add Comment
+                💬 {t("Add Comment")}
               </Button>
               <Button variant="ghost" onClick={() => setDetail(null)}>
-                Close
+                {t("Close")}
               </Button>
             </div>
           </div>
@@ -1014,7 +1023,7 @@ export default function SalesDashboard({ userId }: Props) {
       <Modal
         open={!!commentModal}
         onClose={() => setCommentModal(null)}
-        title={`Comments — ${commentModal?.leadName}`}
+        title={t("Comments — {name}", { name: commentModal?.leadName ?? "" })}
       >
         {commentModal && (
           <div className="space-y-4">
@@ -1033,18 +1042,18 @@ export default function SalesDashboard({ userId }: Props) {
                 </div>
               ))}
               {(leadComments[commentModal.leadId] || []).length === 0 && (
-                <p className="text-[#4a4a4a] text-xs">No comments yet.</p>
+                <p className="text-[#4a4a4a] text-xs">{t("No comments yet.")}</p>
               )}
             </div>
             <div>
               <label className="block text-xs text-[#a0a0a0] mb-1">
-                Add Comment
+                {t("Add Comment")}
               </label>
               <textarea
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 rows={3}
-                placeholder="Update on client status, meeting notes..."
+                placeholder={t("Update on client status, meeting notes...")}
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60 resize-none"
               />
             </div>
@@ -1054,10 +1063,10 @@ export default function SalesDashboard({ userId }: Props) {
                 disabled={!newComment.trim()}
                 onClick={addComment}
               >
-                Post
+                {t("Post")}
               </Button>
               <Button variant="ghost" onClick={() => setCommentModal(null)}>
-                Close
+                {t("Close")}
               </Button>
             </div>
           </div>

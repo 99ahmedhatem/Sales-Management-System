@@ -9,6 +9,7 @@ import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, P
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
 import { exportRowsToExcel } from '../shared/exportExcel';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
+import { useI18n } from '../../i18n/I18nProvider';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -168,6 +169,7 @@ function mapUser(row: any): User {
 }
 
 export default function AdminLeads() {
+  const { t } = useI18n();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -274,8 +276,8 @@ export default function AdminLeads() {
 
   // Wait 300ms after typing before querying the database
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
   }, [search]);
 
   useEffect(() => {
@@ -337,13 +339,13 @@ export default function AdminLeads() {
   };
 
   const handleDeleteSelected = async () => {
-    if (!selected.length || !window.confirm(`Delete ${selected.length} selected customer(s)?`)) return;
+    if (!selected.length || !window.confirm(t('Delete {n} selected customer(s)?', { n: selected.length }))) return;
     setErrorMsg('');
     const batchSize = 500;
     for (let start = 0; start < selected.length; start += batchSize) {
       const { error } = await supabase.from('leads').delete().in('id', selected.slice(start, start + batchSize));
       if (error) {
-        setErrorMsg(`Delete stopped after ${start} customers: ${error.message}`);
+        setErrorMsg(t('Delete stopped after {n} customers: {msg}', { n: start, msg: error.message }));
         return;
       }
     }
@@ -386,7 +388,7 @@ export default function AdminLeads() {
     setPhoneDraft(phone);
     setDetailLead(prev => (prev ? { ...prev, phone } : null));
     setLeads(prev => prev.map(l => (l.id === detailLead.id ? { ...l, phone } : l)));
-    setPhoneMsg('Saved');
+    setPhoneMsg(t('Saved'));
   };
 
   const saveInlinePhone = async (lead: Lead, value: string) => {
@@ -504,7 +506,7 @@ export default function AdminLeads() {
       text: commentText.trim(),
     });
     if (error || !data) {
-      setCommentError(error || 'Could not save the comment.');
+      setCommentError(error || t('Could not save the comment.'));
       return;
     }
     setDetailLead(prev => (prev ? { ...prev, comments: [...(prev.comments || []), data] } : null));
@@ -592,7 +594,7 @@ export default function AdminLeads() {
         }
       }
       if (error) {
-        setImportError(`Import stopped at row ${start + 1}: ${error.message}`);
+        setImportError(t('Import stopped at row {n}: {msg}', { n: start + 1, msg: error.message }));
         setImporting(false);
         return;
       }
@@ -606,7 +608,7 @@ export default function AdminLeads() {
     for (let start = 0; start < withPhone.length; start += batchSize) {
       const { error } = await supabase.rpc('fill_missing_phones', { rows: withPhone.slice(start, start + batchSize) });
       if (error) {
-        setImportError(`Leads were imported, but updating phones of existing stores failed: ${error.message}`);
+        setImportError(t('Leads were imported, but updating phones of existing stores failed: {msg}', { msg: error.message }));
         setImporting(false);
         await loadData(0);
         return;
@@ -624,21 +626,21 @@ export default function AdminLeads() {
   };
 
   if (firstLoad) {
-    return <div className="p-6 text-[#a0a0a0] text-sm">Loading leads…</div>;
+    return <div className="p-6 text-[#a0a0a0] text-sm">{t('Loading leads…')}</div>;
   }
 
   return (
     <div className="p-6 space-y-4">
       {errorMsg && (
         <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3">
-          {errorMsg}
+          {t(errorMsg)}
         </div>
       )}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-white text-2xl font-bold">Leads</h1>
+          <h1 className="text-white text-2xl font-bold">{t('Leads')}</h1>
           <p className="text-[#6b6b6b] text-sm mt-0.5">
-            {allCount.toLocaleString()} total · {unassignedCount.toLocaleString()} unassigned
+            {t('{a} total · {b} unassigned', { a: allCount.toLocaleString('en-US'), b: unassignedCount.toLocaleString('en-US') })}
           </p>
         </div>
         <div className="flex gap-2">
@@ -646,10 +648,10 @@ export default function AdminLeads() {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
-            Import Excel
+            {t('Import Excel')}
           </Button>
           <Button variant="primary" size="sm" onClick={() => setAddModal(true)}>
-            + Add Lead
+            {t('+ Add Lead')}
           </Button>
         </div>
       </div>
@@ -663,11 +665,11 @@ export default function AdminLeads() {
         <Select value={qualityFilter} onChange={setQualityFilter} options={QUALITY_FILTER_OPTIONS} className="w-40" />
         <Select value={phoneFilter} onChange={setPhoneFilter} options={PHONE_FILTER_OPTIONS} className="w-36" />
         <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: '', label: 'All Assignments' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
-        <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? 'Exporting...' : 'Export Excel'}</Button>
+        <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? t('Exporting...') : t('Export Excel')}</Button>
         {selected.length > 0 && (
           <div className="flex gap-2">
-            <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>Assign {selected.length} Selected</Button>
-            <Button variant="danger" size="sm" onClick={handleDeleteSelected}>Delete {selected.length}</Button>
+            <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>{t('Assign {n} Selected', { n: selected.length })}</Button>
+            <Button variant="danger" size="sm" onClick={handleDeleteSelected}>{t('Delete {n}', { n: selected.length })}</Button>
           </div>
         )}
       </div>
@@ -686,7 +688,7 @@ export default function AdminLeads() {
                 />
               </td>
               <td colSpan={12} className="py-3 px-2 text-[#6b6b6b] text-xs">
-                {leads.length.toLocaleString()} shown of {totalLeads.toLocaleString()} records
+                {t('{a} shown of {b} records', { a: leads.length.toLocaleString('en-US'), b: totalLeads.toLocaleString('en-US') })}
               </td>
             </tr>
             {leads.map(lead => {
@@ -709,22 +711,24 @@ export default function AdminLeads() {
                   <Td><WebsiteStatusToggle status={lead.websiteStatus} onToggle={nextStatus => toggleWebsiteStatus(lead, nextStatus)} /></Td>
                   <Td>
                     <span className={lead.isSallaStore ? 'text-[#dfff03] text-xs' : 'text-[#6b6b6b] text-xs'}>
-                      {lead.isSallaStore ? 'Yes' : 'No'}
+                      {lead.isSallaStore ? t('Yes') : t('No')}
                     </span>
                   </Td>
-                  <Td><span className="text-[#a0a0a0] text-xs">{lead.dataQuality}</span></Td>
+                  <Td><span className="text-[#a0a0a0] text-xs">{t(lead.dataQuality ?? 'normal')}</span></Td>
                   <Td><StatusBadge status={lead.status} /></Td>
                   <Td>
                     {assignedUser ? (
                       <span className="text-[#a0a0a0] text-xs">{assignedUser.fullName}</span>
                     ) : (
-                      <span className="text-[#4a4a4a] text-xs italic">Unassigned</span>
+                      <span className="text-[#4a4a4a] text-xs italic">{t('Unassigned')}</span>
                     )}
                   </Td>
                   <Td><span className="text-xs font-mono text-[#6b6b6b]">{lead.updatedAt?.slice(0, 10)}</span></Td>
                   <Td>
                     <button
                       className="text-[#4a4a4a] hover:text-[#dfff03] transition-colors"
+                      title={t('View details')}
+                      aria-label={t('View details')}
                       onClick={e => {
                         e.stopPropagation();
                         setDetailLead(lead);
@@ -762,14 +766,14 @@ export default function AdminLeads() {
                 ['Quantity', detailLead.quantity ?? 0],
                 ['Company', detailLead.company || '—'],
                 ['Website', detailLead.website || '—'],
-                ['Country', detailLead.region || '—'],
+                ['Country', detailLead.region ? t(detailLead.region) : '—'],
                 ['Source', detailLead.source || '—'],
-                ['Salla Store', detailLead.isSallaStore ? 'Yes' : 'No'],
-                ['Data Quality', detailLead.dataQuality],
+                ['Salla Store', detailLead.isSallaStore ? t('Yes') : t('No')],
+                ['Data Quality', t(detailLead.dataQuality ?? 'normal')],
                 ['Created', detailLead.createdAt?.slice(0, 10)],
               ].map(([k, v]) => (
                 <div key={k} className="bg-[#1a1a1a] rounded-lg p-3">
-                  <div className="text-[#6b6b6b] text-xs mb-1">{k}</div>
+                  <div className="text-[#6b6b6b] text-xs mb-1">{t(String(k))}</div>
                   <div className="text-white text-sm font-medium break-words">{k === 'Website' ? <WebsiteLink url={String(v)} /> : v}</div>
                 </div>
               ))}
@@ -777,12 +781,13 @@ export default function AdminLeads() {
 
             {/* Phone (add or edit manually) */}
             <div className="bg-[#1a1a1a] rounded-lg p-3">
-              <div className="text-[#6b6b6b] text-xs mb-1">Phone</div>
+              <div className="text-[#6b6b6b] text-xs mb-1">{t('Phone')}</div>
               <div className="flex gap-2">
                 <input
                   value={phoneDraft}
                   onChange={e => { setPhoneDraft(e.target.value); setPhoneMsg(''); }}
-                  placeholder="Add phone number"
+                  placeholder={t('Add phone number')}
+                  dir="ltr"
                   className="flex-1 bg-[#111] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60"
                 />
                 <Button
@@ -791,24 +796,24 @@ export default function AdminLeads() {
                   disabled={cleanPhone(phoneDraft) === (detailLead.phone ?? '')}
                   onClick={handleSavePhone}
                 >
-                  Save
+                  {t('Save')}
                 </Button>
               </div>
               {phoneMsg && <p className="text-xs mt-1 text-[#a0a0a0]">{phoneMsg}</p>}
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-[#6b6b6b] text-xs">Status:</span>
+              <span className="text-[#6b6b6b] text-xs">{t('Status:')}</span>
               <StatusBadge status={detailLead.status} />
             </div>
             {detailLead.notes && (
               <div className="bg-[#1a1a1a] rounded-lg p-3">
-                <div className="text-[#6b6b6b] text-xs mb-1">Notes</div>
+                <div className="text-[#6b6b6b] text-xs mb-1">{t('Notes')}</div>
                 <div className="text-[#d0d0d0] text-sm">{detailLead.notes}</div>
               </div>
             )}
             <div>
-              <div className="text-[#6b6b6b] text-xs mb-2">Comments ({(detailLead.comments || []).length})</div>
+              <div className="text-[#6b6b6b] text-xs mb-2">{t('Comments ({n})', { n: (detailLead.comments || []).length })}</div>
               <div className="space-y-2 max-h-40 overflow-y-auto">
                 {(detailLead.comments || []).map((comment: any) => (
                   <div key={comment.id} className="bg-[#1a1a1a] rounded-lg p-3">
@@ -824,25 +829,25 @@ export default function AdminLeads() {
                 value={commentText}
                 onChange={e => setCommentText(e.target.value)}
                 rows={3}
-                placeholder="Add a comment about this client..."
+                placeholder={t('Add a comment about this client...')}
                 className="w-full mt-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60 resize-none"
               />
               {commentError && <p className="text-[#ff6464] text-xs mt-1">{commentError}</p>}
               <Button variant="secondary" size="sm" className="mt-2" disabled={!commentText.trim()} onClick={handleAddComment}>
-                Post Comment
+                {t('Post Comment')}
               </Button>
             </div>
             <div className="flex gap-2 pt-2">
-              <Button variant="secondary" size="sm" onClick={() => setDetailLead(null)}>Close</Button>
+              <Button variant="secondary" size="sm" onClick={() => setDetailLead(null)}>{t('Close')}</Button>
             </div>
           </div>
         )}
       </Modal>
 
       {/* Assign Modal */}
-      <Modal open={assignModal} onClose={() => setAssignModal(false)} title={`Assign ${selected.length} Leads`}>
+      <Modal open={assignModal} onClose={() => setAssignModal(false)} title={t('Assign {n} Leads', { n: selected.length })}>
         <div className="space-y-4">
-          <p className="text-[#a0a0a0] text-sm">Select a manager or Telesales agent to assign these leads to:</p>
+          <p className="text-[#a0a0a0] text-sm">{t('Select a manager or Telesales agent to assign these leads to:')}</p>
           <div className="space-y-2">
             {assignableUsers.map(u => {
               const assignedCount = leads.filter(l => l.assignedTo === u.id).length;
@@ -850,19 +855,19 @@ export default function AdminLeads() {
                 <button
                   key={u.id}
                   onClick={() => setAssignTo(u.id)}
-                  className={`w-full text-left p-3 rounded-lg border transition-all ${assignTo === u.id ? 'border-[#dfff03] bg-[#dfff03]/5' : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'}`}
+                  className={`w-full text-start p-3 rounded-lg border transition-all ${assignTo === u.id ? 'border-[#dfff03] bg-[#dfff03]/5' : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'}`}
                 >
                   <div className="text-white text-sm font-medium">{u.fullName}</div>
                   <div className="text-[#6b6b6b] text-xs">
-                    {u.role === 'manager' ? 'Manager' : 'Telesales'} · {assignedCount} leads currently assigned
+                    {u.role === 'manager' ? t('Manager') : t('Telesales')} · {t('{n} leads currently assigned', { n: assignedCount })}
                   </div>
                 </button>
               );
             })}
           </div>
           <div className="flex gap-2">
-            <Button variant="primary" disabled={!assignTo} onClick={handleAssign}>Assign Leads</Button>
-            <Button variant="ghost" onClick={() => setAssignModal(false)}>Cancel</Button>
+            <Button variant="primary" disabled={!assignTo} onClick={handleAssign}>{t('Assign Leads')}</Button>
+            <Button variant="ghost" onClick={() => setAssignModal(false)}>{t('Cancel')}</Button>
           </div>
         </div>
       </Modal>
@@ -877,17 +882,17 @@ export default function AdminLeads() {
             { label: 'Website', key: 'website', placeholder: 'example.com' },
           ].map(f => (
             <div key={f.key}>
-              <label className="block text-xs text-[#a0a0a0] mb-1">{f.label}</label>
+              <label className="block text-xs text-[#a0a0a0] mb-1">{t(f.label)}</label>
               <input
                 value={(newLead as any)[f.key]}
                 onChange={e => setNewLead(prev => ({ ...prev, [f.key]: e.target.value }))}
-                placeholder={f.placeholder}
+                placeholder={t(f.placeholder)}
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60"
               />
             </div>
           ))}
           <div>
-            <label className="block text-xs text-[#a0a0a0] mb-1">Quantity</label>
+            <label className="block text-xs text-[#a0a0a0] mb-1">{t('Quantity')}</label>
             <input
               type="number"
               min="0"
@@ -898,23 +903,23 @@ export default function AdminLeads() {
             />
           </div>
           <div>
-            <label className="block text-xs text-[#a0a0a0] mb-1">Country</label>
+            <label className="block text-xs text-[#a0a0a0] mb-1">{t('Country')}</label>
             <select
               value={newLead.region}
               onChange={e => setNewLead(prev => ({ ...prev, region: e.target.value }))}
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#dfff03]/60"
             >
               {REGION_FORM_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>{t(o.label)}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="block text-xs text-[#a0a0a0] mb-1">Source</label>
+            <label className="block text-xs text-[#a0a0a0] mb-1">{t('Source')}</label>
             <input
               value={newLead.source}
               onChange={e => setNewLead(prev => ({ ...prev, source: e.target.value }))}
-              placeholder="Referral, Website..."
+              placeholder={t('Referral, Website...')}
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60"
             />
           </div>
@@ -925,23 +930,23 @@ export default function AdminLeads() {
               onChange={e => setNewLead(prev => ({ ...prev, isSallaStore: e.target.checked }))}
               className="accent-[#dfff03]"
             />
-            Salla store
+            {t('Salla store')}
           </label>
           <div>
-            <label className="block text-xs text-[#a0a0a0] mb-1">Data Quality</label>
+            <label className="block text-xs text-[#a0a0a0] mb-1">{t('Data Quality')}</label>
             <select
               value={newLead.dataQuality}
               onChange={e => setNewLead(prev => ({ ...prev, dataQuality: e.target.value as LeadDataQuality }))}
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#dfff03]/60"
             >
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="normal">Normal</option>
+              <option value="high">{t('High')}</option>
+              <option value="medium">{t('Medium')}</option>
+              <option value="normal">{t('Normal')}</option>
             </select>
           </div>
           <div className="flex gap-2 pt-2">
-            <Button variant="primary" disabled={!newLead.name} onClick={handleAddLead}>Add Lead</Button>
-            <Button variant="ghost" onClick={() => setAddModal(false)}>Cancel</Button>
+            <Button variant="primary" disabled={!newLead.name} onClick={handleAddLead}>{t('Add Lead')}</Button>
+            <Button variant="ghost" onClick={() => setAddModal(false)}>{t('Cancel')}</Button>
           </div>
         </div>
       </Modal>
@@ -950,7 +955,7 @@ export default function AdminLeads() {
       <Modal open={importModal} onClose={() => setImportModal(false)} title="Import Leads from Excel">
         <div className="space-y-4">
           <div>
-            <label className="block text-xs text-[#a0a0a0] mb-2">Client type for this import</label>
+            <label className="block text-xs text-[#a0a0a0] mb-2">{t('Client type for this import')}</label>
             <div className="grid grid-cols-2 gap-2">
               {[
                 { value: 'software' as const, label: 'Software', description: 'Regular software client' },
@@ -960,16 +965,16 @@ export default function AdminLeads() {
                   key={option.value}
                   type="button"
                   onClick={() => setImportType(option.value)}
-                  className={`text-left rounded-lg border p-3 transition-colors ${importType === option.value ? 'border-[#dfff03] bg-[#dfff03]/5' : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'}`}
+                  className={`text-start rounded-lg border p-3 transition-colors ${importType === option.value ? 'border-[#dfff03] bg-[#dfff03]/5' : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'}`}
                 >
-                  <div className="text-white text-sm font-medium">{option.label}</div>
-                  <div className="text-[#6b6b6b] text-xs mt-1">{option.description}</div>
+                  <div className="text-white text-sm font-medium">{t(option.label)}</div>
+                  <div className="text-[#6b6b6b] text-xs mt-1">{t(option.description)}</div>
                 </button>
               ))}
             </div>
           </div>
           <div>
-            <label className="block text-xs text-[#a0a0a0] mb-1">Data quality for this import</label>
+            <label className="block text-xs text-[#a0a0a0] mb-1">{t('Data quality for this import')}</label>
             <select
               value={importDataQuality}
               onChange={e => setImportDataQuality(e.target.value as LeadDataQuality)}
@@ -984,51 +989,52 @@ export default function AdminLeads() {
             <svg className="w-10 h-10 text-[#4a4a4a] mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
-            <p className="text-[#a0a0a0] text-sm">{importFile?.name || 'Choose an Excel or CSV file'}</p>
-            <p className="text-[#4a4a4a] text-xs mt-1">.xlsx, .xls, .csv supported</p>
+            <p className="text-[#a0a0a0] text-sm">{importFile?.name || t('Choose an Excel or CSV file')}</p>
+            <p className="text-[#4a4a4a] text-xs mt-1">{t('.xlsx, .xls, .csv supported')}</p>
             <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => handleImportFile(e.target.files?.[0])} />
           </label>
           {importRows.length > 0 && (
             <p className="text-[#dfff03] text-xs">
-              {importRows.length.toLocaleString()} valid rows ready to import
-              {' · '}
-              {importRows.filter(r => r.phone).length.toLocaleString()} with a phone number.
+              {t('{a} valid rows ready to import · {b} with a phone number.', {
+                a: importRows.length.toLocaleString('en-US'),
+                b: importRows.filter(r => r.phone).length.toLocaleString('en-US'),
+              })}
             </p>
           )}
-          {duplicateImportCount > 0 && <p className="text-[#ffc832] text-xs">{duplicateImportCount.toLocaleString()} duplicate website rows were skipped automatically.</p>}
+          {duplicateImportCount > 0 && <p className="text-[#ffc832] text-xs">{t('{n} duplicate website rows were skipped automatically.', { n: duplicateImportCount.toLocaleString('en-US') })}</p>}
           {importing && (
             <div className="space-y-1">
-              <div className="flex justify-between text-xs text-[#a0a0a0]"><span>Uploading customers</span><span>{importProgress}%</span></div>
+              <div className="flex justify-between text-xs text-[#a0a0a0]"><span>{t('Uploading customers')}</span><span>{importProgress}%</span></div>
               <div className="h-1.5 bg-[#262626] rounded-full overflow-hidden"><div className="h-full bg-[#dfff03] transition-all" style={{ width: `${importProgress}%` }} /></div>
             </div>
           )}
           {importRows.length > 0 && (
             <div className="bg-[#dfff03]/5 border border-[#dfff03]/20 rounded-lg p-3 text-xs">
-              <div className="text-white font-medium">Import settings</div>
+              <div className="text-white font-medium">{t('Import settings')}</div>
               <div className="text-[#a0a0a0] mt-1">
-                Type: <span className="text-[#dfff03]">{importType === 'salla' ? 'Salla Store' : 'Software'}</span>
+                {t('Type:')} <span className="text-[#dfff03]">{importType === 'salla' ? t('Salla Store') : t('Software')}</span>
                 {' · '}
-                Data quality:{' '}
+                {t('Data quality:')}{' '}
                 <span className="text-[#dfff03]">
-                  {importDataQuality === 'high' ? 'Strong' : importDataQuality === 'medium' ? 'Medium' : 'Normal'}
+                  {importDataQuality === 'high' ? t('Strong') : importDataQuality === 'medium' ? t('Medium') : t('Normal')}
                 </span>
               </div>
-              <div className="text-[#6b6b6b] mt-1">These settings will be applied to all imported customers.</div>
+              <div className="text-[#6b6b6b] mt-1">{t('These settings will be applied to all imported customers.')}</div>
             </div>
           )}
-          {importError && <p className="text-[#ff6464] text-xs">{importError}</p>}
+          {importError && <p className="text-[#ff6464] text-xs">{t(importError)}</p>}
           <div className="bg-[#1a1a1a] rounded-lg p-3 text-xs text-[#6b6b6b]">
-            <p className="font-medium text-[#a0a0a0] mb-1">Expected columns:</p>
-            <p>Customer Number (optional) · Website (optional) · Quantity · Name (required) · Phone (optional) · Company · Country · Source · Notes</p>
-            <p className="mt-1">If two rows use the same website, only the first row is imported.</p>
-            <p className="mt-1">If a store already exists without a phone and the sheet has one, the phone is added to it.</p>
-            <p className="mt-1 text-[#dfff03]">The selected client type and data quality above apply to every imported row.</p>
+            <p className="font-medium text-[#a0a0a0] mb-1">{t('Expected columns:')}</p>
+            <p>{t('Customer Number (optional) · Website (optional) · Quantity · Name (required) · Phone (optional) · Company · Country · Source · Notes')}</p>
+            <p className="mt-1">{t('If two rows use the same website, only the first row is imported.')}</p>
+            <p className="mt-1">{t('If a store already exists without a phone and the sheet has one, the phone is added to it.')}</p>
+            <p className="mt-1 text-[#dfff03]">{t('The selected client type and data quality above apply to every imported row.')}</p>
           </div>
           <div className="flex gap-2">
             <Button variant="primary" disabled={!importRows.length || importing} onClick={handleImport}>
-              {importing ? 'Importing...' : 'Import Leads'}
+              {importing ? t('Importing...') : t('Import Leads')}
             </Button>
-            <Button variant="ghost" onClick={() => setImportModal(false)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => setImportModal(false)}>{t('Cancel')}</Button>
           </div>
         </div>
       </Modal>

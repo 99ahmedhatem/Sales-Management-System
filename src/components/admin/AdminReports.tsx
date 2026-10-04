@@ -6,6 +6,8 @@ import { LeadStatus, User } from "../../data/crmTypes"
 
 import { Card, KpiCard } from "../ui"
 
+import { useI18n } from "../../i18n/I18nProvider"
+
 interface LeadReportRow {
   id: string
 
@@ -124,6 +126,8 @@ async function loadAllPages<T>(
 }
 
 export default function AdminReports() {
+  const { t } = useI18n()
+
   const [report, setReport] = useState(EMPTY_REPORT)
 
   const [loading, setLoading] = useState(true)
@@ -324,11 +328,11 @@ export default function AdminReports() {
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Reports & Analytics</h1>
-          <p className="mt-0.5 text-sm text-[#6b6b6b]">Performance overview</p>
+          <h1 className="text-2xl font-bold text-white">{t("Reports & Analytics")}</h1>
+          <p className="mt-0.5 text-sm text-[#6b6b6b]">{t("Performance overview")}</p>
         </div>
         <button className="flex items-center gap-2 rounded-lg border border-[#2a2a2a] bg-[#1e1e1e] px-4 py-2 text-sm text-[#a0a0a0] transition-colors hover:text-white">
-          Export CSV
+          {t("Export CSV")}
         </button>
       </div>
 
@@ -337,7 +341,7 @@ export default function AdminReports() {
           role="alert"
           className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
         >
-          {error}
+          {t(error)}
         </div>
       )}
 
@@ -350,13 +354,13 @@ export default function AdminReports() {
         <KpiCard
           label="Conversion Rate"
           value={loading ? "—" : `${conversionRate}%`}
-          sub={`${convertedLeads} converted`}
+          sub={t("{n} converted", { n: convertedLeads })}
           accent
         />
         <KpiCard
           label="Deals Won"
           value={loading ? "—" : wonDeals}
-          sub={`${lostDeals} lost`}
+          sub={t("{n} lost", { n: lostDeals })}
         />
         <KpiCard
           label="Win Rate"
@@ -374,17 +378,17 @@ export default function AdminReports() {
       </div>
 
       <Card className="p-5">
-        <h3 className="mb-4 font-semibold text-white">Lead Sources</h3>
+        <h3 className="mb-4 font-semibold text-white">{t("Lead Sources")}</h3>
         {loading ? (
-          <div className="text-sm text-[#6b6b6b]">Loading report data...</div>
+          <div className="text-sm text-[#6b6b6b]">{t("Loading report data...")}</div>
         ) : sourceData.length === 0 ? (
-          <div className="text-sm text-[#6b6b6b]">No lead source data.</div>
+          <div className="text-sm text-[#6b6b6b]">{t("No lead source data.")}</div>
         ) : (
           <div className="space-y-3">
             {sourceData.map((source) => (
               <div key={source.source} className="flex items-center gap-4">
                 <div className="w-32 truncate text-sm text-[#a0a0a0]">
-                  {source.source}
+                  {t(source.source)}
                 </div>
                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#1e1e1e]">
                   <div
@@ -396,17 +400,17 @@ export default function AdminReports() {
                     }}
                   />
                 </div>
-                <div className="w-20 text-right">
+                <div className="w-20 text-end">
                   <span className="text-sm font-medium text-white">
                     {source.count}
                   </span>
-                  <span className="text-xs text-[#6b6b6b]"> leads</span>
+                  <span className="text-xs text-[#6b6b6b]"> {t("leads")}</span>
                 </div>
-                <div className="w-16 text-right">
+                <div className="w-16 text-end">
                   <span className="text-sm font-medium text-[#64dc78]">
                     {source.converted}
                   </span>
-                  <span className="text-xs text-[#6b6b6b]"> cvt</span>
+                  <span className="text-xs text-[#6b6b6b]"> {t("cvt")}</span>
                 </div>
               </div>
             ))}
@@ -417,20 +421,20 @@ export default function AdminReports() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card className="p-5">
           <h3 className="mb-4 font-semibold text-white">
-            Telesales Performance
+            {t("Telesales Performance")}
           </h3>
           {loading ? (
-            <div className="text-sm text-[#6b6b6b]">Loading...</div>
+            <div className="text-sm text-[#6b6b6b]">{t("Loading...")}</div>
           ) : agentStats.length === 0 ? (
             <div className="text-sm text-[#6b6b6b]">
-              No telesales users found.
+              {t("No telesales users found.")}
             </div>
           ) : (
             <div className="space-y-3">
               <div className="grid grid-cols-4 border-b border-[#1e1e1e] pb-2 text-xs font-medium uppercase tracking-wide text-[#6b6b6b]">
-                <span className="col-span-2">Agent</span>
-                <span className="text-right">Calls</span>
-                <span className="text-right">Conv. Rate</span>
+                <span className="col-span-2">{t("Agent")}</span>
+                <span className="text-end">{t("Calls")}</span>
+                <span className="text-end">{t("Conv. Rate")}</span>
               </div>
               {agentStats.map(
                 ({ agent, total, converted, callsMade, convRate }) => (
@@ -440,13 +444,13 @@ export default function AdminReports() {
                         {agent.fullName}
                       </div>
                       <div className="text-xs text-[#6b6b6b]">
-                        {total} leads · {converted} converted
+                        {t("{a} leads · {b} converted", { a: total, b: converted })}
                       </div>
                     </div>
-                    <div className="text-right font-mono text-sm text-[#a0a0a0]">
+                    <div className="text-end font-mono text-sm text-[#a0a0a0]">
                       {callsMade}
                     </div>
-                    <div className="text-right font-mono text-sm font-bold text-[#dfff03]">
+                    <div className="text-end font-mono text-sm font-bold text-[#dfff03]">
                       {convRate}%
                     </div>
                   </div>
@@ -457,17 +461,17 @@ export default function AdminReports() {
         </Card>
 
         <Card className="p-5">
-          <h3 className="mb-4 font-semibold text-white">Sales Performance</h3>
+          <h3 className="mb-4 font-semibold text-white">{t("Sales Performance")}</h3>
           {loading ? (
-            <div className="text-sm text-[#6b6b6b]">Loading...</div>
+            <div className="text-sm text-[#6b6b6b]">{t("Loading...")}</div>
           ) : salesStats.length === 0 ? (
-            <div className="text-sm text-[#6b6b6b]">No sales users found.</div>
+            <div className="text-sm text-[#6b6b6b]">{t("No sales users found.")}</div>
           ) : (
             <div className="space-y-3">
               <div className="grid grid-cols-4 border-b border-[#1e1e1e] pb-2 text-xs font-medium uppercase tracking-wide text-[#6b6b6b]">
-                <span className="col-span-2">Agent</span>
-                <span className="text-right">Meetings</span>
-                <span className="text-right">Win Rate</span>
+                <span className="col-span-2">{t("Agent")}</span>
+                <span className="text-end">{t("Meetings")}</span>
+                <span className="text-end">{t("Win Rate")}</span>
               </div>
               {salesStats.map(({ agent, total, won, lost, winRate }) => (
                 <div key={agent.id} className="grid grid-cols-4 items-center">
@@ -476,13 +480,13 @@ export default function AdminReports() {
                       {agent.fullName}
                     </div>
                     <div className="text-xs text-[#6b6b6b]">
-                      {won} won · {lost} lost
+                      {t("{a} won · {b} lost", { a: won, b: lost })}
                     </div>
                   </div>
-                  <div className="text-right font-mono text-sm text-[#a0a0a0]">
+                  <div className="text-end font-mono text-sm text-[#a0a0a0]">
                     {total}
                   </div>
-                  <div className="text-right font-mono text-sm font-bold text-[#64dc78]">
+                  <div className="text-end font-mono text-sm font-bold text-[#64dc78]">
                     {winRate}%
                   </div>
                 </div>
@@ -493,7 +497,7 @@ export default function AdminReports() {
       </div>
 
       <Card className="p-5">
-        <h3 className="mb-5 font-semibold text-white">Pipeline Funnel</h3>
+        <h3 className="mb-5 font-semibold text-white">{t("Pipeline Funnel")}</h3>
         <div className="flex h-32 items-end gap-2">
           {[
             { label: "Total", value: totalLeads, color: "#6495ed" },
@@ -527,7 +531,7 @@ export default function AdminReports() {
                 }}
               />
               <span className="text-center text-xs leading-tight text-[#6b6b6b]">
-                {stat.label}
+                {t(stat.label)}
               </span>
             </div>
           ))}

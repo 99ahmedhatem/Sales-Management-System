@@ -1,6 +1,7 @@
 import { ReactNode, useState } from 'react';
+import { useI18n } from '../../i18n/I18nProvider';
 
-/** ألوان الشارتات (متحقق منها على الخلفية الداكنة). الترتيب ثابت، مفيش تدوير. */
+/** Chart colors (validated on the dark surface). Fixed order, never cycled. */
 export const CHART_COLORS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300'];
 const GRID = '#262626';
 const INK = '#e5e5e5';
@@ -27,8 +28,9 @@ export function Panel({ title, hint, right, children }: { title: string; hint?: 
   );
 }
 
-export function Empty({ text = 'لا توجد بيانات في هذه الفترة' }: { text?: string }) {
-  return <div className="text-xs text-[#8a8a8a] py-6 text-center">{text}</div>;
+export function Empty({ text }: { text?: string }) {
+  const { t } = useI18n();
+  return <div className="text-xs text-[#8a8a8a] py-6 text-center">{text ?? t("No data in this period")}</div>;
 }
 
 export function ErrorNote({ message }: { message: string }) {
@@ -61,7 +63,7 @@ export function Legend({ items }: { items: { label: string; color: string }[] })
   );
 }
 
-/** أعمدة رأسية (سلسلة واحدة) مع tooltip عند المرور. */
+/** Vertical columns (single series) with hover tooltip. */
 export function ColumnChart({
   data, color, unit, height = 160,
 }: { data: { label: string; value: number }[]; color: string; unit: string; height?: number }) {
@@ -117,7 +119,7 @@ export function ColumnChart({
 
 export interface BarRow { label: string; value: number; sub?: string; color?: string; tip?: string }
 
-/** أعمدة أفقية: الاسم يمين الرقم، tooltip بالـ title. */
+/** Horizontal bars: label + value, tooltip via title. */
 export function HBars({ rows, unit = '', color = CHART_COLORS[0], format = (n: number) => nf(n) }: {
   rows: BarRow[]; unit?: string; color?: string; format?: (n: number) => string;
 }) {
@@ -131,7 +133,7 @@ export function HBars({ rows, unit = '', color = CHART_COLORS[0], format = (n: n
             <span className="text-[#a3a3a3] tabular-nums shrink-0">{format(r.value)}{unit && ` ${unit}`}{r.sub ? ` · ${r.sub}` : ''}</span>
           </div>
           <div className="h-2 bg-[#222] rounded-sm overflow-hidden">
-            <div className="h-full rounded-r-sm group-hover:opacity-80" style={{ width: `${Math.max(r.value > 0 ? 1.5 : 0, (r.value / max) * 100)}%`, background: r.color ?? color }} />
+            <div className="h-full rounded-e-sm group-hover:opacity-80" style={{ width: `${Math.max(r.value > 0 ? 1.5 : 0, (r.value / max) * 100)}%`, background: r.color ?? color }} />
           </div>
         </div>
       ))}
@@ -139,7 +141,7 @@ export function HBars({ rows, unit = '', color = CHART_COLORS[0], format = (n: n
   );
 }
 
-/** شريط تقدّم نحو هدف (0..100+). */
+/** Progress toward a target (0..100+). */
 export function ProgressRow({ label, done, target, unit = '' }: { label: string; done: number; target: number; unit?: string }) {
   const pct = target > 0 ? (done / target) * 100 : 0;
   return (
@@ -149,14 +151,15 @@ export function ProgressRow({ label, done, target, unit = '' }: { label: string;
         <span className="text-[#e5e5e5] tabular-nums">{nf(done)} / {target > 0 ? nf(target) : '—'}{target > 0 ? ` (${nf(pct)}%)` : ''}</span>
       </div>
       <div className="h-1.5 bg-[#222] rounded-sm overflow-hidden">
-        <div className="h-full rounded-r-sm" style={{ width: `${Math.min(100, pct)}%`, background: pct >= 100 ? CHART_COLORS[2] : CHART_COLORS[0] }} />
+        <div className="h-full rounded-e-sm" style={{ width: `${Math.min(100, pct)}%`, background: pct >= 100 ? CHART_COLORS[2] : CHART_COLORS[0] }} />
       </div>
     </div>
   );
 }
 
-/** Funnel: كل مرحلة عمود أفقي نسبةً لأول مرحلة + نسبة التحويل من اللي قبلها. */
+/** Funnel: each stage as a horizontal bar relative to the first stage, plus conversion from the previous stage. */
 export function Funnel({ steps }: { steps: { label: string; value: number }[] }) {
+  const { t } = useI18n();
   const top = Math.max(1, steps[0]?.value ?? 1);
   return (
     <div className="space-y-2">
@@ -164,13 +167,13 @@ export function Funnel({ steps }: { steps: { label: string; value: number }[] })
         const prev = i === 0 ? null : steps[i - 1].value;
         const conv = prev && prev > 0 ? (s.value / prev) * 100 : null;
         return (
-          <div key={s.label} title={`${s.label}: ${nf(s.value)}${conv != null ? ` (${nf(conv, 1)}% من المرحلة السابقة)` : ''}`}>
+          <div key={s.label} title={`${s.label}: ${nf(s.value)}${conv != null ? ` (${t('{p}% of previous stage', { p: nf(conv, 1) })})` : ''}`}>
             <div className="flex justify-between text-xs mb-1">
               <span className="text-[#e5e5e5]">{s.label}</span>
               <span className="text-[#a3a3a3] tabular-nums">{nf(s.value)}{conv != null ? ` · ${nf(conv, 1)}%` : ''}</span>
             </div>
             <div className="h-3 bg-[#222] rounded-sm overflow-hidden">
-              <div className="h-full rounded-r-sm" style={{ width: `${Math.max(s.value > 0 ? 1.5 : 0, (s.value / top) * 100)}%`, background: CHART_COLORS[0] }} />
+              <div className="h-full rounded-e-sm" style={{ width: `${Math.max(s.value > 0 ? 1.5 : 0, (s.value / top) * 100)}%`, background: CHART_COLORS[0] }} />
             </div>
           </div>
         );

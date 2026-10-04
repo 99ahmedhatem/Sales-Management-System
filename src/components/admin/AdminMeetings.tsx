@@ -8,6 +8,8 @@ import { MeetingOutcome } from "../../data/crmTypes"
 
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 import MeetingRequestsManagement from "../shared/MeetingRequestsManagement"
+import { useI18n } from "../../i18n/I18nProvider"
+import { dateLocale } from "../../i18n/locale"
 
 import {
   Avatar,
@@ -41,6 +43,9 @@ interface Props {
 }
 
 export default function AdminMeetings({ userId }: Props) {
+  const { t, lang } = useI18n()
+  const locale = dateLocale(lang)
+
   const [meetings, setMeetings] = useState<Meeting[]>([])
 
   const [detail, setDetail] = useState<Meeting | null>(null)
@@ -171,9 +176,9 @@ export default function AdminMeetings({ userId }: Props) {
   return (
     <div className="p-6 space-y-4">
       <div>
-        <h1 className="text-white text-2xl font-bold">Meetings</h1>
+        <h1 className="text-white text-2xl font-bold">{t("Meetings")}</h1>
         <p className="text-[#6b6b6b] text-sm mt-0.5">
-          {scheduledCount} upcoming · {wonCount} won · {lostCount} lost
+          {t("{a} upcoming · {b} won · {c} lost", { a: scheduledCount, b: wonCount, c: lostCount })}
         </p>
       </div>
 
@@ -182,7 +187,7 @@ export default function AdminMeetings({ userId }: Props) {
           role="alert"
           className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
         >
-          {error}
+          {t(error)}
         </div>
       )}
 
@@ -203,7 +208,7 @@ export default function AdminMeetings({ userId }: Props) {
             >
               {stat.value}
             </div>
-            <div className="mt-1 text-xs text-[#6b6b6b]">{stat.label}</div>
+            <div className="mt-1 text-xs text-[#6b6b6b]">{t(stat.label)}</div>
           </Card>
         ))}
       </div>
@@ -225,11 +230,11 @@ export default function AdminMeetings({ userId }: Props) {
       <Card>
         {loading ? (
           <div className="p-8 text-center text-sm text-[#6b6b6b]">
-            Loading meetings...
+            {t("Loading meetings...")}
           </div>
         ) : meetings.length === 0 ? (
           <div className="p-8 text-center text-sm text-[#6b6b6b]">
-            No meetings found.
+            {t("No meetings found.")}
           </div>
         ) : (
           <Table
@@ -251,19 +256,19 @@ export default function AdminMeetings({ userId }: Props) {
                   </span>
                 </Td>
                 <Td>
-                  <span className="font-mono text-xs">{meeting.leadPhone}</span>
+                  <span className="font-mono text-xs" dir="ltr">{meeting.leadPhone}</span>
                 </Td>
                 <Td>
                   <div className="flex items-center gap-2">
                     <Avatar name={meeting.assignedSalesName} size="sm" />
                     <span className="text-xs text-[#a0a0a0]">
-                      {meeting.assignedSalesName || "Sales"}
+                      {meeting.assignedSalesName || t("Sales")}
                     </span>
                   </div>
                 </Td>
                 <Td>
                   <span className="font-mono text-xs text-[#dfff03]">
-                    {new Date(meeting.proposedDate).toLocaleString()}
+                    {new Date(meeting.proposedDate).toLocaleString(locale)}
                   </span>
                 </Td>
                 <Td>
@@ -288,7 +293,7 @@ export default function AdminMeetings({ userId }: Props) {
                   >
                     {OUTCOME_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
-                        {option.label}
+                        {t(option.label)}
                       </option>
                     ))}
                   </select>
@@ -318,32 +323,32 @@ export default function AdminMeetings({ userId }: Props) {
 
                 ["Phone", detail.leadPhone],
 
-                ["Sales Agent", detail.assignedSalesName || "Sales"],
+                ["Sales Agent", detail.assignedSalesName || t("Sales")],
 
-                ["Date & Time", new Date(detail.proposedDate).toLocaleString()],
+                ["Date & Time", new Date(detail.proposedDate).toLocaleString(locale)],
 
-                ["Booked By", detail.bookedByName || "Telesales"],
+                ["Booked By", detail.bookedByName || t("Telesales")],
 
-                ["Booked", new Date(detail.createdAt).toLocaleDateString()],
+                ["Booked", new Date(detail.createdAt).toLocaleDateString(locale)],
               ].map(([label, value]) => (
                 <div key={label} className="rounded bg-[#1a1a1a] p-3">
-                  <div className="mb-1 text-xs text-[#6b6b6b]">{label}</div>
+                  <div className="mb-1 text-xs text-[#6b6b6b]">{t(label)}</div>
                   <div className="text-sm font-medium text-white">{value}</div>
                 </div>
               ))}
             </div>
             <div className="rounded bg-[#1a1a1a] p-3">
-              <div className="mb-1 text-xs text-[#6b6b6b]">Telesales Notes</div>
+              <div className="mb-1 text-xs text-[#6b6b6b]">{t("Telesales Notes")}</div>
               <div className="text-sm text-[#d0d0d0]">
                 {detail.telesalesNotes || "—"}
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-[#6b6b6b]">Current Outcome:</span>
+              <span className="text-xs text-[#6b6b6b]">{t("Current Outcome:")}</span>
               <StatusBadge status={detail.outcome} />
             </div>
             <Button variant="ghost" onClick={() => setDetail(null)}>
-              Close
+              {t("Close")}
             </Button>
           </div>
         )}

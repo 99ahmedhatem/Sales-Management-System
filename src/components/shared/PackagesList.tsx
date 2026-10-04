@@ -10,6 +10,8 @@ import {
 
 import { Button, Card } from "../ui"
 
+import { useI18n } from "../../i18n/I18nProvider"
+
 const PAGE_SIZE = 12
 
 const formatSar = new Intl.NumberFormat("en-US", {
@@ -18,6 +20,8 @@ const formatSar = new Intl.NumberFormat("en-US", {
 })
 
 export default function PackagesList() {
+  const { t } = useI18n()
+
   const [packages, setPackages] = useState<SalesPackage[]>([])
 
   const [page, setPage] = useState(0)
@@ -81,9 +85,9 @@ export default function PackagesList() {
   return (
     <div className="p-6 space-y-5">
       <div>
-        <h1 className="text-white text-2xl font-bold">Packages</h1>
+        <h1 className="text-white text-2xl font-bold">{t("Packages")}</h1>
         <p className="text-[#6b6b6b] text-sm mt-0.5">
-          Available packages and included features
+          {t("Available packages and included features")}
         </p>
       </div>
 
@@ -97,11 +101,11 @@ export default function PackagesList() {
       )}
       {loading ? (
         <div className="py-12 text-center text-sm text-[#6b6b6b]">
-          Loading packages...
+          {t("Loading packages...")}
         </div>
       ) : !error && packages.length === 0 ? (
         <div className="py-12 text-center text-sm text-[#6b6b6b]">
-          No active packages available.
+          {t("No active packages available.")}
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -113,7 +117,7 @@ export default function PackagesList() {
                     {item.name}
                   </h2>
                   <span className="shrink-0 rounded bg-[#dfff03]/10 px-2 py-1 text-xs text-[#dfff03]">
-                    {item.durationMonths} months
+                    {t("{n} months", { n: item.durationMonths })}
                   </span>
                 </div>
                 <p className="mt-2 min-h-10 text-sm text-[#a0a0a0]">
@@ -135,7 +139,7 @@ export default function PackagesList() {
               </div>
               <div className="mt-5 border-t border-[#262626] pt-4">
                 <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">
-                  Starting at
+                  {t("Starting at")}
                 </div>
                 <div className="mt-1 text-xl font-bold text-[#dfff03]">
                   {formatSar.format(item.priceSar)}
@@ -148,7 +152,7 @@ export default function PackagesList() {
 
       {!loading && !error && (page > 0 || hasMore) && (
         <div className="flex items-center justify-between">
-          <span className="text-xs text-[#6b6b6b]">Page {page + 1}</span>
+          <span className="text-xs text-[#6b6b6b]">{t("Page {n}", { n: page + 1 })}</span>
           <div className="flex gap-2">
             <Button
               variant="secondary"
@@ -156,7 +160,7 @@ export default function PackagesList() {
               disabled={page === 0}
               onClick={() => setPage((current) => current - 1)}
             >
-              Previous
+              {t("Previous")}
             </Button>
             <Button
               variant="secondary"
@@ -164,7 +168,7 @@ export default function PackagesList() {
               disabled={!hasMore}
               onClick={() => setPage((current) => current + 1)}
             >
-              Next
+              {t("Next")}
             </Button>
           </div>
         </div>

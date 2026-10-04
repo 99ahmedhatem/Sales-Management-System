@@ -4,6 +4,8 @@ import { User, Role } from '../../data/mockData';
 import { Avatar, Badge, Button, Card, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Toggle, Tr } from '../ui';
 import { EditablePhoneCell } from '../shared/LeadRowControls';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
+import { useI18n } from '../../i18n/I18nProvider';
+import { dateLocale } from '../../i18n/locale';
 
 function mapUser(row: any): User {
   return {
@@ -20,6 +22,7 @@ function mapUser(row: any): User {
 }
 
 export default function AdminUsers() {
+  const { t, lang } = useI18n();
   const [users, setUsers] = useState<User[]>([]);
   const [emailConfirmed, setEmailConfirmed] = useState<Record<string, boolean>>({});
   const [togglingEmail, setTogglingEmail] = useState<Record<string, boolean>>({});
@@ -142,7 +145,7 @@ export default function AdminUsers() {
     });
     setCreatingUser(false);
     if (error || !data?.username) {
-      setErrorMsg(await functionErrorMessage(error, 'Could not create the user.'));
+      setErrorMsg(await functionErrorMessage(error, t('Could not create the user.')));
       return;
     }
     await loadUsers();
@@ -157,7 +160,7 @@ export default function AdminUsers() {
     const { error } = await supabase.auth.resetPasswordForEmail(u.email, {
       redirectTo: window.location.origin,
     });
-    setResetMessage(error ? error.message : `A password reset link was sent to ${u.email}.`);
+    setResetMessage(error ? error.message : t('A password reset link was sent to {email}.', { email: u.email }));
   };
 
   const toggleStatus = async (u: User) => {
@@ -193,11 +196,11 @@ export default function AdminUsers() {
   };
 
   const deleteUser = async (u: User) => {
-    if (!window.confirm(`Delete ${u.fullName}? This also removes their login account and cannot be undone.`)) return;
+    if (!window.confirm(t('Delete {name}? This also removes their login account and cannot be undone.', { name: u.fullName }))) return;
     setErrorMsg('');
     const { error } = await supabase.rpc('delete_user_account', { target_user_id: u.id });
     if (error) {
-      setErrorMsg(`${error.message}. Run supabase-setup.sql in Supabase SQL Editor, then refresh the page.`);
+      setErrorMsg(t('{msg}. Run supabase-setup.sql in Supabase SQL Editor, then refresh the page.', { msg: error.message }));
       return;
     }
     await loadUsers();
@@ -212,22 +215,22 @@ export default function AdminUsers() {
   };
 
   if (loading) {
-    return <div className="p-6 text-[#a0a0a0] text-sm">Loading users…</div>;
+    return <div className="p-6 text-[#a0a0a0] text-sm">{t('Loading users…')}</div>;
   }
 
   return (
     <div className="p-6 space-y-4">
       {errorMsg && (
         <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3">
-          {errorMsg}
+          {t(errorMsg)}
         </div>
       )}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-white text-2xl font-bold">Users</h1>
-          <p className="text-[#6b6b6b] text-sm mt-0.5">{users.filter(u => u.status === 'active').length} active · {users.length} total</p>
+          <h1 className="text-white text-2xl font-bold">{t('Users')}</h1>
+          <p className="text-[#6b6b6b] text-sm mt-0.5">{t('{a} active · {b} total', { a: users.filter(u => u.status === 'active').length, b: users.length })}</p>
         </div>
-        <Button variant="primary" size="sm" onClick={() => setAddModal(true)}>+ Add User</Button>
+        <Button variant="primary" size="sm" onClick={() => setAddModal(true)}>{t('+ Add User')}</Button>
       </div>
 
       <div className="flex gap-1 bg-[#1a1a1a] rounded-lg p-1 w-fit">
@@ -236,20 +239,20 @@ export default function AdminUsers() {
           { key: 'clients', label: 'Distributed Clients' },
         ].map(view => (
           <button key={view.key} onClick={() => setPageView(view.key as 'users' | 'clients')} className={`px-4 py-1.5 text-sm rounded-md transition-all ${pageView === view.key ? 'bg-[#dfff03] text-black font-medium' : 'text-[#6b6b6b] hover:text-white'}`}>
-            {view.label}
+            {t(view.label)}
           </button>
         ))}
       </div>
 
       {pageView === 'users' && <>
       <div className="flex gap-1 bg-[#1a1a1a] rounded-lg p-1 w-fit">
-        {(['all', 'manager', 'telesales', 'sales'] as const).map(t => (
+        {(['all', 'manager', 'telesales', 'sales'] as const).map(tabKey => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-1.5 text-sm rounded-md transition-all capitalize ${tab === t ? 'bg-[#dfff03] text-black font-medium' : 'text-[#6b6b6b] hover:text-white'}`}
+            key={tabKey}
+            onClick={() => setTab(tabKey)}
+            className={`px-4 py-1.5 text-sm rounded-md transition-all capitalize ${tab === tabKey ? 'bg-[#dfff03] text-black font-medium' : 'text-[#6b6b6b] hover:text-white'}`}
           >
-            {t === 'all' ? 'All Users' : t === 'manager' ? 'Managers' : t.charAt(0).toUpperCase() + t.slice(1)}
+            {tabKey === 'all' ? t('All Users') : tabKey === 'manager' ? t('Managers') : t(roleLabel[tabKey])}
           </button>
         ))}
       </div>
@@ -269,10 +272,10 @@ export default function AdminUsers() {
               </Td>
               <Td><span className="font-mono text-xs text-[#a0a0a0]">{u.username}</span></Td>
               <Td>
-                <Badge className={roleColor[u.role]}>{roleLabel[u.role]}</Badge>
+                <Badge className={roleColor[u.role]}>{t(roleLabel[u.role])}</Badge>
               </Td>
               <Td>
-                <span className="text-[#6b6b6b] text-xs">Hidden for security</span>
+                <span className="text-[#6b6b6b] text-xs">{t('Hidden for security')}</span>
               </Td>
               <Td>
                 <div onClick={event => event.stopPropagation()}>
@@ -288,30 +291,30 @@ export default function AdminUsers() {
                     }}
                     className="w-16 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-[#dfff03]/60"
                   />
-                  <span className="text-[#6b6b6b] text-xs ml-1">%</span>
+                  <span className="text-[#6b6b6b] text-xs ms-1">%</span>
                 </div>
               </Td>
               <Td>
                 {u.role === 'manager' ? (
-                  <span className="text-[#6b6b6b] text-xs">{users.filter(x => x.managerId === u.id).length} team members</span>
+                  <span className="text-[#6b6b6b] text-xs">{t('{n} team members', { n: users.filter(x => x.managerId === u.id).length })}</span>
                 ) : u.managerId ? (
                   <span className="text-[#a0a0a0] text-xs">{users.find(x => x.id === u.managerId)?.fullName || '—'}</span>
                 ) : (
-                  <span className="text-[#4a4a4a] text-xs italic">Unassigned</span>
+                  <span className="text-[#4a4a4a] text-xs italic">{t('Unassigned')}</span>
                 )}
               </Td>
               <Td><StatusBadge status={u.status} /></Td>
               <Td onClick={event => event.stopPropagation()}>
                 <Toggle checked={!!emailConfirmed[u.id]} onChange={() => toggleEmailConfirmed(u)} disabled={!!togglingEmail[u.id]} />
               </Td>
-              <Td><span className="font-mono text-xs text-[#6b6b6b]">{u.lastLogin ? u.lastLogin.slice(0, 10) : 'Never'}</span></Td>
+              <Td><span className="font-mono text-xs text-[#6b6b6b]">{u.lastLogin ? u.lastLogin.slice(0, 10) : t('Never')}</span></Td>
               <Td>
                 <div className="flex gap-2 flex-wrap">
                   <Button variant="ghost" size="sm" onClick={() => toggleStatus(u)}>
-                    {u.status === 'active' ? 'Deactivate' : 'Activate'}
+                    {u.status === 'active' ? t('Deactivate') : t('Activate')}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => sendPasswordReset(u)}>Change Password</Button>
-                  <Button variant="ghost" size="sm" onClick={() => deleteUser(u)}>Delete</Button>
+                  <Button variant="ghost" size="sm" onClick={() => sendPasswordReset(u)}>{t('Change Password')}</Button>
+                  <Button variant="ghost" size="sm" onClick={() => deleteUser(u)}>{t('Delete')}</Button>
                 </div>
               </Td>
             </Tr>
@@ -322,14 +325,14 @@ export default function AdminUsers() {
 
       {pageView === 'clients' && <>
         <div className="flex flex-wrap gap-3 items-center">
-          <Select value={selectedUserId} onChange={setSelectedUserId} options={users.map(user => ({ value: user.id, label: `${user.fullName} · ${roleLabel[user.role]}` }))} className="w-64" />
+          <Select value={selectedUserId} onChange={setSelectedUserId} options={users.map(user => ({ value: user.id, label: `${user.fullName} · ${t(roleLabel[user.role])}` }))} className="w-64" />
           <SearchInput value={clientSearch} onChange={setClientSearch} placeholder="Search assigned clients..." />
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Selected User</div><div className="text-white text-sm font-medium mt-1">{selectedUser?.fullName || '—'}</div></Card>
-          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Assigned Clients</div><div className="text-[#dfff03] text-2xl font-bold mt-1">{clientCounts.total.toLocaleString()}</div></Card>
-          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Active</div><div className="text-white text-2xl font-bold mt-1">{clientCounts.active.toLocaleString()}</div></Card>
-          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">Converted</div><div className="text-white text-2xl font-bold mt-1">{clientCounts.converted.toLocaleString()}</div></Card>
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Selected User')}</div><div className="text-white text-sm font-medium mt-1">{selectedUser?.fullName || '—'}</div></Card>
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Assigned Clients')}</div><div className="text-[#dfff03] text-2xl font-bold mt-1">{clientCounts.total.toLocaleString('en-US')}</div></Card>
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Active')}</div><div className="text-white text-2xl font-bold mt-1">{clientCounts.active.toLocaleString('en-US')}</div></Card>
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Converted')}</div><div className="text-white text-2xl font-bold mt-1">{clientCounts.converted.toLocaleString('en-US')}</div></Card>
         </div>
         <Card>
           <Table headers={['No.', 'Code', 'Client', 'Phone', 'Company', 'Quantity', 'Status', 'Last Updated']}>
@@ -342,12 +345,12 @@ export default function AdminUsers() {
                 <Td><span className="text-[#a0a0a0] text-xs">{lead.company || '—'}</span></Td>
                 <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.quantity}</span></Td>
                 <Td><StatusBadge status={lead.status} /></Td>
-                <Td><span className="font-mono text-xs text-[#6b6b6b]">{lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : '—'}</span></Td>
+                <Td><span className="font-mono text-xs text-[#6b6b6b]">{lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString(dateLocale(lang)) : '—'}</span></Td>
               </Tr>
             ))}
           </Table>
-          {!clientsLoading && assignedLeads.length === 0 && <div className="p-8 text-center text-[#4a4a4a] text-sm">No clients are assigned to this user.</div>}
-          {clientsLoading && <div className="p-4 text-center text-[#6b6b6b] text-xs">Loading clients…</div>}
+          {!clientsLoading && assignedLeads.length === 0 && <div className="p-8 text-center text-[#4a4a4a] text-sm">{t('No clients are assigned to this user.')}</div>}
+          {clientsLoading && <div className="p-4 text-center text-[#6b6b6b] text-xs">{t('Loading clients…')}</div>}
           <Pagination page={clientPage} pageSize={CLIENT_PAGE_SIZE} total={clientCounts.matching} onChange={next => loadClients(next)} />
         </Card>
       </>}
@@ -361,12 +364,12 @@ export default function AdminUsers() {
             </svg>
           </div>
           <div>
-            <div className="text-white text-sm font-medium mb-1">Role-Based Access Control</div>
+            <div className="text-white text-sm font-medium mb-1">{t('Role-Based Access Control')}</div>
             <div className="text-[#6b6b6b] text-xs leading-relaxed">
-              Telesales users see only their assigned leads. Sales users see only their meetings. Managers see their own team's data. Admins have full access to all data, users, imports, and reports.
+              {t("Telesales users see only their assigned leads. Sales users see only their meetings. Managers see their own team's data. Admins have full access to all data, users, imports, and reports.")}
             </div>
             <div className="text-[#6b6b6b] text-xs leading-relaxed mt-2">
-              Passwords cannot be read from Supabase. Use Change Password to send a secure reset link, or copy the temporary password shown once after creating a user.
+              {t('Passwords cannot be read from Supabase. Use Change Password to send a secure reset link, or copy the temporary password shown once after creating a user.')}
             </div>
           </div>
         </div>
@@ -376,7 +379,7 @@ export default function AdminUsers() {
       <Modal open={addModal} onClose={() => setAddModal(false)} title="Register a Team Member">
         <div className="space-y-3">
           <div className="bg-[#1a1a1a] rounded p-3 text-xs text-[#a0a0a0] leading-relaxed">
-            Set the password for this account. Use at least 8 characters and share it with the employee through a secure channel.
+            {t('Set the password for this account. Use at least 8 characters and share it with the employee through a secure channel.')}
           </div>
           {[
             { label: 'Full Name *', key: 'fullName', placeholder: 'Diana Reeves' },
@@ -385,44 +388,44 @@ export default function AdminUsers() {
             { label: 'Commission % (of each deal price)', key: 'commissionPercent', placeholder: '10' },
           ].map(f => (
             <div key={f.key}>
-              <label className="block text-xs text-[#a0a0a0] mb-1">{f.label}</label>
+              <label className="block text-xs text-[#a0a0a0] mb-1">{t(f.label)}</label>
               <input
                 value={(newUser as any)[f.key]}
                 onChange={e => setNewUser(prev => ({ ...prev, [f.key]: e.target.value }))}
                 type={f.type || 'text'}
-                placeholder={f.placeholder}
+                placeholder={t(f.placeholder)}
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60"
               />
             </div>
           ))}
           <div>
-            <label className="block text-xs text-[#a0a0a0] mb-1">Role *</label>
+            <label className="block text-xs text-[#a0a0a0] mb-1">{t('Role *')}</label>
             <select
               value={newUser.role}
               onChange={e => setNewUser(prev => ({ ...prev, role: e.target.value as Role }))}
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#dfff03]/60"
             >
-              <option value="manager">Manager</option>
-              <option value="telesales">Telesales</option>
-              <option value="sales">Sales</option>
+              <option value="manager">{t('Manager')}</option>
+              <option value="telesales">{t('Telesales')}</option>
+              <option value="sales">{t('Sales')}</option>
             </select>
           </div>
           {['sales', 'telesales'].includes(newUser.role) && (
             <div>
-              <label className="block text-xs text-[#a0a0a0] mb-1">Assign to Manager</label>
+              <label className="block text-xs text-[#a0a0a0] mb-1">{t('Assign to Manager')}</label>
               <select
                 value={newUser.managerId}
                 onChange={e => setNewUser(prev => ({ ...prev, managerId: e.target.value }))}
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#dfff03]/60"
               >
-                <option value="">— No manager —</option>
+                <option value="">{t('— No manager —')}</option>
                 {managers.map(m => <option key={m.id} value={m.id}>{m.fullName}</option>)}
               </select>
             </div>
           )}
           <div className="flex gap-2 pt-2">
-            <Button variant="primary" disabled={creatingUser || !newUser.email || !newUser.fullName || newUser.password.length < 8} onClick={handleAdd}>{creatingUser ? 'Creating…' : 'Register User'}</Button>
-            <Button variant="ghost" onClick={() => setAddModal(false)}>Cancel</Button>
+            <Button variant="primary" disabled={creatingUser || !newUser.email || !newUser.fullName || newUser.password.length < 8} onClick={handleAdd}>{creatingUser ? t('Creating…') : t('Register User')}</Button>
+            <Button variant="ghost" onClick={() => setAddModal(false)}>{t('Cancel')}</Button>
           </div>
         </div>
       </Modal>
@@ -431,7 +434,7 @@ export default function AdminUsers() {
         {createdCredentials && (
           <div className="space-y-4">
             <div className="bg-[#dfff03]/10 border border-[#dfff03]/30 rounded-lg p-3 text-[#dfff03] text-sm">
-              Save or send these credentials now. The temporary password will not be shown again.
+              {t('Save or send these credentials now. The temporary password will not be shown again.')}
             </div>
             <div className="space-y-3">
               {[
@@ -440,12 +443,12 @@ export default function AdminUsers() {
                 ['Temporary Password', createdCredentials.password],
               ].map(([label, value]) => (
                 <div key={label} className="bg-[#1a1a1a] rounded p-3">
-                  <div className="text-[#6b6b6b] text-xs mb-1">{label}</div>
-                  <div className="text-white font-mono text-sm break-all select-all">{value}</div>
+                  <div className="text-[#6b6b6b] text-xs mb-1">{t(label)}</div>
+                  <div className="text-white font-mono text-sm break-all select-all" dir="ltr">{value}</div>
                 </div>
               ))}
             </div>
-            <Button variant="primary" onClick={() => setCreatedCredentials(null)}>Done</Button>
+            <Button variant="primary" onClick={() => setCreatedCredentials(null)}>{t('Done')}</Button>
           </div>
         )}
       </Modal>
@@ -455,31 +458,31 @@ export default function AdminUsers() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-[#1a1a1a] rounded p-3">
-                <div className="text-[#6b6b6b] text-xs mb-1">Username</div>
+                <div className="text-[#6b6b6b] text-xs mb-1">{t('Username')}</div>
                 <div className="text-white font-mono text-sm select-all">{detailUser.username}</div>
               </div>
               <div className="bg-[#1a1a1a] rounded p-3">
-                <div className="text-[#6b6b6b] text-xs mb-1">Email</div>
+                <div className="text-[#6b6b6b] text-xs mb-1">{t('Email')}</div>
                 <div className="text-white text-sm break-all select-all">{detailUser.email}</div>
               </div>
             </div>
             <div className="bg-[#1a1a1a] rounded p-3">
-              <div className="text-[#6b6b6b] text-xs mb-1">Password</div>
-              <div className="text-[#6b6b6b] text-sm">Not readable or stored in plain text</div>
+              <div className="text-[#6b6b6b] text-xs mb-1">{t('Password')}</div>
+              <div className="text-[#6b6b6b] text-sm">{t('Not readable or stored in plain text')}</div>
             </div>
             <p className="text-[#a0a0a0] text-xs leading-relaxed">
-              To give this user access, send a password reset link or use the temporary password shown immediately after creating a new account.
+              {t('To give this user access, send a password reset link or use the temporary password shown immediately after creating a new account.')}
             </p>
             <div className="flex gap-2">
-              <Button variant="primary" onClick={() => sendPasswordReset(detailUser)}>Send Password Reset</Button>
-              <Button variant="ghost" onClick={() => setDetailUser(null)}>Close</Button>
+              <Button variant="primary" onClick={() => sendPasswordReset(detailUser)}>{t('Send Password Reset')}</Button>
+              <Button variant="ghost" onClick={() => setDetailUser(null)}>{t('Close')}</Button>
             </div>
           </div>
         )}
       </Modal>
 
       {resetMessage && (
-        <div className="fixed bottom-5 right-5 z-50 max-w-sm bg-[#161616] border border-[#2a2a2a] rounded-lg px-4 py-3 text-sm text-[#dfff03] shadow-xl">
+        <div className="fixed bottom-5 end-5 z-50 max-w-sm bg-[#161616] border border-[#2a2a2a] rounded-lg px-4 py-3 text-sm text-[#dfff03] shadow-xl">
           {resetMessage}
         </div>
       )}

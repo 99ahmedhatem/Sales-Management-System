@@ -215,9 +215,9 @@ export default function AdminLeads() {
   const [editingCustomerNumberId, setEditingCustomerNumberId] = useState<string | null>(null);
   const [editingCustomerNumber, setEditingCustomerNumber] = useState('');
   const [page, setPage] = useState(0);
-  const [totalLeads, setTotalLeads] = useState(0); // after filters
-  const [allCount, setAllCount] = useState(0); // all leads in the database
-  const [unassignedCount, setUnassignedCount] = useState(0);
+  const [totalLeads, setTotalLeads] = useState<number | null>(0); // after filters (null = count unavailable)
+  const [allCount, setAllCount] = useState<number | null>(null); // all leads in the database
+  const [unassignedCount, setUnassignedCount] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
   const requestId = useRef(0);
   const pageSize = 100;
@@ -231,14 +231,18 @@ export default function AdminLeads() {
     const loadedUsers = (userRows ?? []).map(mapUser);
     const managerIds = loadedUsers.filter(user => user.role === 'manager').map(user => user.id);
 
+    const q = debouncedSearch.replace(/[%,()]/g, ' ').trim();
+    const otherFilters = Boolean(q || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter);
+    // With no filters (or only "Not distributed") the total comes from get_leads_counts, so skip the slow count.
+    const countFromRpc = !otherFilters && (assignmentFilter === '' || assignmentFilter === 'unassigned');
+
     let leadsQuery = supabase
       .from('leads')
-      .select('*', { count: 'estimated' })
+      .select('*', countFromRpc ? undefined : { count: 'exact' })
       .order('created_at', { ascending: false })
       .order('id', { ascending: false }) // stable order so pages never overlap
       .range(nextPage * pageSize, (nextPage + 1) * pageSize - 1);
 
-    const q = debouncedSearch.replace(/[%,()]/g, ' ').trim();
     if (q) leadsQuery = leadsQuery.or(`name.ilike.%${q}%,phone.ilike.%${q}%,company.ilike.%${q}%`);
     if (statusFilter) leadsQuery = leadsQuery.eq('status', statusFilter);
     if (regionFilter) leadsQuery = leadsQuery.eq('region', regionFilter);
@@ -252,24 +256,29 @@ export default function AdminLeads() {
     }
     if (assignmentFilter === 'unassigned') leadsQuery = leadsQuery.is('assigned_to', null);
 
-    const [leadsRes, allRes, unassignedRes] = await Promise.all([
+    const [leadsRes, countsRes] = await Promise.all([
       leadsQuery,
-      supabase.from('leads').select('id', { count: 'estimated', head: true }),
-      supabase.from('leads').select('id', { count: 'estimated', head: true }).is('assigned_to', null),
+      supabase.rpc('get_leads_counts'),
     ]);
 
     if (reqId !== requestId.current) return; // a newer request replaced this one
 
+    // Exact counts only: never show an estimate (RLS makes planner estimates far off).
+    const counts = countsRes.error ? null : (countsRes.data as { total: number; unassigned: number }[] | null)?.[0] ?? null;
+    if (countsRes.error) setErrorMsg(countsRes.error.message);
+    setAllCount(counts ? Number(counts.total) : null);
+    setUnassignedCount(counts ? Number(counts.unassigned) : null);
+
     if (leadsRes.error) setErrorMsg(leadsRes.error.message);
     else {
       setLeads((leadsRes.data ?? []).map(mapLead));
-      setTotalLeads(leadsRes.count ?? 0);
+      setTotalLeads(countFromRpc
+        ? counts ? Number(assignmentFilter === 'unassigned' ? counts.unassigned : counts.total) : null
+        : leadsRes.count ?? 0);
       setPage(nextPage);
     }
     if (usersError) setErrorMsg(usersError.message);
     else setUsers(loadedUsers);
-    setAllCount(allRes.count ?? 0);
-    setUnassignedCount(unassignedRes.count ?? 0);
     setLoading(false);
     setFirstLoad(false);
   }
@@ -640,7 +649,7 @@ export default function AdminLeads() {
         <div>
           <h1 className="text-white text-2xl font-bold">{t('Leads')}</h1>
           <p className="text-[#6b6b6b] text-sm mt-0.5">
-            {t('{a} total · {b} unassigned', { a: allCount.toLocaleString('en-US'), b: unassignedCount.toLocaleString('en-US') })}
+            {t('{a} total · {b} unassigned', { a: formatCount(allCount), b: formatCount(unassignedCount) })}
           </p>
         </div>
         <div className="flex gap-2">
@@ -688,7 +697,7 @@ export default function AdminLeads() {
                 />
               </td>
               <td colSpan={12} className="py-3 px-2 text-[#6b6b6b] text-xs">
-                {t('{a} shown of {b} records', { a: leads.length.toLocaleString('en-US'), b: totalLeads.toLocaleString('en-US') })}
+                {t('{a} shown of {b} records', { a: leads.length.toLocaleString('en-US'), b: formatCount(totalLeads) })}
               </td>
             </tr>
             {leads.map(lead => {
@@ -747,7 +756,7 @@ export default function AdminLeads() {
           <Pagination
             page={page}
             pageSize={pageSize}
-            total={totalLeads}
+            total={totalLeads ?? leads.length}
             onChange={nextPage => {
               setSelected([]);
               loadData(nextPage);
@@ -1040,6 +1049,10 @@ export default function AdminLeads() {
       </Modal>
     </div>
   );
+}
+
+function formatCount(value: number | null): string {
+  return value === null ? '—' : value.toLocaleString('en-US');
 }
 
 function isMissingQuantityColumn(error: { message?: string } | null): boolean {

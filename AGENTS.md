@@ -8,7 +8,7 @@ Stack: React 19 + Vite + Tailwind v4 + TypeScript · Supabase (Postgres, Auth, R
 
 Before writing any query or RPC call, open `supabase/migrations/*.sql` and use the **exact** table, column and function names there. **Never invent a column or RPC name.** If something you need doesn't exist, add a new numbered migration file (`009_...sql`) and tell the user to run it. Past bug: the UI queried `deals.sales_user_id` / `meeting_requests.assigned_sales_id` while the live DB had different names, so every screen failed.
 
-Migration order: `supabase-setup.sql` (base) → `000b` → `001_packages` → `004_meetings` → `005_meeting_requests` → `006_deals` → `007_contract_reviews` → `008_money_commissions_payroll` → `009_management_tools` → `010_performance_security` → `011_repair` → `012_repair_fixes`.
+Migration order: `supabase-setup.sql` (base) → `000b` → `001_packages` → `004_meetings` → `005_meeting_requests` → `006_deals` → `007_contract_reviews` → `008_money_commissions_payroll` → `009_management_tools` → `010_performance_security` → `011_repair` → `012_users_rls` → `013_leads_counts` → `014_repair_fixes` → `015_lead_status_counts`.
 
 **Every database change = a numbered migration file in the repo.** Never run SQL only from a chat / the SQL editor without saving it as the next numbered file in `supabase/migrations/`. If it isn't in the repo, it doesn't exist.
 
@@ -98,6 +98,9 @@ Use these exact names (read `supabase/migrations/009_management_tools.sql` for d
 - `reassign_user_leads(p_from_user, p_to_user /*null = unassign*/, p_only_open)` → number moved
 - `get_source_performance(p_from, p_to)`, `get_daily_summary(p_date)`
 - `audit_log` is admin read-only. `notify_due_followups()` / `notify_upcoming_renewals()` are for scheduled jobs only (service_role), never call from the browser.
-- Performance rule: lists of leads must use `.range()`, order by `created_at desc, id desc`, and use `count: 'estimated'` when no filters are applied (exact counts on 30k+ rows are slow).
+- Performance rule: lists of leads must use `.range()` and order by `created_at desc, id desc`.
+- Counting rule: **never use `count: 'estimated'` on `leads` / `meetings` / `deals`.** The RLS policies use `OR` over functions, so Postgres estimates about a third of the real rows (it showed 10,856 instead of 32,567). Use `count: 'exact'` for small, filtered counts; for large counts call a dedicated count RPC and show its error instead of a guess:
+  - `get_leads_counts()` (013, admin only) → `total, unassigned, without_phone`
+  - `get_lead_status_counts()` (015, admin only) → one row per `status, total`
 
 === END ===

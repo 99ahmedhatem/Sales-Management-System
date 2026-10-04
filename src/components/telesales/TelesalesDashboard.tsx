@@ -147,7 +147,7 @@ export default function TelesalesDashboard({ userId }: Props) {
           .from("leads")
           .select(
             "id, customer_number, website, website_status, website_status_source, phone_source, quantity, client_code, name, phone, company, region, source, is_salla_store, data_quality, status, assigned_to, notes, callback_date, free_trial_end_date, needs_meeting, created_at, updated_at",
-            { count: "estimated" },
+            { count: "exact" },
           )
           .eq("assigned_to", userId)
           .order("created_at", { ascending: false })

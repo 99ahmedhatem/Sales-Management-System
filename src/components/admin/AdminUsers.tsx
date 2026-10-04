@@ -89,14 +89,14 @@ export default function AdminUsers() {
     setClientsLoading(true);
     let pageQuery = supabase
       .from('leads')
-      .select('id, customer_number, client_code, name, phone, company, quantity, status, assigned_to, updated_at', { count: 'estimated' })
+      .select('id, customer_number, client_code, name, phone, company, quantity, status, assigned_to, updated_at', { count: 'exact' })
       .eq('assigned_to', selectedUserId)
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .range(nextPage * CLIENT_PAGE_SIZE, (nextPage + 1) * CLIENT_PAGE_SIZE - 1);
     const q = debouncedClientSearch.replace(/[%,()]/g, ' ').trim();
     if (q) pageQuery = pageQuery.or(`name.ilike.%${q}%,phone.ilike.%${q}%,client_code.ilike.%${q}%,company.ilike.%${q}%`);
-    const countFor = () => supabase.from('leads').select('id', { count: 'estimated', head: true }).eq('assigned_to', selectedUserId);
+    const countFor = () => supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', selectedUserId);
     const [pageRes, totalRes, closedRes, convertedRes] = await Promise.all([
       pageQuery,
       countFor(),

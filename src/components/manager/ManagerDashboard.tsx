@@ -77,7 +77,7 @@ export default function ManagerDashboard({ userId }: Props) {
       setErrorMsg('');
       const [usersRes, leadsRes] = await Promise.all([
         supabase.from('users').select('*'),
-        supabase.from('leads').select('*', { count: 'estimated' }).order('created_at', { ascending: false }).order('id', { ascending: false }).range(leadPage * pageSize, (leadPage + 1) * pageSize - 1),
+        supabase.from('leads').select('*', { count: 'exact' }).order('created_at', { ascending: false }).order('id', { ascending: false }).range(leadPage * pageSize, (leadPage + 1) * pageSize - 1),
       ]);
       if (usersRes.error || leadsRes.error) {
         setErrorMsg(usersRes.error?.message || leadsRes.error?.message || 'Could not load manager data.');
@@ -120,8 +120,8 @@ export default function ManagerDashboard({ userId }: Props) {
         setTotalTeamLeads(leadsRes.count ?? 0);
         const teamIds = mappedUsers.filter(user => user.managerId === userId).map(user => user.id);
         const [receivedRes, distributedRes, activityRes] = await Promise.all([
-          supabase.from('leads').select('id', { count: 'estimated', head: true }).eq('assigned_to', userId),
-          teamIds.length ? supabase.from('leads').select('id', { count: 'estimated', head: true }).in('assigned_to', teamIds) : Promise.resolve({ count: 0, error: null }),
+          supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', userId),
+          teamIds.length ? supabase.from('leads').select('id', { count: 'exact', head: true }).in('assigned_to', teamIds) : Promise.resolve({ count: 0, error: null }),
           teamIds.length ? supabase.from('activity_logs').select('lead_id').in('actor_id', teamIds).in('activity_type', ['call', 'forward']) : Promise.resolve({ data: [], error: null }),
         ]);
         setReceivedCount(receivedRes.count ?? 0);

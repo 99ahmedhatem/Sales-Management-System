@@ -90,56 +90,18 @@ export default function AdminDashboard() {
 
       const now = new Date().toISOString()
 
+      // Lead totals come from exact count RPCs (013, 015); estimates are wrong under RLS.
       const [
-        total,
-        assigned,
-        converted,
-        newLeads,
-        contacted,
-        interested,
-        callbacks,
-        notInterested,
+        leadCounts,
+        statusCounts,
         meetings,
         scheduled,
         won,
         lost,
       ] = await Promise.all([
-        supabase.from("leads").select("id", { count: "estimated", head: true }),
+        supabase.rpc("get_leads_counts"),
 
-        supabase
-          .from("leads")
-          .select("id", { count: "estimated", head: true })
-          .not("assigned_to", "is", null),
-
-        supabase
-          .from("leads")
-          .select("id", { count: "estimated", head: true })
-          .eq("status", "Converted"),
-
-        supabase
-          .from("leads")
-          .select("id", { count: "estimated", head: true })
-          .in("status", ["New", "Assigned"]),
-
-        supabase
-          .from("leads")
-          .select("id", { count: "estimated", head: true })
-          .eq("status", "Contacted"),
-
-        supabase
-          .from("leads")
-          .select("id", { count: "estimated", head: true })
-          .eq("status", "Interested"),
-
-        supabase
-          .from("leads")
-          .select("id", { count: "estimated", head: true })
-          .eq("status", "Call Back Later"),
-
-        supabase
-          .from("leads")
-          .select("id", { count: "estimated", head: true })
-          .eq("status", "Not Interested"),
+        supabase.rpc("get_lead_status_counts"),
 
         loadMeetingsPage({
           page: 0,
@@ -150,30 +112,24 @@ export default function AdminDashboard() {
 
         supabase
           .from("meetings")
-          .select("id", { count: "estimated", head: true })
+          .select("id", { count: "exact", head: true })
           .eq("outcome", "Scheduled")
           .gte("proposed_date", now),
 
         supabase
           .from("meetings")
-          .select("id", { count: "estimated", head: true })
+          .select("id", { count: "exact", head: true })
           .eq("outcome", "Deal Closed – Won"),
 
         supabase
           .from("meetings")
-          .select("id", { count: "estimated", head: true })
+          .select("id", { count: "exact", head: true })
           .eq("outcome", "Deal Lost"),
       ])
 
       const firstError =
-        total.error?.message ||
-        assigned.error?.message ||
-        converted.error?.message ||
-        newLeads.error?.message ||
-        contacted.error?.message ||
-        interested.error?.message ||
-        callbacks.error?.message ||
-        notInterested.error?.message ||
+        leadCounts.error?.message ||
+        statusCounts.error?.message ||
         meetings.error ||
         scheduled.error?.message ||
         won.error?.message ||
@@ -182,14 +138,8 @@ export default function AdminDashboard() {
       if (!active) return
 
       if (
-        total.error ||
-        assigned.error ||
-        converted.error ||
-        newLeads.error ||
-        contacted.error ||
-        interested.error ||
-        callbacks.error ||
-        notInterested.error ||
+        leadCounts.error ||
+        statusCounts.error ||
         meetings.error ||
         scheduled.error ||
         won.error ||
@@ -200,22 +150,35 @@ export default function AdminDashboard() {
 
         setCounts(EMPTY_COUNTS)
       } else {
+        const totals = (leadCounts.data as { total: number; unassigned: number }[] | null)?.[0]
+
+        const byStatus = new Map(
+          ((statusCounts.data ?? []) as { status: string | null; total: number }[]).map(
+            (row) => [row.status ?? "", Number(row.total)],
+          ),
+        )
+
+        const statusCount = (...statuses: string[]) =>
+          statuses.reduce((sum, status) => sum + (byStatus.get(status) ?? 0), 0)
+
+        const totalLeads = Number(totals?.total ?? 0)
+
         setCounts({
-          totalLeads: total.count ?? 0,
+          totalLeads,
 
-          assignedLeads: assigned.count ?? 0,
+          assignedLeads: totalLeads - Number(totals?.unassigned ?? 0),
 
-          convertedLeads: converted.count ?? 0,
+          convertedLeads: statusCount("Converted"),
 
-          newLeads: newLeads.count ?? 0,
+          newLeads: statusCount("New", "Assigned"),
 
-          contactedLeads: contacted.count ?? 0,
+          contactedLeads: statusCount("Contacted"),
 
-          interestedLeads: interested.count ?? 0,
+          interestedLeads: statusCount("Interested"),
 
-          callbackLeads: callbacks.count ?? 0,
+          callbackLeads: statusCount("Call Back Later"),
 
-          notInterestedLeads: notInterested.count ?? 0,
+          notInterestedLeads: statusCount("Not Interested"),
 
           meetings: meetings.data,
 

@@ -83,17 +83,17 @@ export default function AdminMeetings({ userId }: Props) {
 
         supabase
           .from("meetings")
-          .select("id", { count: "estimated", head: true })
+          .select("id", { count: "exact", head: true })
           .eq("outcome", "Scheduled"),
 
         supabase
           .from("meetings")
-          .select("id", { count: "estimated", head: true })
+          .select("id", { count: "exact", head: true })
           .eq("outcome", "Deal Closed – Won"),
 
         supabase
           .from("meetings")
-          .select("id", { count: "estimated", head: true })
+          .select("id", { count: "exact", head: true })
           .eq("outcome", "Deal Lost"),
       ])
 

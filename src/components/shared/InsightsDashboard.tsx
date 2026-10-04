@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../supabaseClient';
+import { useI18n } from '../../i18n/I18nProvider';
 import {
   CHART_COLORS, ColumnChart, Empty, ErrorNote, Funnel, HBars, Kpi, Legend, Panel, ProgressRow, SimpleTable, nf,
 } from './charts';
@@ -16,23 +17,28 @@ const monthEnd = (ym: string) => {
   return `${ym}-${pad(new Date(y, m, 0).getDate())}`;
 };
 const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; };
-/** التاريخ المحلي (مش UTC) عشان ملخص اليوم ما يرجعش يوم امبارح بعد نص الليل */
+/** Local date (not UTC) so today's summary doesn't show yesterday after midnight in KSA/Egypt */
 const today = () => { const d = new Date(); return `${thisMonth()}-${pad(d.getDate())}`; };
 
 const KIND_LABEL: Record<string, string> = {
-  lead_not_called: 'عميل لم يُتصل به',
-  callback_overdue: 'متابعة متأخرة',
-  request_pending: 'طلب ميتنج بدون رد',
-  meeting_no_outcome: 'ميتنج بدون نتيجة',
-  deal_draft_stale: 'ديل مسودة قديم',
-  deal_approval_stale: 'ديل ينتظر الموافقة',
-  payment_unconfirmed: 'دفعة غير مؤكدة',
-  renewal_due: 'تجديد قريب',
-  contract_review_attention: 'مراجعة العقد تحتاج انتباه',
+  lead_not_called: "Lead not called",
+  callback_overdue: "Callback overdue",
+  request_pending: "Meeting request unanswered",
+  meeting_no_outcome: "Meeting without outcome",
+  deal_draft_stale: "Stale draft deal",
+  deal_approval_stale: "Deal awaiting approval",
+  payment_unconfirmed: "Unconfirmed payment",
+  renewal_due: "Renewal due soon",
+  contract_review_attention: "Contract review needs attention",
 };
 
-/** لوحة الشارتات: تقرأ كل شيء من الـ RPCs/Views وRLS بيحدد كل دور يشوف إيه. */
+/** Charts dashboard: reads everything from RPCs/views; RLS decides what each role sees. */
 export default function InsightsDashboard({ role }: { role: Role }) {
+  const { t, lang, dir } = useI18n();
+  const kind = (k: string) => (KIND_LABEL[k] ? t(KIND_LABEL[k]) : k);
+  // loss_reasons only stores an Arabic label (label_ar); in English show the code, prettified
+  const lossLabel = (r: Row) =>
+    (lang === 'ar' ? r.label_ar : null) ?? String(r.code ?? '').replace(/_/g, ' ').replace(/^./, (c: string) => c.toUpperCase());
   const [month, setMonth] = useState(thisMonth());
   const [tableView, setTableView] = useState(false);
   const [rev, setRev] = useState<Section>(blank([]));
@@ -81,7 +87,7 @@ export default function InsightsDashboard({ role }: { role: Role }) {
 
   useEffect(() => { load(); }, [load]);
 
-  /** آخر 12 شهر بدون ثقوب */
+  /** Last 12 months, no gaps */
   const months = useMemo(() => {
     const byMonth = new Map<string, Row>();
     rev.data.forEach(r => byMonth.set(String(r.month).slice(0, 7), r));
@@ -120,16 +126,16 @@ export default function InsightsDashboard({ role }: { role: Role }) {
   const sarTotal12 = months.reduce((s, x) => s + x.sar, 0);
 
   const Status = ({ s }: { s: Section<any> }) =>
-    s.loading ? <div className="text-xs text-[#8a8a8a] py-6 text-center">جارِ التحميل…</div>
+    s.loading ? <div className="text-xs text-[#8a8a8a] py-6 text-center">{t("Loading…")}</div>
       : s.error ? <ErrorNote message={s.error} /> : null;
   const ready = (s: Section<any>) => !s.loading && !s.error;
 
   return (
-    <div className="p-4 md:p-6 space-y-4" dir="rtl">
+    <div className="p-4 md:p-6 space-y-4" dir={dir}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-[#e5e5e5]">لوحة المتابعة</h1>
-          <p className="text-xs text-[#8a8a8a]">{role === 'admin' ? 'كل الفريق' : 'فريقك فقط'} · الأرقام حسب صلاحياتك</p>
+          <h1 className="text-lg font-semibold text-[#e5e5e5]">{t("Insights")}</h1>
+          <p className="text-xs text-[#8a8a8a]">{role === 'admin' ? t("Whole team") : t("Your team only")} · {t("Numbers follow your permissions")}</p>
         </div>
         <div className="flex items-center gap-2">
           <input
@@ -137,68 +143,68 @@ export default function InsightsDashboard({ role }: { role: Role }) {
             className="bg-[#0c0c0c] border border-[#262626] rounded px-2 py-1 text-sm text-[#e5e5e5]"
           />
           <button onClick={() => setTableView(v => !v)} className="text-xs border border-[#262626] rounded px-2 py-1.5 text-[#e5e5e5] hover:border-[#dfff03]">
-            {tableView ? 'عرض الشارت' : 'عرض جدول'}
+            {tableView ? t("Chart view") : t("Table view")}
           </button>
-          <button onClick={load} className="text-xs border border-[#262626] rounded px-2 py-1.5 text-[#e5e5e5] hover:border-[#dfff03]">تحديث</button>
+          <button onClick={load} className="text-xs border border-[#262626] rounded px-2 py-1.5 text-[#e5e5e5] hover:border-[#dfff03]">{t("Refresh")}</button>
         </div>
       </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <Kpi label="إيراد مؤكد (ريال)" value={ready(month1) ? nf(m?.confirmed_sar) : '…'} sub={ready(month1) ? `${nf(m?.confirmed_count)} دفعة` : undefined} color={CHART_COLORS[0]} />
-        <Kpi label="إيراد مؤكد (جنيه)" value={ready(month1) ? nf(m?.confirmed_egp) : '…'} color={CHART_COLORS[1]} />
-        <Kpi label="دفعات غير مؤكدة (ريال)" value={ready(month1) ? nf(m?.pending_sar) : '…'} sub={ready(month1) ? `${nf(m?.pending_count)} دفعة` : undefined} />
-        <Kpi label="ديلز جديدة" value={ready(month1) ? nf(m?.new_deals) : '…'} sub={ready(month1) ? `${nf(m?.new_deals_value_sar)} ريال` : undefined} />
-        <Kpi label="تحتاج انتباه" value={ready(attention) ? nf(attention.data.length) : '…'} sub={ready(attention) ? `${highCount} عاجل` : undefined} />
+        <Kpi label={t("Confirmed revenue (SAR)")} value={ready(month1) ? nf(m?.confirmed_sar) : '…'} sub={ready(month1) ? t("{n} payments", { n: nf(m?.confirmed_count) }) : undefined} color={CHART_COLORS[0]} />
+        <Kpi label={t("Confirmed revenue (EGP)")} value={ready(month1) ? nf(m?.confirmed_egp) : '…'} color={CHART_COLORS[1]} />
+        <Kpi label={t("Unconfirmed payments (SAR)")} value={ready(month1) ? nf(m?.pending_sar) : '…'} sub={ready(month1) ? t("{n} payments", { n: nf(m?.pending_count) }) : undefined} />
+        <Kpi label={t("New deals")} value={ready(month1) ? nf(m?.new_deals) : '…'} sub={ready(month1) ? `${nf(m?.new_deals_value_sar)} ${t("SAR")}` : undefined} />
+        <Kpi label={t("Needs attention")} value={ready(attention) ? nf(attention.data.length) : '…'} sub={ready(attention) ? t("{n} urgent", { n: highCount }) : undefined} />
       </div>
-      {month1.error && <ErrorNote message={`الإيراد: ${month1.error}`} />}
+      {month1.error && <ErrorNote message={`${t("Revenue")}: ${month1.error}`} />}
 
       {/* Revenue by month: two small multiples, no dual axis */}
-      <Panel title="الإيراد المؤكد — آخر 12 شهر" hint={`إجمالي الريال: ${nf(sarTotal12)}`}>
+      <Panel title={t("Confirmed revenue — last 12 months")} hint={t("Total SAR: {n}", { n: nf(sarTotal12) })}>
         <Status s={rev} />
         {ready(rev) && (tableView ? (
-          <SimpleTable head={['الشهر', 'ريال', 'جنيه', 'عدد الدفعات']} rows={months.map(x => [x.key, nf(x.sar), nf(x.egp), nf(rev.data.find(r => String(r.month).slice(0, 7) === x.key)?.payments_count ?? 0)])} />
+          <SimpleTable head={[t("Month"), t("SAR"), t("EGP"), t("Payments")]} rows={months.map(x => [x.key, nf(x.sar), nf(x.egp), nf(rev.data.find(r => String(r.month).slice(0, 7) === x.key)?.payments_count ?? 0)])} />
         ) : (
           <div className="grid md:grid-cols-2 gap-6">
-            <div><Legend items={[{ label: 'ريال سعودي (SAR)', color: CHART_COLORS[0] }]} />
-              <ColumnChart data={months.map(x => ({ label: x.label, value: x.sar }))} color={CHART_COLORS[0]} unit="ريال" /></div>
-            <div><Legend items={[{ label: 'جنيه مصري (EGP)', color: CHART_COLORS[1] }]} />
-              <ColumnChart data={months.map(x => ({ label: x.label, value: x.egp }))} color={CHART_COLORS[1]} unit="جنيه" /></div>
+            <div><Legend items={[{ label: t("Saudi riyal (SAR)"), color: CHART_COLORS[0] }]} />
+              <ColumnChart data={months.map(x => ({ label: x.label, value: x.sar }))} color={CHART_COLORS[0]} unit={t("SAR")} /></div>
+            <div><Legend items={[{ label: t("Egyptian pound (EGP)"), color: CHART_COLORS[1] }]} />
+              <ColumnChart data={months.map(x => ({ label: x.label, value: x.egp }))} color={CHART_COLORS[1]} unit={t("EGP")} /></div>
           </div>
         ))}
       </Panel>
 
       <div className="grid lg:grid-cols-2 gap-4">
-        <Panel title="قمع المبيعات" hint="من استلام العميل حتى الديل — الشهر المختار">
+        <Panel title={t("Sales funnel")} hint={t("From lead received to deal — selected month")}>
           <Status s={funnel} />
           {ready(funnel) && (tableView ? (
-            <SimpleTable head={['الموظف', 'عملاء', 'تواصل', 'مهتم', 'طلبات', 'ميتنجز', 'ديلز', 'إيراد']}
+            <SimpleTable head={[t("Employee"), t("Leads"), t("Contacted"), t("Interested"), t("Requests"), t("Meetings"), t("Deals"), t("Revenue")]}
               rows={funnel.data.map(r => [r.full_name ?? '—', nf(r.leads_received), nf(r.leads_contacted), nf(r.leads_interested), nf(r.meeting_requests), nf(r.meetings_held), nf(r.deals_count), nf(r.revenue_sar)])} />
           ) : funnel.data.length === 0 ? <Empty /> : (
             <Funnel steps={[
-              { label: 'عملاء مستلمون', value: funnelTotals.leads },
-              { label: 'تم التواصل', value: funnelTotals.contacted },
-              { label: 'مهتم', value: funnelTotals.interested },
-              { label: 'طلبات ميتنج', value: funnelTotals.requests },
-              { label: 'ميتنجز تمت', value: funnelTotals.meetings },
-              { label: 'ديلز', value: funnelTotals.deals },
+              { label: t("Leads received"), value: funnelTotals.leads },
+              { label: t("Contacted"), value: funnelTotals.contacted },
+              { label: t("Interested"), value: funnelTotals.interested },
+              { label: t("Meeting requests"), value: funnelTotals.requests },
+              { label: t("Meetings held"), value: funnelTotals.meetings },
+              { label: t("Deals"), value: funnelTotals.deals },
             ]} />
           ))}
         </Panel>
 
-        <Panel title="أسباب الخسارة" hint="ميتنجز وعملاء انتهوا بدون اشتراك">
+        <Panel title={t("Loss reasons")} hint={t("Meetings and leads that ended without a subscription")}>
           <Status s={loss} />
           {ready(loss) && (loss.data.length === 0 ? <Empty /> : tableView ? (
-            <SimpleTable head={['السبب', 'ميتنجز', 'عملاء', 'الإجمالي']} rows={loss.data.map(r => [r.label_ar, nf(r.meetings_lost), nf(r.leads_lost), nf(r.total)])} />
+            <SimpleTable head={[t("Reason"), t("Meetings"), t("Leads"), t("Total")]} rows={loss.data.map(r => [lossLabel(r), nf(r.meetings_lost), nf(r.leads_lost), nf(r.total)])} />
           ) : (
-            <HBars color={CHART_COLORS[3]} rows={loss.data.map(r => ({ label: r.label_ar ?? r.code, value: Number(r.total) }))} />
+            <HBars color={CHART_COLORS[3]} rows={loss.data.map(r => ({ label: lossLabel(r), value: Number(r.total) }))} />
           ))}
         </Panel>
 
-        <Panel title="تقدّم الأهداف" hint="الإنجاز مقابل الهدف الشهري لكل موظف">
+        <Panel title={t("Target progress")} hint={t("Progress against each employee’s monthly target")}>
           <Status s={targets} />
-          {ready(targets) && (targets.data.length === 0 ? <Empty text="لا توجد أهداف مضبوطة لهذا الشهر" /> : tableView ? (
-            <SimpleTable head={['الموظف', 'مكالمات', 'ميتنجز', 'ديلز', 'إيراد']}
+          {ready(targets) && (targets.data.length === 0 ? <Empty text={t("No targets set for this month")} /> : tableView ? (
+            <SimpleTable head={[t("Employee"), t("Calls"), t("Meetings"), t("Deals"), t("Revenue")]}
               rows={targets.data.map(r => [r.full_name, `${nf(r.calls_done)}/${nf(r.calls_target)}`, `${nf(r.meetings_done)}/${nf(r.meetings_target)}`, `${nf(r.deals_done)}/${nf(r.deals_target)}`, `${nf(r.revenue_sar)}/${nf(r.revenue_target_sar)}`])} />
           ) : (
             <div className="space-y-4 max-h-96 overflow-y-auto pe-1">
@@ -206,10 +212,10 @@ export default function InsightsDashboard({ role }: { role: Role }) {
                 <div key={r.user_id}>
                   <div className="text-xs font-medium text-[#e5e5e5] mb-1.5">{r.full_name}</div>
                   <div className="space-y-2">
-                    {Number(r.revenue_target_sar) > 0 && <ProgressRow label="الإيراد" done={Number(r.revenue_sar)} target={Number(r.revenue_target_sar)} unit="ريال" />}
-                    {Number(r.deals_target) > 0 && <ProgressRow label="الديلز" done={Number(r.deals_done)} target={Number(r.deals_target)} />}
-                    {Number(r.meetings_target) > 0 && <ProgressRow label="الميتنجز" done={Number(r.meetings_done)} target={Number(r.meetings_target)} />}
-                    {Number(r.calls_target) > 0 && <ProgressRow label="المكالمات" done={Number(r.calls_done)} target={Number(r.calls_target)} />}
+                    {Number(r.revenue_target_sar) > 0 && <ProgressRow label={t("Revenue")} done={Number(r.revenue_sar)} target={Number(r.revenue_target_sar)} unit={t("SAR")} />}
+                    {Number(r.deals_target) > 0 && <ProgressRow label={t("Deals")} done={Number(r.deals_done)} target={Number(r.deals_target)} />}
+                    {Number(r.meetings_target) > 0 && <ProgressRow label={t("Meetings")} done={Number(r.meetings_done)} target={Number(r.meetings_target)} />}
+                    {Number(r.calls_target) > 0 && <ProgressRow label={t("Calls")} done={Number(r.calls_done)} target={Number(r.calls_target)} />}
                   </div>
                 </div>
               ))}
@@ -217,20 +223,20 @@ export default function InsightsDashboard({ role }: { role: Role }) {
           ))}
         </Panel>
 
-        <Panel title="أداء المصادر" hint="عدد العملاء والديلز من كل مصدر">
+        <Panel title={t("Source performance")} hint={t("Leads and deals per source")}>
           <Status s={sources} />
           {ready(sources) && (sources.data.length === 0 ? <Empty /> : tableView ? (
-            <SimpleTable head={['المصدر', 'عملاء', 'تواصل', 'مهتم', 'ديلز', 'تحويل %', 'إيراد']}
+            <SimpleTable head={[t("Source"), t("Leads"), t("Contacted"), t("Interested"), t("Deals"), t("Conversion %"), t("Revenue")]}
               rows={sources.data.map(r => [r.source ?? '—', nf(r.leads_total), nf(r.contacted), nf(r.interested), nf(r.deals), nf(r.conversion_pct, 1), nf(r.revenue_sar)])} />
           ) : (
-            <HBars rows={sources.data.map(r => ({ label: r.source ?? 'غير محدد', value: Number(r.leads_total), sub: `${nf(r.deals)} ديل · ${nf(r.conversion_pct, 1)}%` }))} unit="عميل" />
+            <HBars rows={sources.data.map(r => ({ label: r.source ?? t("Unspecified"), value: Number(r.leads_total), sub: `${nf(r.deals)} ${t("deals")} · ${nf(r.conversion_pct, 1)}%` }))} unit={t("leads")} />
           ))}
         </Panel>
 
-        <Panel title="لوحة الصدارة" hint="الأعلى إيراداً/ديلز داخل كل دور">
+        <Panel title={t("Leaderboard")} hint={t("Top revenue/deals within each role")}>
           <Status s={board} />
           {ready(board) && (board.data.length === 0 ? <Empty /> : tableView ? (
-            <SimpleTable head={['#', 'الموظف', 'الدور', 'مكالمات', 'ميتنجز', 'ديلز', 'إيراد']}
+            <SimpleTable head={['#', t("Employee"), t("Role"), t("Calls"), t("Meetings"), t("Deals"), t("Revenue")]}
               rows={board.data.map(r => [r.rank_in_role, r.full_name, r.role, nf(r.calls_done), nf(r.meetings_done), nf(r.deals_done), r.revenue_sar == null ? '—' : nf(r.revenue_sar)])} />
           ) : (
             <div className="grid sm:grid-cols-2 gap-6">
@@ -240,10 +246,10 @@ export default function InsightsDashboard({ role }: { role: Role }) {
                 const byRevenue = rows.some(r => r.revenue_sar != null && Number(r.revenue_sar) > 0);
                 return (
                   <div key={role2}>
-                    <Legend items={[{ label: role2 === 'sales' ? 'سيلز' : 'تيلي سيلز', color: CHART_COLORS[idx] }]} />
+                    <Legend items={[{ label: role2 === 'sales' ? t("Sales") : t("Telesales"), color: CHART_COLORS[idx] }]} />
                     <HBars color={CHART_COLORS[idx]}
-                      rows={rows.map(r => ({ label: `${r.rank_in_role}. ${r.full_name}`, value: byRevenue ? Number(r.revenue_sar ?? 0) : Number(r.deals_done), sub: byRevenue ? `${nf(r.deals_done)} ديل` : undefined }))}
-                      unit={byRevenue ? 'ريال' : 'ديل'} />
+                      rows={rows.map(r => ({ label: `${r.rank_in_role}. ${r.full_name}`, value: byRevenue ? Number(r.revenue_sar ?? 0) : Number(r.deals_done), sub: byRevenue ? `${nf(r.deals_done)} ${t("deals")}` : undefined }))}
+                      unit={byRevenue ? t("SAR") : t("deals")} />
                   </div>
                 );
               })}
@@ -251,19 +257,19 @@ export default function InsightsDashboard({ role }: { role: Role }) {
           ))}
         </Panel>
 
-        <Panel title="تحتاج انتباه" hint="مشاكل مفتوحة مرتبة بالأكتر">
+        <Panel title={t("Needs attention")} hint={t("Open problems, most frequent first")}>
           <Status s={attention} />
-          {ready(attention) && (attention.data.length === 0 ? <Empty text="لا شيء متأخر 👌" /> : tableView ? (
-            <SimpleTable head={['النوع', 'العميل', 'المسؤول', 'العمر (ساعة)', 'الأولوية']}
-              rows={attention.data.map(r => [KIND_LABEL[r.kind] ?? r.kind, r.lead_name ?? '—', r.owner_name ?? '—', nf(r.age_hours), r.severity])} />
+          {ready(attention) && (attention.data.length === 0 ? <Empty text={t("Nothing overdue 👌")} /> : tableView ? (
+            <SimpleTable head={[t("Type"), t("Lead"), t("Owner"), t("Age (hours)"), t("Priority")]}
+              rows={attention.data.map(r => [kind(r.kind), r.lead_name ?? '—', r.owner_name ?? '—', nf(r.age_hours), r.severity])} />
           ) : (
             <div className="space-y-3 max-h-96 overflow-y-auto pe-1">
-              <HBars color={CHART_COLORS[1]} rows={attentionGroups.map(([k, v]) => ({ label: KIND_LABEL[k] ?? k, value: v.length, sub: `${v.filter(x => x.severity === 'high').length} عاجل` }))} />
+              <HBars color={CHART_COLORS[1]} rows={attentionGroups.map(([k, v]) => ({ label: kind(k), value: v.length, sub: t("{n} urgent", { n: v.filter(x => x.severity === 'high').length }) }))} />
               <ul className="text-xs divide-y divide-[#1d1d1d]">
                 {attention.data.slice(0, 12).map((r, i) => (
                   <li key={i} className="py-1.5 flex justify-between gap-2">
-                    <span className="text-[#e5e5e5] truncate">{r.severity === 'high' ? '🔴' : '🟡'} {r.lead_name ?? KIND_LABEL[r.kind] ?? r.kind} <span className="text-[#8a8a8a]">— {r.owner_name ?? 'بدون مسؤول'}</span></span>
-                    <span className="text-[#8a8a8a] shrink-0 tabular-nums">{nf(r.age_hours)}س</span>
+                    <span className="text-[#e5e5e5] truncate">{r.severity === 'high' ? '🔴' : '🟡'} {r.lead_name ?? kind(r.kind)} <span className="text-[#8a8a8a]">— {r.owner_name ?? t("No owner")}</span></span>
+                    <span className="text-[#8a8a8a] shrink-0 tabular-nums">{nf(r.age_hours)}{t("h")}</span>
                   </li>
                 ))}
               </ul>
@@ -272,16 +278,16 @@ export default function InsightsDashboard({ role }: { role: Role }) {
         </Panel>
       </div>
 
-      {/* ملخص اليوم */}
-      <Panel title="ملخص اليوم">
+      {/* Today's summary */}
+      <Panel title={t("Today’s summary")}>
         <Status s={daily} />
         {ready(daily) && daily.data && (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-center">
             {[
-              ['مكالمات', daily.data.calls], ['تواصل', daily.data.leads_contacted], ['مهتم', daily.data.interested],
-              ['طلبات ميتنج', daily.data.meeting_requests], ['ميتنجز', daily.data.meetings_held], ['ديلز جديدة', daily.data.deals_created],
-              ['ديلز معتمدة', daily.data.deals_approved], ['دفعات معلّقة', daily.data.pending_payments], ['إيراد اليوم (ريال)', daily.data.confirmed_sar],
-              ['إيراد اليوم (جنيه)', daily.data.confirmed_egp],
+              [t("Calls"), daily.data.calls], [t("Contacted"), daily.data.leads_contacted], [t("Interested"), daily.data.interested],
+              [t("Meeting requests"), daily.data.meeting_requests], [t("Meetings"), daily.data.meetings_held], [t("New deals"), daily.data.deals_created],
+              [t("Deals approved"), daily.data.deals_approved], [t("Pending payments"), daily.data.pending_payments], [t("Today’s revenue (SAR)"), daily.data.confirmed_sar],
+              [t("Today’s revenue (EGP)"), daily.data.confirmed_egp],
             ].map(([l, v]) => (
               <div key={String(l)} className="bg-[#0f0f0f] rounded p-2">
                 <div className="text-lg text-[#e5e5e5] tabular-nums">{nf(Number(v))}</div>
@@ -292,15 +298,15 @@ export default function InsightsDashboard({ role }: { role: Role }) {
         )}
       </Panel>
 
-      {/* مرتبات الشهر */}
-      <Panel title="المرتبات والعمولات" hint="الأساسي + العمولات — الشهر المختار">
+      {/* Payroll */}
+      <Panel title={t("Payroll & commissions")} hint={t("Base salary + commissions — selected month")}>
         <Status s={payroll} />
-        {ready(payroll) && (payroll.data.length === 0 ? <Empty text="لا توجد بيانات (أو ليس لديك صلاحية)" /> : tableView ? (
-          <SimpleTable head={['الموظف', 'الدور', 'ديلز', 'عمولة (ريال)', 'أساسي', 'الإجمالي (ريال)', 'الإجمالي (جنيه)']}
+        {ready(payroll) && (payroll.data.length === 0 ? <Empty text={t("No data (or you don’t have access)")} /> : tableView ? (
+          <SimpleTable head={[t("Employee"), t("Role"), t("Deals"), t("Commission (SAR)"), t("Base"), t("Total (SAR)"), t("Total (EGP)")]}
             rows={payroll.data.map(r => [r.full_name, r.role, nf(r.deals_count), nf(r.commission_sar), `${nf(r.base_salary)} ${r.base_currency ?? ''}`, nf(r.total_sar), nf(r.total_egp)])} />
         ) : (
-          <HBars color={CHART_COLORS[2]} unit="ريال"
-            rows={[...payroll.data].sort((a, b) => Number(b.total_sar) - Number(a.total_sar)).map(r => ({ label: r.full_name, value: Number(r.total_sar), sub: `عمولة ${nf(r.commission_sar)}` }))} />
+          <HBars color={CHART_COLORS[2]} unit={t("SAR")}
+            rows={[...payroll.data].sort((a, b) => Number(b.total_sar) - Number(a.total_sar)).map(r => ({ label: r.full_name, value: Number(r.total_sar), sub: `${t("Commission")} ${nf(r.commission_sar)}` }))} />
         ))}
       </Panel>
     </div>

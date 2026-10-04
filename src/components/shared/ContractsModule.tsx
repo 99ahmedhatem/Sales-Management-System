@@ -13,6 +13,7 @@ import { supabase } from "../../supabaseClient"
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 import { Button, Card, Modal, Pagination, SearchInput, StatusBadge, Table, Td, Tr } from "../ui"
 import DealCreateModal from "./DealCreateModal"
+import { useI18n } from "../../i18n/I18nProvider"
 
 interface Props {
   userId: string
@@ -35,6 +36,7 @@ const STATUS_LABELS: Record<Deal["status"], string> = {
 }
 
 export default function ContractsModule({ userId, role }: Props) {
+  const { t } = useI18n()
   const [deals, setDeals] = useState<Deal[]>([])
   const [page, setPage] = useState(0)
   const [total, setTotal] = useState(0)
@@ -179,7 +181,7 @@ export default function ContractsModule({ userId, role }: Props) {
     })
     if (attachError || typeof reviewId !== "string") {
       setError(
-        `Contract uploaded but could not be attached: ${attachError?.message ?? "No review ID was returned."}`,
+        t("Contract uploaded but could not be attached: {msg}", { msg: attachError?.message ?? t("No review ID was returned.") }),
       )
       setUploadingContract(false)
       return
@@ -189,7 +191,7 @@ export default function ContractsModule({ userId, role }: Props) {
     await loadReview(selectedDeal.id)
     const reviewResult = await invokeContractReview(reviewId)
     if (reviewResult.error) {
-      setError(`Contract attached, but AI review failed: ${reviewResult.error}`)
+      setError(t("Contract attached, but AI review failed: {msg}", { msg: reviewResult.error }))
     } else if (reviewResult.status === "passed") {
       setError("")
     } else if (reviewResult.status === "needs_attention" || reviewResult.status === "failed") {
@@ -233,35 +235,35 @@ export default function ContractsModule({ userId, role }: Props) {
     <div className="space-y-5 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Deals & Contracts</h1>
-          <p className="mt-0.5 text-sm text-[#6b6b6b]">{total} deals visible to your account</p>
+          <h1 className="text-2xl font-bold text-white">{t("Deals & Contracts")}</h1>
+          <p className="mt-0.5 text-sm text-[#6b6b6b]">{t("{n} deals visible to your account", { n: total })}</p>
         </div>
         {canCreateDeal && (
-          <Button onClick={() => setCreateOpen(true)}>+ New Deal</Button>
+          <Button onClick={() => setCreateOpen(true)}>{t("+ New Deal")}</Button>
         )}
       </div>
 
       {error && (
         <div role="alert" className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]">
-          {error}
+          {t(error)}
         </div>
       )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className="p-4">
-          <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">Deals on page</div>
+          <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t("Deals on page")}</div>
           <div className="mt-2 text-2xl font-bold text-white">{visibleDeals.length}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">Pending approval</div>
+          <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t("Pending approval")}</div>
           <div className="mt-2 text-2xl font-bold text-[#ffc832]">{deals.filter((deal) => deal.status === "pending_approval").length}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">Below minimum</div>
+          <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t("Below minimum")}</div>
           <div className="mt-2 text-2xl font-bold text-[#ffc832]">{deals.filter((deal) => deal.belowMinPrice).length}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">Deal value on page</div>
+          <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t("Deal value on page")}</div>
           <div className="mt-2 text-lg font-bold text-[#dfff03]">{formatSar.format(visibleDeals.reduce((sum, deal) => sum + deal.priceSar, 0))}</div>
         </Card>
       </div>
@@ -274,33 +276,33 @@ export default function ContractsModule({ userId, role }: Props) {
 
       <Card>
         {loading ? (
-          <div className="p-8 text-center text-sm text-[#6b6b6b]">Loading deals...</div>
+          <div className="p-8 text-center text-sm text-[#6b6b6b]">{t("Loading deals...")}</div>
         ) : visibleDeals.length === 0 ? (
-          <div className="p-8 text-center text-sm text-[#6b6b6b]">No deals found.</div>
+          <div className="p-8 text-center text-sm text-[#6b6b6b]">{t("No deals found.")}</div>
         ) : (
           <Table headers={["Client", "Package", "Closing price", "Dates", "Owner", "Status", ""]}>
             {visibleDeals.map((deal) => (
               <Tr key={deal.id} onClick={() => { setError(""); setSelectedDeal(deal) }}>
                 <Td>
                   <div className="font-medium text-white">{deal.leadName}</div>
-                  <div className="font-mono text-xs text-[#6b6b6b]">{deal.leadPhone || "—"}</div>
-                  {deal.belowMinPrice && <div className="mt-1 text-xs text-[#ffc832]">Below package minimum</div>}
+                  <div className="font-mono text-xs text-[#6b6b6b]" dir="ltr">{deal.leadPhone || "—"}</div>
+                  {deal.belowMinPrice && <div className="mt-1 text-xs text-[#ffc832]">{t("Below package minimum")}</div>}
                 </Td>
                 <Td>
                   <div className="text-white">{deal.packageName}</div>
-                  <div className="text-xs text-[#6b6b6b]">{deal.packageDurationMonths} months · List {formatSar.format(deal.listPriceSar)}</div>
+                  <div className="text-xs text-[#6b6b6b]">{t("{n} months · List {price}", { n: deal.packageDurationMonths, price: formatSar.format(deal.listPriceSar) })}</div>
                 </Td>
                 <Td><span className="font-mono text-white">{formatSar.format(deal.priceSar)}</span></Td>
                 <Td>
                   <div className="font-mono text-xs text-[#a0a0a0]">{deal.startDate}</div>
-                  <div className="font-mono text-xs text-[#6b6b6b]">to {deal.endDate}</div>
+                  <div className="font-mono text-xs text-[#6b6b6b]">{t("to {date}", { date: deal.endDate })}</div>
                 </Td>
                 <Td>
                   <div className="text-xs text-white">{deal.salesName || deal.telesalesName}</div>
-                  {deal.salesName && <div className="text-xs text-[#6b6b6b]">Telesales: {deal.telesalesName}</div>}
+                  {deal.salesName && <div className="text-xs text-[#6b6b6b]">{t("Telesales: {name}", { name: deal.telesalesName })}</div>}
                 </Td>
                 <Td><StatusBadge status={STATUS_LABELS[deal.status]} /></Td>
-                <Td><Button variant="secondary" size="sm" onClick={() => { setError(""); setSelectedDeal(deal) }}>Details</Button></Td>
+                <Td><Button variant="secondary" size="sm" onClick={() => { setError(""); setSelectedDeal(deal) }}>{t("Details")}</Button></Td>
               </Tr>
             ))}
           </Table>
@@ -311,7 +313,7 @@ export default function ContractsModule({ userId, role }: Props) {
       <Modal
         open={!!selectedDeal}
         onClose={() => { setSelectedDeal(null); setContractFile(null); setError("") }}
-        title={`Deal details — ${selectedDeal?.leadName ?? ""}`}
+        title={t("Deal details — {name}", { name: selectedDeal?.leadName ?? "" })}
       >
         {selectedDeal && (
           <div className="space-y-4">
@@ -321,7 +323,7 @@ export default function ContractsModule({ userId, role }: Props) {
             </div>
             {selectedDeal.belowMinPrice && (
               <div className="rounded border border-[#ffc832]/30 bg-[#ffc832]/10 p-3 text-sm text-[#ffc832]">
-                This closing price is below the package minimum ({formatSar.format(selectedDeal.minPriceSar)}). Reviewer attention is required.
+                {t("This closing price is below the package minimum ({min}). Reviewer attention is required.", { min: formatSar.format(selectedDeal.minPriceSar) })}
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
@@ -329,57 +331,57 @@ export default function ContractsModule({ userId, role }: Props) {
                 ["Client", selectedDeal.leadName],
                 ["Phone", selectedDeal.leadPhone || "—"],
                 ["Package", selectedDeal.packageName],
-                ["Duration", `${selectedDeal.packageDurationMonths} months`],
+                ["Duration", t("{n} months", { n: selectedDeal.packageDurationMonths })],
                 ["List price", formatSar.format(selectedDeal.listPriceSar)],
                 ["Closing price", formatSar.format(selectedDeal.priceSar)],
                 ["Start date", selectedDeal.startDate],
                 ["End date", selectedDeal.endDate],
-                ["Sales", selectedDeal.salesName || "Self-closed by telesales"],
+                ["Sales", selectedDeal.salesName || t("Self-closed by telesales")],
                 ["Telesales", selectedDeal.telesalesName],
               ].map(([label, value]) => (
                 <div key={label} className="rounded bg-[#1a1a1a] p-3">
-                  <div className="text-xs text-[#6b6b6b]">{label}</div>
+                  <div className="text-xs text-[#6b6b6b]">{t(label)}</div>
                   <div className="mt-1 break-all text-sm text-white">{value}</div>
                 </div>
               ))}
             </div>
             {selectedDeal.notes && (
               <div className="rounded bg-[#1a1a1a] p-3">
-                <div className="text-xs text-[#6b6b6b]">Notes</div>
+                <div className="text-xs text-[#6b6b6b]">{t("Notes")}</div>
                 <p className="mt-1 whitespace-pre-wrap text-sm text-[#d0d0d0]">{selectedDeal.notes}</p>
               </div>
             )}
             {selectedDeal.approvalOverrideReason && (
               <div className="rounded border border-[#ffc832]/30 bg-[#ffc832]/10 p-3">
-                <div className="text-xs font-semibold text-[#ffc832]">Admin approval override</div>
+                <div className="text-xs font-semibold text-[#ffc832]">{t("Admin approval override")}</div>
                 <p className="mt-1 text-sm text-[#d0d0d0]">{selectedDeal.approvalOverrideReason}</p>
               </div>
             )}
             <div className="space-y-2 rounded bg-[#1a1a1a] p-3">
-              <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">Private files</div>
+              <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t("Private files")}</div>
               {signingUrls ? (
-                <div className="text-sm text-[#6b6b6b]">Preparing secure links...</div>
+                <div className="text-sm text-[#6b6b6b]">{t("Preparing secure links...")}</div>
               ) : (
                 <>
                   {selectedDeal.recordingPath ? (
-                    signedRecordingUrl ? <a className="block text-sm text-[#dfff03] underline" href={signedRecordingUrl} target="_blank" rel="noreferrer">Open meeting recording</a> : <div className="text-sm text-[#ffc832]">Recording link unavailable.</div>
-                  ) : <div className="text-sm text-[#6b6b6b]">No meeting recording attached.</div>}
+                    signedRecordingUrl ? <a className="block text-sm text-[#dfff03] underline" href={signedRecordingUrl} target="_blank" rel="noreferrer">{t("Open meeting recording")}</a> : <div className="text-sm text-[#ffc832]">{t("Recording link unavailable.")}</div>
+                  ) : <div className="text-sm text-[#6b6b6b]">{t("No meeting recording attached.")}</div>}
                   {selectedDeal.contractPath ? (
-                    signedContractUrl ? <a className="block text-sm text-[#dfff03] underline" href={signedContractUrl} target="_blank" rel="noreferrer">Open signed contract</a> : <div className="text-sm text-[#ffc832]">Contract link unavailable.</div>
-                  ) : <div className="text-sm text-[#6b6b6b]">No signed contract attached.</div>}
+                    signedContractUrl ? <a className="block text-sm text-[#dfff03] underline" href={signedContractUrl} target="_blank" rel="noreferrer">{t("Open signed contract")}</a> : <div className="text-sm text-[#ffc832]">{t("Contract link unavailable.")}</div>
+                  ) : <div className="text-sm text-[#6b6b6b]">{t("No signed contract attached.")}</div>}
                 </>
               )}
             </div>
             <div className="space-y-3 rounded border border-[#2a2a2a] p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">AI contract review</div>
+                  <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t("AI contract review")}</div>
                   <div className="mt-1 text-sm text-white">
                     {loadingReview
-                      ? "Loading review..."
+                      ? t("Loading review...")
                       : review
-                        ? review.status.replace("_", " ")
-                        : "No review submitted"}
+                        ? t(review.status.replace("_", " "))
+                        : t("No review submitted")}
                   </div>
                 </div>
                 {canRequestReview && selectedDeal.contractPath && review && review.status !== "processing" && (
@@ -389,7 +391,7 @@ export default function ContractsModule({ userId, role }: Props) {
                     disabled={reviewAction}
                     onClick={() => void rerunReview()}
                   >
-                    {reviewAction ? "Reviewing..." : "Re-run review"}
+                    {reviewAction ? t("Reviewing...") : t("Re-run review")}
                   </Button>
                 )}
               </div>
@@ -404,55 +406,55 @@ export default function ContractsModule({ userId, role }: Props) {
                   {review.mismatches.map((mismatch, index) => (
                     <div key={`${mismatch.field}-${index}`} className="rounded bg-[#0f0f0f] p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-sm font-medium text-white">{mismatch.field.replace(/_/g, " ")}</span>
+                        <span className="text-sm font-medium text-white">{t(mismatch.field.replace(/_/g, " "))}</span>
                         <span className={mismatch.severity === "high" ? "text-xs font-semibold text-[#ff8888]" : "text-xs font-semibold text-[#ffc832]"}>
-                          {mismatch.severity.toUpperCase()}
+                          {t(mismatch.severity.toUpperCase())}
                         </span>
                       </div>
                       <div className="mt-1 grid grid-cols-2 gap-2 text-xs">
-                        <div className="break-all text-[#a0a0a0]">Expected: {JSON.stringify(mismatch.expected) ?? "—"}</div>
-                        <div className="break-all text-[#a0a0a0]">Found: {JSON.stringify(mismatch.found) ?? "—"}</div>
+                        <div className="break-all text-[#a0a0a0]">{t("Expected:")} {JSON.stringify(mismatch.expected) ?? "—"}</div>
+                        <div className="break-all text-[#a0a0a0]">{t("Found:")} {JSON.stringify(mismatch.found) ?? "—"}</div>
                       </div>
                       {mismatch.note && <div className="mt-1 text-xs text-[#6b6b6b]">{mismatch.note}</div>}
                     </div>
                   ))}
                 </div>
               ) : review && review.status === "passed" ? (
-                <div className="text-sm text-[#64dc78]">No mismatches found.</div>
+                <div className="text-sm text-[#64dc78]">{t("No mismatches found.")}</div>
               ) : null}
               {review?.extracted && Object.keys(review.extracted).length > 0 && (
                 <details className="rounded bg-[#0f0f0f] p-3">
-                  <summary className="cursor-pointer text-xs text-[#a0a0a0]">Extracted contract fields</summary>
-                  <pre className="mt-2 overflow-auto whitespace-pre-wrap break-words text-xs text-[#d0d0d0]">
+                  <summary className="cursor-pointer text-xs text-[#a0a0a0]">{t("Extracted contract fields")}</summary>
+                  <pre className="mt-2 overflow-auto whitespace-pre-wrap break-words text-xs text-[#d0d0d0]" dir="ltr">
                     {JSON.stringify(review.extracted, null, 2)}
                   </pre>
                 </details>
               )}
             </div>
             {canApprove && review?.status === "passed" && selectedDeal.status === "pending_approval" && (
-              <Button onClick={() => void approveDeal()}>Approve deal</Button>
+              <Button onClick={() => void approveDeal()}>{t("Approve deal")}</Button>
             )}
             {role === "admin" && review && !["passed", "queued", "processing"].includes(review.status) && selectedDeal.status !== "approved" && selectedDeal.status !== "active" && selectedDeal.status !== "cancelled" && (
-              <Button variant="danger" onClick={() => setApprovalOverrideOpen(true)}>Approve anyway</Button>
+              <Button variant="danger" onClick={() => setApprovalOverrideOpen(true)}>{t("Approve anyway")}</Button>
             )}
             {canUploadContract && (
               <div className="space-y-2 rounded border border-[#2a2a2a] p-3">
                 <label className="block text-xs text-[#a0a0a0]">
-                  Upload or replace signed contract (PDF or image)
+                  {t("Upload or replace signed contract (PDF or image)")}
                   <input
                     type="file"
                     accept="application/pdf,image/jpeg,image/png,image/webp"
                     onChange={(event) => setContractFile(event.target.files?.[0] ?? null)}
-                    className="mt-1 block w-full text-sm text-[#a0a0a0] file:mr-3 file:rounded file:border-0 file:bg-[#252525] file:px-3 file:py-2 file:text-white"
+                    className="mt-1 block w-full text-sm text-[#a0a0a0] file:me-3 file:rounded file:border-0 file:bg-[#252525] file:px-3 file:py-2 file:text-white"
                   />
                 </label>
                 <Button disabled={!contractFile || uploadingContract} onClick={() => void uploadContract()}>
-                  {uploadingContract ? "Uploading and reviewing..." : "Upload, attach & review"}
+                  {uploadingContract ? t("Uploading and reviewing...") : t("Upload, attach & review")}
                 </Button>
-                <p className="text-xs text-[#6b6b6b]">The uploaded contract is private and starts a new AI review.</p>
+                <p className="text-xs text-[#6b6b6b]">{t("The uploaded contract is private and starts a new AI review.")}</p>
               </div>
             )}
-            <Button variant="ghost" onClick={() => { setSelectedDeal(null); setContractFile(null) }}>Close</Button>
+            <Button variant="ghost" onClick={() => { setSelectedDeal(null); setContractFile(null) }}>{t("Close")}</Button>
           </div>
         )}
       </Modal>
@@ -464,10 +466,10 @@ export default function ContractsModule({ userId, role }: Props) {
       >
         <div className="space-y-3">
           <p className="text-sm text-[#ffc832]">
-            Only use this when the latest contract review has not passed. The reason is recorded for audit.
+            {t("Only use this when the latest contract review has not passed. The reason is recorded for audit.")}
           </p>
           <label className="block text-xs text-[#a0a0a0]">
-            Reason (at least five words) *
+            {t("Reason (at least five words) *")}
             <textarea
               rows={4}
               value={overrideReason}
@@ -480,7 +482,7 @@ export default function ContractsModule({ userId, role }: Props) {
             disabled={overrideReason.trim().split(/\s+/).filter(Boolean).length < 5}
             onClick={() => void approveDeal(overrideReason.trim())}
           >
-            Approve with override
+            {t("Approve with override")}
           </Button>
         </div>
       </Modal>

@@ -8,6 +8,8 @@ import { Avatar, Badge } from "./ui"
 
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh"
 
+import { LanguageSwitch, useI18n } from "../i18n/I18nProvider"
+
 type AdminPage = "dashboard" | "leads" | "users" | "meetings" | "reports"
 
 type SalesPage = "meetings"
@@ -369,6 +371,8 @@ interface Props {
 }
 
 export default function AppShell({ role, userId, onLogout, children }: Props) {
+  const { t, dir, lang } = useI18n()
+
   const roleNav =
     role === "admin"
       ? adminNav
@@ -496,7 +500,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
               }`}
             >
               {item.icon}
-              {item.label}
+              {t(item.label)}
             </button>
           ))}
         </nav>
@@ -520,7 +524,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
                 d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
               />
             </svg>
-            Sign Out
+            {t("Sign Out")}
           </button>
         </div>
       </aside>
@@ -548,7 +552,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
             </svg>
           </button>
           <div className="text-[#6b6b6b] text-sm hidden lg:block">
-            {new Date("2026-09-18").toLocaleDateString("en-US", {
+            {new Date().toLocaleDateString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US", {
               weekday: "long",
               year: "numeric",
               month: "long",
@@ -556,6 +560,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
             })}
           </div>
           <div className="flex items-center gap-3 ml-auto">
+            <LanguageSwitch />
             {/* Notifications */}
             <div className="relative">
               <button
@@ -641,7 +646,9 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto">{children(page)}</main>
+        <main className="flex-1 overflow-y-auto" dir={dir}>
+          {children(page)}
+        </main>
       </div>
     </div>
   )

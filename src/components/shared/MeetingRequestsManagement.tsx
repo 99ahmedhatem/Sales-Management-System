@@ -6,6 +6,8 @@ import {
 import { supabase } from "../../supabaseClient"
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 import { Avatar, Button, Card, Pagination, Select } from "../ui"
+import { useI18n } from "../../i18n/I18nProvider"
+import { dateLocale } from "../../i18n/locale"
 
 const PAGE_SIZE = 20
 
@@ -20,6 +22,7 @@ interface Props {
 }
 
 export default function MeetingRequestsManagement({ role, userId }: Props) {
+  const { t, lang } = useI18n()
   const [requests, setRequests] = useState<MeetingRequest[]>([])
   const [salesUsers, setSalesUsers] = useState<SalesUser[]>([])
   const [targetSalesByRequest, setTargetSalesByRequest] = useState<
@@ -109,13 +112,13 @@ export default function MeetingRequestsManagement({ role, userId }: Props) {
     <Card className="p-4">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <h2 className="font-semibold text-white">Pending Meeting Requests</h2>
+          <h2 className="font-semibold text-white">{t("Pending Meeting Requests")}</h2>
           <p className="mt-1 text-xs text-[#6b6b6b]">
-            {role === "admin" ? "All teams" : "Your team"}
+            {role === "admin" ? t("All teams") : t("Your team")}
           </p>
         </div>
         <span className="rounded bg-[#ffc832]/10 px-2 py-1 text-xs text-[#ffc832]">
-          {total} pending
+          {t("{n} pending", { n: total })}
         </span>
       </div>
       {error && (
@@ -123,16 +126,16 @@ export default function MeetingRequestsManagement({ role, userId }: Props) {
           role="alert"
           className="mb-3 rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
         >
-          {error}
+          {t(error)}
         </div>
       )}
       {loading ? (
         <div className="py-6 text-center text-sm text-[#6b6b6b]">
-          Loading requests...
+          {t("Loading requests...")}
         </div>
       ) : requests.length === 0 ? (
         <div className="py-6 text-center text-sm text-[#6b6b6b]">
-          No pending requests.
+          {t("No pending requests.")}
         </div>
       ) : (
         <div className="divide-y divide-[#242424]">
@@ -146,15 +149,15 @@ export default function MeetingRequestsManagement({ role, userId }: Props) {
               >
                 <div className="min-w-0">
                   <div className="font-medium text-white">{request.leadName}</div>
-                  <div className="mt-1 font-mono text-xs text-[#a0a0a0]">
+                  <div className="mt-1 font-mono text-xs text-[#a0a0a0]" dir="ltr">
                     {request.leadPhone}
                   </div>
                   <div className="mt-2 text-sm text-[#a0a0a0]">
-                    {request.notes || "No additional notes."}
+                    {request.notes || t("No additional notes.")}
                   </div>
                   {request.preferredDate && (
                     <div className="mt-1 text-xs text-[#ffc832]">
-                      Preferred: {new Date(request.preferredDate).toLocaleString()}
+                      {t("Preferred:")} {new Date(request.preferredDate).toLocaleString(dateLocale(lang))}
                     </div>
                   )}
                 </div>
@@ -184,7 +187,7 @@ export default function MeetingRequestsManagement({ role, userId }: Props) {
                     }
                     onClick={() => void reassign(request)}
                   >
-                    {updatingId === request.id ? "Saving..." : "Reassign"}
+                    {updatingId === request.id ? t("Saving...") : t("Reassign")}
                   </Button>
                 </div>
               </div>

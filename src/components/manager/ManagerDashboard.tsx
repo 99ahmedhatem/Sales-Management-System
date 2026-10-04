@@ -7,6 +7,7 @@ import { exportRowsToExcel } from '../shared/exportExcel';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
+import { useI18n } from '../../i18n/I18nProvider';
 
 const ROLE_REGION_OPTIONS = [
   { value: '', label: 'All Countries' },
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export default function ManagerDashboard({ userId }: Props) {
+  const { t } = useI18n();
   const [users, setUsers] = useState<User[]>([]);
   const [allLeads, setAllLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -284,40 +286,40 @@ export default function ManagerDashboard({ userId }: Props) {
   };
 
   if (loading) {
-    return <div className="p-6 text-[#a0a0a0] text-sm">Loading team data…</div>;
+    return <div className="p-6 text-[#a0a0a0] text-sm">{t('Loading team data…')}</div>;
   }
 
   return (
     <div className="p-6 space-y-6">
-      {errorMsg && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3">{errorMsg}</div>}
+      {errorMsg && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3">{t(errorMsg)}</div>}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-white text-2xl font-bold">Team Overview</h1>
-          <p className="text-[#6b6b6b] text-sm mt-0.5">{me?.fullName || 'Manager'} — Manager</p>
+          <h1 className="text-white text-2xl font-bold">{t('Team Overview')}</h1>
+          <p className="text-[#6b6b6b] text-sm mt-0.5">{me?.fullName || t('Manager')} — {t('Manager')}</p>
         </div>
         {poolLeads.length > 0 && (
           <Button variant="primary" size="sm" disabled={!selectedPoolLeads.length} onClick={() => { setAssignLeads(selectedPoolLeads); setAssignTo(''); setAssignModal(true); }}>
-            Distribute Selected ({selectedPoolLeads.length})
+            {t('Distribute Selected ({n})', { n: selectedPoolLeads.length })}
           </Button>
         )}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard label="Clients Worked" value={workedClientCount} sub="Distinct team clients" />
-        <KpiCard label="Team Members" value={myTeam.length} sub={`${telesalesTeam.length} telesales · ${salesTeam.length} sales`} />
+        <KpiCard label="Team Members" value={myTeam.length} sub={t('{a} telesales · {b} sales', { a: telesalesTeam.length, b: salesTeam.length })} />
         <KpiCard label="Received from Admin" value={receivedCount} sub="Waiting in your pool" />
         <KpiCard label="Distributed" value={distributedCount} sub="Assigned to your team" />
-        <KpiCard label="Converted" value={converted} accent sub={`${myLeads.length > 0 ? Math.round(converted / myLeads.length * 100) : 0}% rate`} />
-        <KpiCard label="Deals Won" value={won} sub={`${myMeetings.length} total meetings`} />
+        <KpiCard label="Converted" value={converted} accent sub={t('{n}% rate', { n: myLeads.length > 0 ? Math.round(converted / myLeads.length * 100) : 0 })} />
+        <KpiCard label="Deals Won" value={won} sub={t('{n} total meetings', { n: myMeetings.length })} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Telesales Performance */}
         <Card className="p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-white font-semibold">Telesales Team</h3>
+            <h3 className="text-white font-semibold">{t('Telesales Team')}</h3>
           </div>
-          {telesalesTeam.length === 0 && <p className="text-[#4a4a4a] text-sm">No telesales agents assigned to your team.</p>}
+          {telesalesTeam.length === 0 && <p className="text-[#4a4a4a] text-sm">{t('No telesales agents assigned to your team.')}</p>}
           <div className="space-y-3">
             {agentStats.map(({ agent, total, contacted, converted, rate }) => (
               <div key={agent.id} className="p-3 bg-[#1a1a1a] rounded-lg">
@@ -325,11 +327,11 @@ export default function ManagerDashboard({ userId }: Props) {
                   <Avatar name={agent.fullName} size="md" />
                   <div className="flex-1 min-w-0">
                     <div className="text-white text-sm font-medium">{agent.fullName}</div>
-                    <div className="text-[#6b6b6b] text-xs">{total} leads · {contacted} contacted</div>
+                    <div className="text-[#6b6b6b] text-xs">{t('{a} leads · {b} contacted', { a: total, b: contacted })}</div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-end">
                     <div className="text-[#dfff03] font-bold text-lg font-mono">{rate}%</div>
-                    <div className="text-[#6b6b6b] text-xs">{converted} cvt</div>
+                    <div className="text-[#6b6b6b] text-xs">{t('{n} cvt', { n: converted })}</div>
                   </div>
                 </div>
                 <div className="h-1.5 bg-[#262626] rounded-full">
@@ -342,8 +344,8 @@ export default function ManagerDashboard({ userId }: Props) {
 
         {/* Sales Performance */}
         <Card className="p-5">
-          <h3 className="text-white font-semibold mb-4">Sales Team</h3>
-          {salesTeam.length === 0 && <p className="text-[#4a4a4a] text-sm">No sales agents assigned to your team.</p>}
+          <h3 className="text-white font-semibold mb-4">{t('Sales Team')}</h3>
+          {salesTeam.length === 0 && <p className="text-[#4a4a4a] text-sm">{t('No sales agents assigned to your team.')}</p>}
           <div className="space-y-3">
             {salesStats.map(({ agent, total, won, rate }) => (
               <div key={agent.id} className="p-3 bg-[#1a1a1a] rounded-lg">
@@ -351,11 +353,11 @@ export default function ManagerDashboard({ userId }: Props) {
                   <Avatar name={agent.fullName} size="md" />
                   <div className="flex-1 min-w-0">
                     <div className="text-white text-sm font-medium">{agent.fullName}</div>
-                    <div className="text-[#6b6b6b] text-xs">{total} meetings · {won} won</div>
+                    <div className="text-[#6b6b6b] text-xs">{t('{a} meetings · {b} won', { a: total, b: won })}</div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-end">
                     <div className="text-[#64dc78] font-bold text-lg font-mono">{rate}%</div>
-                    <div className="text-[#6b6b6b] text-xs">win rate</div>
+                    <div className="text-[#6b6b6b] text-xs">{t('win rate')}</div>
                   </div>
                 </div>
                 <div className="h-1.5 bg-[#262626] rounded-full">
@@ -370,10 +372,10 @@ export default function ManagerDashboard({ userId }: Props) {
       {/* Team Leads Table */}
       <Card className="p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-semibold">My Leads Pool ({poolLeads.length} unassigned to agents)</h3>
+          <h3 className="text-white font-semibold">{t('My Leads Pool ({n} unassigned to agents)', { n: poolLeads.length })}</h3>
           {poolLeads.length > 0 && (
             <button onClick={toggleAllPoolLeads} className="text-[#dfff03] text-xs hover:underline">
-              {selectedPoolLeads.length === poolLeads.length ? 'Clear selection' : 'Select all'}
+              {selectedPoolLeads.length === poolLeads.length ? t('Clear selection') : t('Select all')}
             </button>
           )}
         </div>
@@ -385,10 +387,10 @@ export default function ManagerDashboard({ userId }: Props) {
           <Select value={leadQuality} onChange={setLeadQuality} options={ROLE_QUALITY_OPTIONS} className="w-36" />
           <Select value={leadPhone} onChange={setLeadPhone} options={ROLE_PHONE_OPTIONS} className="w-36" />
           <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: 'all', label: 'All' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
-          <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? 'Exporting...' : 'Export Excel'}</Button>
+          <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? t('Exporting...') : t('Export Excel')}</Button>
         </div>
         {poolLeads.length === 0 ? (
-          <p className="text-[#4a4a4a] text-sm py-4">All leads have been distributed to your team members.</p>
+          <p className="text-[#4a4a4a] text-sm py-4">{t('All leads have been distributed to your team members.')}</p>
         ) : (
           <div>
             <Table headers={['', 'No.', 'Code', 'Name', 'Phone', 'Company', 'Website', 'Website Status', 'Quantity', 'Status', '']}>
@@ -417,7 +419,7 @@ export default function ManagerDashboard({ userId }: Props) {
                     onClick={() => { setSelectedPoolLeads([l.id]); setAssignLeads([l.id]); setAssignTo(''); setAssignModal(true); }}
                     className="text-[#dfff03] text-xs hover:underline"
                   >
-                    Assign
+                    {t('Assign')}
                   </button>
                 </Td>
                 </Tr>
@@ -436,30 +438,30 @@ export default function ManagerDashboard({ userId }: Props) {
                 ['Name', detailLead.name], ['Website', detailLead.website || '—'],
                 ['Quantity', detailLead.quantity ?? 0], ['Company', detailLead.company || '—'], ['Region', detailLead.region || '—'],
                 ['Source', detailLead.source || '—'], ['Data Quality', detailLead.dataQuality || 'normal'],
-              ].map(([label, value]) => <div key={label} className="bg-[#1a1a1a] rounded p-3"><div className="text-[#6b6b6b] text-xs mb-1">{label}</div><div className="text-white text-sm font-medium break-all">{label === 'Website' ? <WebsiteLink url={String(value)} /> : value}</div></div>)}
+              ].map(([label, value]) => <div key={label} className="bg-[#1a1a1a] rounded p-3"><div className="text-[#6b6b6b] text-xs mb-1">{t(String(label))}</div><div className="text-white text-sm font-medium break-all">{label === 'Website' ? <WebsiteLink url={String(value)} /> : label === 'Data Quality' ? t(String(value)) : value}</div></div>)}
             </div>
             <div className="bg-[#1a1a1a] rounded p-3">
-              <div className="text-[#6b6b6b] text-xs mb-1">Phone Number</div>
+              <div className="text-[#6b6b6b] text-xs mb-1">{t('Phone Number')}</div>
               <div className="flex gap-2">
-                <input value={editingPhone || detailLead.phone} onChange={e => setEditingPhone(e.target.value)} placeholder="Add phone number" className="flex-1 bg-[#0e0e0e] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white" />
-                <Button variant="primary" size="sm" onClick={() => savePhone(detailLead.id)}>Save Phone</Button>
+                <input value={editingPhone || detailLead.phone} onChange={e => setEditingPhone(e.target.value)} placeholder={t('Add phone number')} dir="ltr" className="flex-1 bg-[#0e0e0e] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white" />
+                <Button variant="primary" size="sm" onClick={() => savePhone(detailLead.id)}>{t('Save Phone')}</Button>
               </div>
             </div>
             <div className="bg-[#1a1a1a] rounded p-3">
-              <div className="text-[#6b6b6b] text-xs mb-1">Customer Number</div>
+              <div className="text-[#6b6b6b] text-xs mb-1">{t('Customer Number')}</div>
               <div className="flex gap-2">
-                <input type="number" min="1" value={editingCustomerNumberId === detailLead.id ? editingCustomerNumber : String(detailLead.customerNumber ?? '')} onChange={e => { setEditingCustomerNumberId(detailLead.id); setEditingCustomerNumber(e.target.value); }} placeholder="Enter customer number" className="flex-1 bg-[#0e0e0e] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white" />
-                <Button variant="primary" size="sm" onClick={() => saveCustomerNumber(detailLead.id)}>Save Number</Button>
+                <input type="number" min="1" value={editingCustomerNumberId === detailLead.id ? editingCustomerNumber : String(detailLead.customerNumber ?? '')} onChange={e => { setEditingCustomerNumberId(detailLead.id); setEditingCustomerNumber(e.target.value); }} placeholder={t('Enter customer number')} className="flex-1 bg-[#0e0e0e] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white" />
+                <Button variant="primary" size="sm" onClick={() => saveCustomerNumber(detailLead.id)}>{t('Save Number')}</Button>
               </div>
             </div>
-            <Button variant="ghost" onClick={() => setDetailLead(null)}>Close</Button>
+            <Button variant="ghost" onClick={() => setDetailLead(null)}>{t('Close')}</Button>
           </div>
         )}
       </Modal>
 
       {/* Upcoming meetings */}
       <Card className="p-5">
-        <h3 className="text-white font-semibold mb-4">Team Upcoming Meetings</h3>
+        <h3 className="text-white font-semibold mb-4">{t('Team Upcoming Meetings')}</h3>
         <div className="space-y-2">
           {myMeetings.filter(m => m.outcome === 'Scheduled').map(m => {
             const salesUser = users.find(u => u.id === m.assignedSalesId);
@@ -467,9 +469,9 @@ export default function ManagerDashboard({ userId }: Props) {
               <div key={m.id} className="flex items-center gap-4 p-3 bg-[#1a1a1a] rounded-lg">
                 <div className="flex-1">
                   <div className="text-white text-sm font-medium">{m.leadName}</div>
-                  <div className="text-[#6b6b6b] text-xs">{m.leadPhone}</div>
+                  <div className="text-[#6b6b6b] text-xs" dir="ltr">{m.leadPhone}</div>
                 </div>
-                <div className="text-right">
+                <div className="text-end">
                   <div className="text-[#dfff03] text-xs font-mono">{m.proposedDate}</div>
                   <div className="text-[#6b6b6b] text-xs">{salesUser?.fullName}</div>
                 </div>
@@ -478,7 +480,7 @@ export default function ManagerDashboard({ userId }: Props) {
             );
           })}
           {myMeetings.filter(m => m.outcome === 'Scheduled').length === 0 && (
-            <p className="text-[#4a4a4a] text-sm py-4">No upcoming meetings.</p>
+            <p className="text-[#4a4a4a] text-sm py-4">{t('No upcoming meetings.')}</p>
           )}
         </div>
       </Card>
@@ -486,9 +488,9 @@ export default function ManagerDashboard({ userId }: Props) {
       {/* Assign leads modal */}
       <Modal open={assignModal} onClose={() => setAssignModal(false)} title="Distribute Leads to Team Member">
         <div className="space-y-4">
-          <p className="text-[#a0a0a0] text-sm">Assign leads from your pool to a telesales agent on your team.</p>
+          <p className="text-[#a0a0a0] text-sm">{t('Assign leads from your pool to a telesales agent on your team.')}</p>
           <div>
-            <label className="block text-xs text-[#a0a0a0] mb-2">Assign to:</label>
+            <label className="block text-xs text-[#a0a0a0] mb-2">{t('Assign to:')}</label>
             <div className="space-y-2">
               {telesalesTeam.map(u => {
                 const count = myLeads.filter(l => l.assignedTo === u.id).length;
@@ -496,21 +498,21 @@ export default function ManagerDashboard({ userId }: Props) {
                   <button
                     key={u.id}
                     onClick={() => setAssignTo(u.id)}
-                    className={`w-full text-left p-3 rounded-lg border transition-all ${assignTo === u.id ? 'border-[#dfff03] bg-[#dfff03]/5' : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'}`}
+                    className={`w-full text-start p-3 rounded-lg border transition-all ${assignTo === u.id ? 'border-[#dfff03] bg-[#dfff03]/5' : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'}`}
                   >
                     <div className="text-white text-sm font-medium">{u.fullName}</div>
-                    <div className="text-[#6b6b6b] text-xs">{count} leads currently assigned</div>
+                    <div className="text-[#6b6b6b] text-xs">{t('{n} leads currently assigned', { n: count })}</div>
                   </button>
                 );
               })}
             </div>
           </div>
           <div className="bg-[#1a1a1a] rounded p-3 text-xs text-[#6b6b6b]">
-            {assignLeads.length > 0 ? `${assignLeads.length} lead(s) selected` : 'Select leads from your pool first'}
+            {assignLeads.length > 0 ? t('{n} lead(s) selected', { n: assignLeads.length }) : t('Select leads from your pool first')}
           </div>
           <div className="flex gap-2">
-            <Button variant="primary" disabled={!assignTo} onClick={handleAssign}>Assign Leads</Button>
-            <Button variant="ghost" onClick={() => setAssignModal(false)}>Cancel</Button>
+            <Button variant="primary" disabled={!assignTo} onClick={handleAssign}>{t('Assign Leads')}</Button>
+            <Button variant="ghost" onClick={() => setAssignModal(false)}>{t('Cancel')}</Button>
           </div>
         </div>
       </Modal>

@@ -8,6 +8,10 @@ import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 
 import { Avatar, Card, KpiCard, StatusBadge } from "../ui"
 
+import { useI18n } from "../../i18n/I18nProvider"
+
+import { dateLocale } from "../../i18n/locale"
+
 interface DashboardCounts {
   totalLeads: number
 
@@ -61,6 +65,8 @@ const EMPTY_COUNTS: DashboardCounts = {
 }
 
 export default function AdminDashboard() {
+  const { t, lang } = useI18n()
+
   const [counts, setCounts] = useState(EMPTY_COUNTS)
 
   const [loading, setLoading] = useState(true)
@@ -260,9 +266,9 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Overview</h1>
+        <h1 className="text-2xl font-bold text-white">{t("Overview")}</h1>
         <p className="mt-0.5 text-sm text-[#6b6b6b]">
-          Real-time summary of pipeline activity
+          {t("Real-time summary of pipeline activity")}
         </p>
       </div>
 
@@ -271,7 +277,7 @@ export default function AdminDashboard() {
           role="alert"
           className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
         >
-          {error}
+          {t(error)}
         </div>
       )}
 
@@ -279,31 +285,31 @@ export default function AdminDashboard() {
         <KpiCard
           label="Total Leads"
           value={loading ? "—" : counts.totalLeads}
-          sub={`${counts.assignedLeads} assigned`}
+          sub={t("{n} assigned", { n: counts.assignedLeads })}
         />
         <KpiCard
           label="Converted"
           value={loading ? "—" : counts.convertedLeads}
-          sub={`${conversionRate}% conversion rate`}
+          sub={t("{n}% conversion rate", { n: conversionRate })}
           accent
         />
         <KpiCard
           label="Upcoming Meetings"
           value={loading ? "—" : counts.scheduledMeetings}
-          sub={`${counts.wonDeals} won · ${counts.lostDeals} lost`}
+          sub={t("{a} won · {b} lost", { a: counts.wonDeals, b: counts.lostDeals })}
         />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="col-span-1 p-5">
-          <h3 className="mb-4 font-semibold text-white">Lead Status</h3>
+          <h3 className="mb-4 font-semibold text-white">{t("Lead Status")}</h3>
           {loading ? (
-            <div className="text-sm text-[#6b6b6b]">Loading...</div>
+            <div className="text-sm text-[#6b6b6b]">{t("Loading...")}</div>
           ) : (
             statuses.map((row) => (
               <div key={row.label} className="mb-3">
                 <div className="mb-1 flex justify-between text-xs">
-                  <span className="text-[#a0a0a0]">{row.label}</span>
+                  <span className="text-[#a0a0a0]">{t(row.label)}</span>
                   <span className="font-medium text-white">{row.count}</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-[#1e1e1e]">
@@ -325,12 +331,12 @@ export default function AdminDashboard() {
         </Card>
 
         <Card className="col-span-1 p-5 lg:col-span-2">
-          <h3 className="mb-4 font-semibold text-white">Upcoming Meetings</h3>
+          <h3 className="mb-4 font-semibold text-white">{t("Upcoming Meetings")}</h3>
           {loading ? (
-            <div className="text-sm text-[#6b6b6b]">Loading meetings...</div>
+            <div className="text-sm text-[#6b6b6b]">{t("Loading meetings...")}</div>
           ) : counts.meetings.length === 0 ? (
             <div className="py-6 text-center text-sm text-[#6b6b6b]">
-              No upcoming meetings.
+              {t("No upcoming meetings.")}
             </div>
           ) : (
             <div className="space-y-2">
@@ -344,13 +350,13 @@ export default function AdminDashboard() {
                     <div className="truncate text-sm font-medium text-white">
                       {meeting.leadName}
                     </div>
-                    <div className="text-xs text-[#6b6b6b]">
+                    <div className="text-xs text-[#6b6b6b]" dir="ltr">
                       {meeting.leadPhone}
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-end">
                     <div className="text-xs text-[#dfff03]">
-                      {new Date(meeting.proposedDate).toLocaleString()}
+                      {new Date(meeting.proposedDate).toLocaleString(dateLocale(lang))}
                     </div>
                     <div className="text-xs text-[#6b6b6b]">
                       {meeting.assignedSalesName}

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
+import { LanguageSwitch, useI18n } from '../i18n/I18nProvider';
 
 export default function Login() {
+  const { t, dir } = useI18n();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -50,8 +52,9 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0c0c0c] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#0c0c0c] flex items-center justify-center p-4" dir={dir}>
       <div className="w-full max-w-sm">
+        <div className="flex justify-end mb-4"><LanguageSwitch /></div>
         {/* Brand */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-4">
@@ -61,42 +64,42 @@ export default function Login() {
             <span className="text-white font-bold text-xl tracking-tight lowercase">intillaq</span>
           </div>
           <h1 className="text-white font-semibold text-xl">
-            {mode === 'signin' ? 'Sign in to your account' : 'Create the admin account'}
+            {mode === 'signin' ? t('Sign in to your account') : t('Create the admin account')}
           </h1>
-          <p className="text-[#6b6b6b] text-sm mt-1">Sales & Telesales Management System</p>
+          <p className="text-[#6b6b6b] text-sm mt-1">{t('Sales & Telesales Management System')}</p>
         </div>
 
         {/* Form */}
         <div className="bg-[#161616] border border-[#262626] rounded-xl p-6">
           <form onSubmit={mode === 'signin' ? handleSignIn : handleSignUp} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-[#a0a0a0] mb-1.5 uppercase tracking-wide">Username or Email</label>
+              <label className="block text-xs font-medium text-[#a0a0a0] mb-1.5 uppercase tracking-wide">{t('Username or Email')}</label>
               <input
                 type="text"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="Enter username or email"
+                placeholder={t('Enter username or email')}
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/50 transition-colors"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-[#a0a0a0] mb-1.5 uppercase tracking-wide">Password</label>
+              <label className="block text-xs font-medium text-[#a0a0a0] mb-1.5 uppercase tracking-wide">{t('Password')}</label>
               <input
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="Enter password"
+                placeholder={t('Enter password')}
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/50 transition-colors"
               />
             </div>
-            {error && <p className="text-[#ff6464] text-xs">{error}</p>}
-            {infoMsg && <p className="text-[#dfff03] text-xs">{infoMsg}</p>}
+            {error && <p className="text-[#ff6464] text-xs">{t(error)}</p>}
+            {infoMsg && <p className="text-[#dfff03] text-xs">{t(infoMsg)}</p>}
             <button
               type="submit"
               disabled={loading || !email || !password}
               className="w-full bg-[#dfff03] text-black font-semibold py-2.5 rounded-lg hover:bg-[#d4f002] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {loading ? 'Please wait...' : mode === 'signin' ? 'Sign In' : 'Create Account'}
+              {loading ? t('Please wait...') : mode === 'signin' ? t('Sign In') : t('Create Account')}
             </button>
           </form>
 

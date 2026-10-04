@@ -6,6 +6,7 @@ import {
 } from "../../data/contractReviewActions"
 import { supabase } from "../../supabaseClient"
 import { Button, Modal } from "../ui"
+import { useI18n } from "../../i18n/I18nProvider"
 
 interface Props {
   open: boolean
@@ -43,6 +44,8 @@ export default function DealCreateModal({
   initialLeadId,
   role,
 }: Props) {
+  const { t } = useI18n()
+  const reviewLabel = (status: string | null | undefined) => t((status ?? "submitted").replace("_", " "))
   const [leads, setLeads] = useState<LeadOption[]>([])
   const [leadSearch, setLeadSearch] = useState("")
   const [leadId, setLeadId] = useState(initialLeadId ?? "")
@@ -108,7 +111,7 @@ export default function DealCreateModal({
           ])
         if (!active) return
         if (leadError || packageError) {
-          setError(leadError?.message ?? packageError?.message ?? "Could not load deal data.")
+          setError(leadError?.message ?? packageError?.message ?? t("Could not load deal data."))
         } else {
           const leadOptions = (leadRows ?? []) as LeadOption[]
           setLeads(leadOptions)
@@ -138,8 +141,8 @@ export default function DealCreateModal({
     if (!leadId || !packageId || !Number.isFinite(numericPrice) || numericPrice < 0 || !startDate || (recordingRequired && !recording)) {
       setError(
         recordingRequired
-          ? "Choose a lead and package, enter the closing price and start date, and attach a meeting recording."
-          : "Choose a lead and package, and enter the closing price and start date."
+          ? t("Choose a lead and package, enter the closing price and start date, and attach a meeting recording.")
+          : t("Choose a lead and package, and enter the closing price and start date.")
       )
       return
     }
@@ -153,7 +156,7 @@ export default function DealCreateModal({
       deal_notes: notes.trim() || null,
     })
     if (createError || !dealId) {
-      setError(createError?.message ?? "The deal could not be created.")
+      setError(createError?.message ?? t("The deal could not be created."))
       setSaving(false)
       return
     }
@@ -161,7 +164,7 @@ export default function DealCreateModal({
     setCreatedDealId(dealId)
     onCreated(dealId)
     if (!recording) {
-      setSuccess("Deal created.")
+      setSuccess(t("Deal created."))
       setRecordingAttached(true)
       setSaving(false)
       return
@@ -171,7 +174,7 @@ export default function DealCreateModal({
       .from("recordings")
       .upload(objectPath, recording, { upsert: false })
     if (uploadError) {
-      setError(`Deal ${dealId} was created, but the recording upload failed: ${uploadError.message}`)
+      setError(t("Deal {id} was created, but the recording upload failed: {msg}", { id: dealId, msg: uploadError.message }))
       setSaving(false)
       return
     }
@@ -181,11 +184,11 @@ export default function DealCreateModal({
       target_recording_path: objectPath,
     })
     if (attachError) {
-      setError(`Deal ${dealId} was created and the recording uploaded, but it could not be attached: ${attachError.message}`)
+      setError(t("Deal {id} was created and the recording uploaded, but it could not be attached: {msg}", { id: dealId, msg: attachError.message }))
       setSaving(false)
       return
     }
-    setSuccess("Deal created and meeting recording attached.")
+    setSuccess(t("Deal created and meeting recording attached."))
     setRecordingAttached(true)
     setSaving(false)
   }
@@ -199,7 +202,7 @@ export default function DealCreateModal({
       .from("recordings")
       .upload(objectPath, recording, { upsert: false })
     if (uploadError) {
-      setError(`Recording upload failed: ${uploadError.message}`)
+      setError(t("Recording upload failed: {msg}", { msg: uploadError.message }))
       setSaving(false)
       return
     }
@@ -208,10 +211,10 @@ export default function DealCreateModal({
       target_recording_path: objectPath,
     })
     if (attachError) {
-      setError(`Recording uploaded but could not be attached: ${attachError.message}`)
+      setError(t("Recording uploaded but could not be attached: {msg}", { msg: attachError.message }))
     } else {
       setRecordingAttached(true)
-      setSuccess("Meeting recording attached.")
+      setSuccess(t("Meeting recording attached."))
       onCreated(createdDealId)
     }
     setSaving(false)
@@ -226,7 +229,7 @@ export default function DealCreateModal({
       .from("contracts")
       .upload(objectPath, contractFile, { upsert: false })
     if (uploadError) {
-      setError(`Contract upload failed: ${uploadError.message}`)
+      setError(t("Contract upload failed: {msg}", { msg: uploadError.message }))
       setAttachingContract(false)
       return
     }
@@ -235,7 +238,7 @@ export default function DealCreateModal({
       target_contract_path: objectPath,
     })
     if (attachError || typeof reviewId !== "string") {
-      setError(`Contract uploaded but could not be attached: ${attachError?.message ?? "No review ID was returned."}`)
+      setError(t("Contract uploaded but could not be attached: {msg}", { msg: attachError?.message ?? t("No review ID was returned.") }))
       setAttachingContract(false)
       return
     }
@@ -243,10 +246,10 @@ export default function DealCreateModal({
     setContractReviewId(reviewId)
     const result = await invokeContractReview(reviewId)
     if (result.error) {
-      setError(`Contract attached, but AI review failed: ${result.error}`)
+      setError(t("Contract attached, but AI review failed: {msg}", { msg: result.error }))
     } else {
-      setReviewStatus(result.status?.replace("_", " ") ?? "submitted")
-      setSuccess(`Contract attached. AI review status: ${result.status?.replace("_", " ") ?? "submitted"}.`)
+      setReviewStatus(result.status ?? "submitted")
+      setSuccess(t("Contract attached. AI review status: {status}.", { status: reviewLabel(result.status) }))
     }
     setAttachingContract(false)
   }
@@ -259,8 +262,8 @@ export default function DealCreateModal({
     if (result.error) {
       setError(result.error)
     } else {
-      setReviewStatus(result.status?.replace("_", " ") ?? "submitted")
-      setSuccess(`AI review status: ${result.status?.replace("_", " ") ?? "submitted"}.`)
+      setReviewStatus(result.status ?? "submitted")
+      setSuccess(t("AI review status: {status}.", { status: reviewLabel(result.status) }))
     }
     setRetryingReview(false)
   }
@@ -301,46 +304,46 @@ export default function DealCreateModal({
         {createdDealId && !recordingAttached && (
           <div className="space-y-2 rounded border border-[#ffc832]/30 p-3">
             <label className="block text-xs text-[#a0a0a0]">
-              Meeting recording *
+              {t("Meeting recording *")}
               <input
                 type="file"
                 accept="audio/*,video/*"
                 onChange={(event) => setRecording(event.target.files?.[0] ?? null)}
-                className="mt-1 block w-full text-sm text-[#a0a0a0] file:mr-3 file:rounded file:border-0 file:bg-[#252525] file:px-3 file:py-2 file:text-white"
+                className="mt-1 block w-full text-sm text-[#a0a0a0] file:me-3 file:rounded file:border-0 file:bg-[#252525] file:px-3 file:py-2 file:text-white"
               />
             </label>
             <Button disabled={!recording || saving} onClick={() => void retryRecording()}>
-              {saving ? "Attaching recording..." : "Retry recording upload"}
+              {saving ? t("Attaching recording...") : t("Retry recording upload")}
             </Button>
           </div>
         )}
         {createdDealId && recordingAttached && !contractAttached && (
           <div className="space-y-2 rounded border border-[#2a2a2a] p-3">
             <label className="block text-xs text-[#a0a0a0]">
-              Signed contract (optional, PDF or image)
+              {t("Signed contract (optional, PDF or image)")}
               <input
                 type="file"
                 accept="application/pdf,image/jpeg,image/png,image/webp"
                 onChange={(event) => setContractFile(event.target.files?.[0] ?? null)}
-                className="mt-1 block w-full text-sm text-[#a0a0a0] file:mr-3 file:rounded file:border-0 file:bg-[#252525] file:px-3 file:py-2 file:text-white"
+                className="mt-1 block w-full text-sm text-[#a0a0a0] file:me-3 file:rounded file:border-0 file:bg-[#252525] file:px-3 file:py-2 file:text-white"
               />
             </label>
             <Button disabled={!contractFile || attachingContract} onClick={() => void attachContract()}>
-              {attachingContract ? "Uploading contract..." : "Upload & Attach Contract"}
+              {attachingContract ? t("Uploading contract...") : t("Upload & Attach Contract")}
             </Button>
           </div>
         )}
         {createdDealId && contractAttached && (
           <div className="space-y-2 rounded border border-[#2a2a2a] p-3">
             <div className="text-sm text-[#a0a0a0]">
-              Contract review: {reviewStatus || (contractReviewId ? "submitted" : "not started")}
+              {t("Contract review:")} {reviewStatus ? reviewLabel(reviewStatus) : contractReviewId ? t("submitted") : t("not started")}
             </div>
             <Button
               variant="secondary"
               disabled={retryingReview}
               onClick={() => void retryContractReview()}
             >
-              {retryingReview ? "Retrying review..." : "Retry AI review"}
+              {retryingReview ? t("Retrying review...") : t("Retry AI review")}
             </Button>
           </div>
         )}
@@ -348,24 +351,24 @@ export default function DealCreateModal({
           <>
             {!initialLeadId && (
               <label className="block text-xs text-[#a0a0a0]">
-                Find lead
+                {t("Find lead")}
                 <input
                   value={leadSearch}
                   onChange={(event) => setLeadSearch(event.target.value)}
-                  placeholder="Search lead name..."
+                  placeholder={t("Search lead name...")}
                   className="mt-1 w-full rounded border border-[#2a2a2a] bg-[#1a1a1a] px-3 py-2 text-sm text-white"
                 />
               </label>
             )}
             <label className="block text-xs text-[#a0a0a0]">
-              Lead *
+              {t("Lead *")}
               <select
                 value={leadId}
                 onChange={(event) => setLeadId(event.target.value)}
                 disabled={Boolean(initialLeadId) || loading}
                 className="mt-1 w-full rounded border border-[#2a2a2a] bg-[#1a1a1a] px-3 py-2 text-sm text-white"
               >
-                <option value="">Select a lead</option>
+                <option value="">{t("Select a lead")}</option>
                 {leads.map((lead) => (
                   <option key={lead.id} value={lead.id}>
                     {lead.name}{lead.phone ? ` — ${lead.phone}` : ""}
@@ -374,18 +377,18 @@ export default function DealCreateModal({
               </select>
               {!loading && leads.length === 0 && (
                 <span className="mt-1 block text-xs text-[#ffc832]">
-                  No accessible leads found. Sales can close only leads with an assigned meeting.
+                  {t("No accessible leads found. Sales can close only leads with an assigned meeting.")}
                 </span>
               )}
             </label>
             <label className="block text-xs text-[#a0a0a0]">
-              Package *
+              {t("Package *")}
               <select
                 value={packageId}
                 onChange={(event) => setPackageId(event.target.value)}
                 className="mt-1 w-full rounded border border-[#2a2a2a] bg-[#1a1a1a] px-3 py-2 text-sm text-white"
               >
-                <option value="">Select a package</option>
+                <option value="">{t("Select a package")}</option>
                 {packages.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name} — {formatSar.format(item.priceSar)}
@@ -395,13 +398,16 @@ export default function DealCreateModal({
             </label>
             {selectedPackage && (
               <div className="rounded bg-[#1a1a1a] p-3 text-xs text-[#a0a0a0]">
-                List price: {formatSar.format(selectedPackage.priceSar)} · Minimum:{" "}
-                {formatSar.format(selectedPackage.minPriceSar)} · {selectedPackage.durationMonths} months
+                {t("List price: {price} · Minimum: {min} · {n} months", {
+                  price: formatSar.format(selectedPackage.priceSar),
+                  min: formatSar.format(selectedPackage.minPriceSar),
+                  n: selectedPackage.durationMonths,
+                })}
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
               <label className="block text-xs text-[#a0a0a0]">
-                Closing price (SAR) *
+                {t("Closing price (SAR) *")}
                 <input
                   type="number"
                   min="0"
@@ -412,7 +418,7 @@ export default function DealCreateModal({
                 />
               </label>
               <label className="block text-xs text-[#a0a0a0]">
-                Start date *
+                {t("Start date *")}
                 <input
                   type="date"
                   value={startDate}
@@ -423,20 +429,20 @@ export default function DealCreateModal({
             </div>
             {isBelowMinimum && (
               <div role="alert" className="rounded border border-[#ffc832]/30 bg-[#ffc832]/10 p-3 text-sm text-[#ffc832]">
-                This closing price is below the package minimum. The deal will be flagged for the approver.
+                {t("This closing price is below the package minimum. The deal will be flagged for the approver.")}
               </div>
             )}
             <label className="block text-xs text-[#a0a0a0]">
-              {role === "manager" ? "Meeting recording (optional)" : "Meeting recording *"}
+              {role === "manager" ? t("Meeting recording (optional)") : t("Meeting recording *")}
               <input
                 type="file"
                 accept="audio/*,video/*"
                 onChange={(event) => setRecording(event.target.files?.[0] ?? null)}
-                className="mt-1 block w-full text-sm text-[#a0a0a0] file:mr-3 file:rounded file:border-0 file:bg-[#252525] file:px-3 file:py-2 file:text-white"
+                className="mt-1 block w-full text-sm text-[#a0a0a0] file:me-3 file:rounded file:border-0 file:bg-[#252525] file:px-3 file:py-2 file:text-white"
               />
             </label>
             <label className="block text-xs text-[#a0a0a0]">
-              Notes
+              {t("Notes")}
               <textarea
                 rows={3}
                 value={notes}
@@ -449,15 +455,15 @@ export default function DealCreateModal({
         <div className="flex gap-2">
           {!createdDealId && (
             <Button disabled={saving || loading} onClick={() => void createDeal()}>
-              {saving ? "Creating deal..." : "Create Deal"}
+              {saving ? t("Creating deal...") : t("Create Deal")}
             </Button>
           )}
           <Button variant="ghost" disabled={saving} onClick={closeModal}>
-            {createdDealId ? "Done" : "Cancel"}
+            {createdDealId ? t("Done") : t("Cancel")}
           </Button>
         </div>
         {createdDealId && (
-          <p className="text-xs text-[#6b6b6b]">Deal reference: {createdDealId}</p>
+          <p className="text-xs text-[#6b6b6b]">{t("Deal reference: {id}", { id: createdDealId })}</p>
         )}
       </div>
     </Modal>

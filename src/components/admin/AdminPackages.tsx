@@ -12,6 +12,8 @@ import { Button, Card, Modal, Table, Td, Tr } from "../ui"
 
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 
+import { useI18n } from "../../i18n/I18nProvider"
+
 const PAGE_SIZE = 25
 
 const formatSar = new Intl.NumberFormat("en-US", {
@@ -64,6 +66,8 @@ function mapToForm(item: SalesPackage): PackageForm {
 }
 
 export default function AdminPackages() {
+  const { t } = useI18n()
+
   const [packages, setPackages] = useState<SalesPackage[]>([])
 
   const [page, setPage] = useState(0)
@@ -230,12 +234,12 @@ export default function AdminPackages() {
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-white text-2xl font-bold">Packages</h1>
+          <h1 className="text-white text-2xl font-bold">{t("Packages")}</h1>
           <p className="text-[#6b6b6b] text-sm mt-0.5">
-            Create, update, or disable sales packages
+            {t("Create, update, or disable sales packages")}
           </p>
         </div>
-        <Button onClick={openCreate}>+ New Package</Button>
+        <Button onClick={openCreate}>{t("+ New Package")}</Button>
       </div>
 
       {error && !modalOpen && (
@@ -243,17 +247,17 @@ export default function AdminPackages() {
           role="alert"
           className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
         >
-          {error}
+          {t(error)}
         </div>
       )}
       <Card>
         {loading ? (
           <div className="p-8 text-center text-sm text-[#6b6b6b]">
-            Loading packages...
+            {t("Loading packages...")}
           </div>
         ) : packages.length === 0 ? (
           <div className="p-8 text-center text-sm text-[#6b6b6b]">
-            {error ? "Unable to load packages." : "No packages found."}
+            {error ? t("Unable to load packages.") : t("No packages found.")}
           </div>
         ) : (
           <Table
@@ -267,7 +271,7 @@ export default function AdminPackages() {
                     {item.description || "—"}
                   </div>
                 </Td>
-                <Td>{item.durationMonths} months</Td>
+                <Td>{t("{n} months", { n: item.durationMonths })}</Td>
                 <Td>
                   <span className="font-mono text-white">
                     {formatSar.format(item.priceSar)}
@@ -284,7 +288,7 @@ export default function AdminPackages() {
                       item.isActive ? "text-[#64dc78]" : "text-[#6b6b6b]"
                     }
                   >
-                    {item.isActive ? "Active" : "Disabled"}
+                    {item.isActive ? t("Active") : t("Disabled")}
                   </span>
                 </Td>
                 <Td>
@@ -294,14 +298,14 @@ export default function AdminPackages() {
                       size="sm"
                       onClick={() => openEdit(item)}
                     >
-                      Edit
+                      {t("Edit")}
                     </Button>
                     <Button
                       variant={item.isActive ? "danger" : "ghost"}
                       size="sm"
                       onClick={() => toggleActive(item)}
                     >
-                      {item.isActive ? "Disable" : "Enable"}
+                      {item.isActive ? t("Disable") : t("Enable")}
                     </Button>
                   </div>
                 </Td>
@@ -313,7 +317,7 @@ export default function AdminPackages() {
 
       {!loading && !error && (page > 0 || hasMore) && (
         <div className="flex items-center justify-between">
-          <span className="text-xs text-[#6b6b6b]">Page {page + 1}</span>
+          <span className="text-xs text-[#6b6b6b]">{t("Page {n}", { n: page + 1 })}</span>
           <div className="flex gap-2">
             <Button
               variant="secondary"
@@ -321,7 +325,7 @@ export default function AdminPackages() {
               disabled={page === 0}
               onClick={() => setPage((current) => current - 1)}
             >
-              Previous
+              {t("Previous")}
             </Button>
             <Button
               variant="secondary"
@@ -329,7 +333,7 @@ export default function AdminPackages() {
               disabled={!hasMore}
               onClick={() => setPage((current) => current + 1)}
             >
-              Next
+              {t("Next")}
             </Button>
           </div>
         </div>
@@ -346,11 +350,11 @@ export default function AdminPackages() {
               role="alert"
               className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
             >
-              {error}
+              {t(error)}
             </div>
           )}
           <label className="block text-xs text-[#a0a0a0]">
-            Name *
+            {t("Name *")}
             <input
               value={form.name}
               onChange={(event) =>
@@ -360,7 +364,7 @@ export default function AdminPackages() {
             />
           </label>
           <label className="block text-xs text-[#a0a0a0]">
-            Description
+            {t("Description")}
             <textarea
               value={form.description}
               onChange={(event) =>
@@ -374,7 +378,7 @@ export default function AdminPackages() {
             />
           </label>
           <label className="block text-xs text-[#a0a0a0]">
-            Features (one per line)
+            {t("Features (one per line)")}
             <textarea
               value={form.features}
               onChange={(event) =>
@@ -396,7 +400,7 @@ export default function AdminPackages() {
               { label: "Minimum price (SAR) *", key: "minPriceSar" as const },
             ].map((field) => (
               <label key={field.key} className="block text-xs text-[#a0a0a0]">
-                {field.label}
+                {t(field.label)}
                 <input
                   type="number"
                   min="0"
@@ -415,14 +419,14 @@ export default function AdminPackages() {
           </div>
           <div className="flex gap-2 pt-2">
             <Button disabled={saving} onClick={savePackage}>
-              {saving ? "Saving..." : "Save Package"}
+              {saving ? t("Saving...") : t("Save Package")}
             </Button>
             <Button
               variant="ghost"
               disabled={saving}
               onClick={() => setModalOpen(false)}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
           </div>
         </div>

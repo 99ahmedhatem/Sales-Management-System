@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useI18n } from '../../i18n/I18nProvider';
 
 export type WebsiteStatus = 'working' | 'not_working' | undefined;
 
@@ -8,6 +9,7 @@ interface EditablePhoneCellProps {
 }
 
 export function EditablePhoneCell({ phone = '', onSave }: EditablePhoneCellProps) {
+  const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(phone);
   const [saving, setSaving] = useState(false);
@@ -47,10 +49,12 @@ export function EditablePhoneCell({ phone = '', onSave }: EditablePhoneCellProps
             }}
             className="w-32 bg-[#1a1a1a] border border-[#dfff03] rounded px-2 py-1 text-xs text-white focus:outline-none"
           />
-          {saving && <span className="text-[#6b6b6b] text-xs">Saving...</span>}
+          {saving && <span className="text-[#6b6b6b] text-xs">{t('Saving...')}</span>}
         </div>
       ) : (
         <span
+          dir="ltr"
+          title={t('Double-click to edit')}
           className={`font-mono text-xs cursor-text ${phone ? 'text-white' : 'text-[#4a4a4a]'}`}
           onDoubleClick={event => {
             event.stopPropagation();
@@ -71,8 +75,9 @@ interface WebsiteStatusToggleProps {
 }
 
 export function WebsiteStatusToggle({ status, onToggle }: WebsiteStatusToggleProps) {
+  const { t } = useI18n();
   const [saving, setSaving] = useState(false);
-  const label = status === 'working' ? 'Working' : status === 'not_working' ? 'Not Working' : 'Not Checked';
+  const label = t(status === 'working' ? 'Working' : status === 'not_working' ? 'Not Working' : 'Not Checked');
 
   const toggle = async () => {
     if (saving) return;
@@ -95,7 +100,7 @@ export function WebsiteStatusToggle({ status, onToggle }: WebsiteStatusTogglePro
       }}
       className={`px-2 py-1 rounded text-xs font-medium transition-colors disabled:opacity-60 ${status === 'working' ? 'bg-[#64dc78]/15 text-[#64dc78]' : status === 'not_working' ? 'bg-[#ff6464]/15 text-[#ff6464]' : 'bg-[#2a2a2a] text-[#6b6b6b]'}`}
     >
-      {saving ? 'Saving...' : label}
+      {saving ? t('Saving...') : label}
     </button>
   );
 }

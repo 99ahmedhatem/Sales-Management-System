@@ -41,6 +41,8 @@ import { exportRowsToExcel } from "../shared/exportExcel"
 
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 
+import { useI18n } from "../../i18n/I18nProvider"
+
 const ROLE_REGION_OPTIONS = [
   { value: "", label: "All Countries" },
   { value: "Saudi Arabia", label: "Saudi Arabia" },
@@ -104,6 +106,8 @@ interface PendingLeadMeetingRequest {
 }
 
 export default function TelesalesDashboard({ userId }: Props) {
+  const { t } = useI18n()
+
   const [users, setUsers] = useState<User[]>([])
 
   const me = users.find((u) => u.id === userId)
@@ -493,10 +497,6 @@ export default function TelesalesDashboard({ userId }: Props) {
     }
   }
 
-  if (loading) {
-    return <div className="p-6 text-[#a0a0a0] text-sm">Loading your queue…</div>
-  }
-
   useEffect(() => {
     if (!commentModal) return
 
@@ -825,7 +825,7 @@ export default function TelesalesDashboard({ userId }: Props) {
 
     if (error || !comment) {
       window.alert(
-        error || "Could not save the comment. Run supabase-setup.sql first.",
+        error || t("Could not save the comment. Run supabase-setup.sql first."),
       )
 
       return
@@ -857,17 +857,22 @@ export default function TelesalesDashboard({ userId }: Props) {
   const convRate =
     leads.length > 0 ? Math.round((totalConverted / leads.length) * 100) : 0
 
+  // Kept after every hook: returning before a hook breaks React's rules of hooks.
+  if (loading) {
+    return <div className="p-6 text-[#a0a0a0] text-sm">{t("Loading your queue…")}</div>
+  }
+
   return (
     <div className="p-6 space-y-6">
       {loadError && (
         <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3">
-          {loadError}
+          {t(loadError)}
         </div>
       )}
       <div>
-        <h1 className="text-white text-2xl font-bold">My Queue</h1>
+        <h1 className="text-white text-2xl font-bold">{t("My Queue")}</h1>
         <p className="text-[#6b6b6b] text-sm mt-0.5">
-          Welcome back, {me?.fullName || "Telesales"}
+          {t("Welcome back, {name}", { name: me?.fullName || t("Telesales") })}
         </p>
       </div>
 
@@ -886,7 +891,7 @@ export default function TelesalesDashboard({ userId }: Props) {
           label="Subscribed"
           value={totalConverted}
           accent
-          sub={`${convRate}% rate`}
+          sub={t("{n}% rate", { n: convRate })}
         />
         <KpiCard label="Free Trial" value={freeTrial} sub="Awaiting decision" />
         <KpiCard label="Calls Logged" value={todayCalls} sub="This session" />
@@ -897,7 +902,7 @@ export default function TelesalesDashboard({ userId }: Props) {
         .length > 0 && (
         <div className="bg-[#ffc832]/8 border border-[#ffc832]/20 rounded-lg px-4 py-3">
           <div className="text-[#ffc832] text-xs font-medium mb-1">
-            ⏰ Callback Reminders
+            ⏰ {t("Callback Reminders")}
           </div>
           <div className="flex flex-wrap gap-2">
             {leads
@@ -922,7 +927,7 @@ export default function TelesalesDashboard({ userId }: Props) {
         .length > 0 && (
         <div className="bg-[#64c8ff]/8 border border-[#64c8ff]/20 rounded-lg px-4 py-3">
           <div className="text-[#64c8ff] text-xs font-medium mb-1">
-            🔁 Free Trial Ending
+            🔁 {t("Free Trial Ending")}
           </div>
           <div className="flex flex-wrap gap-2">
             {leads
@@ -932,7 +937,7 @@ export default function TelesalesDashboard({ userId }: Props) {
                   key={l.id}
                   className="text-xs text-[#a0a0a0] bg-[#1e1e1e] rounded px-2 py-1"
                 >
-                  {l.name} — ends{" "}
+                  {l.name} — {t("ends")}{" "}
                   <span className="text-[#64c8ff] font-mono">
                     {l.freeTrialEndDate}
                   </span>
@@ -945,20 +950,20 @@ export default function TelesalesDashboard({ userId }: Props) {
       {/* Tabs */}
       <div className="flex gap-1 bg-[#1a1a1a] rounded-lg p-1 w-fit">
         {([
-          { key: "queue", label: `Active (${activeLeads.length})` },
+          { key: "queue", label: t("Active ({n})", { n: activeLeads.length }) },
 
-          { key: "done", label: `Completed (${doneLeads.length})` },
-        ] as const).map((t) => (
+          { key: "done", label: t("Completed ({n})", { n: doneLeads.length }) },
+        ] as const).map((tabItem) => (
           <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
+            key={tabItem.key}
+            onClick={() => setTab(tabItem.key)}
             className={`px-4 py-1.5 text-sm rounded-md transition-all ${
-              tab === t.key
+              tab === tabItem.key
                 ? "bg-[#dfff03] text-black font-medium"
                 : "text-[#6b6b6b] hover:text-white"
             }`}
           >
-            {t.label}
+            {tabItem.label}
           </button>
         ))}
       </div>
@@ -1020,7 +1025,7 @@ export default function TelesalesDashboard({ userId }: Props) {
           disabled={exporting}
           onClick={exportLeads}
         >
-          {exporting ? "Exporting..." : "Export Excel"}
+          {exporting ? t("Exporting...") : t("Export Excel")}
         </Button>
       </div>
 
@@ -1158,7 +1163,7 @@ export default function TelesalesDashboard({ userId }: Props) {
                         d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
                       />
                     </svg>
-                    Log
+                    {t("Log")}
                   </Button>
                   <Button
                     variant="ghost"
@@ -1167,12 +1172,12 @@ export default function TelesalesDashboard({ userId }: Props) {
                       setCommentModal(lead)
                     }}
                   >
-                    💬
+                    <span title={t("Comments")} aria-label={t("Comments")}>💬</span>
                   </Button>
                   {lead.needsMeeting ? (
                     <>
                       <span className="rounded bg-[#ffc832]/10 px-2 py-1 text-xs text-[#ffc832]">
-                        Needs Meeting
+                        {t("Needs Meeting")}
                       </span>
                       {meetingRequests.some((item) => item.leadId === lead.id) && (
                         <Button
@@ -1180,7 +1185,7 @@ export default function TelesalesDashboard({ userId }: Props) {
                           size="sm"
                           onClick={() => void cancelMeetingRequest(lead.id)}
                         >
-                          Cancel request
+                          {t("Cancel request")}
                         </Button>
                       )}
                     </>
@@ -1195,7 +1200,7 @@ export default function TelesalesDashboard({ userId }: Props) {
                           setPreferredMeetingDate("")
                         }}
                       >
-                        Needs Meeting
+                        {t("Needs Meeting")}
                       </Button>
                     )
                   )}
@@ -1205,7 +1210,7 @@ export default function TelesalesDashboard({ userId }: Props) {
                       size="sm"
                       onClick={() => setDealLeadId(lead.id)}
                     >
-                      Close deal myself
+                      {t("Close deal myself")}
                     </Button>
                   )}
                 </div>
@@ -1225,7 +1230,7 @@ export default function TelesalesDashboard({ userId }: Props) {
       <Modal
         open={!!detailModal}
         onClose={() => setDetailModal(null)}
-        title={`Client — ${detailModal?.name}`}
+        title={t("Client — {name}", { name: detailModal?.name ?? "" })}
       >
         {detailModal && (
           <div className="space-y-4">
@@ -1241,24 +1246,25 @@ export default function TelesalesDashboard({ userId }: Props) {
 
                 ["Quantity", detailModal.quantity ?? 0],
 
-                ["Region", detailModal.region || "—"],
+                ["Region", detailModal.region ? t(detailModal.region) : "—"],
 
                 ["Source", detailModal.source || "—"],
               ].map(([k, v]) => (
                 <div key={k} className="bg-[#1a1a1a] rounded p-3">
-                  <div className="text-[#6b6b6b] text-xs mb-1">{k}</div>
+                  <div className="text-[#6b6b6b] text-xs mb-1">{t(String(k))}</div>
                   <div className="text-white text-sm font-medium">
                     {k === "Website" ? <WebsiteLink url={String(v)} /> : v}
                   </div>
                 </div>
               ))}
               <div className="bg-[#1a1a1a] rounded p-3 col-span-2">
-                <div className="text-[#6b6b6b] text-xs mb-1">Phone Number</div>
+                <div className="text-[#6b6b6b] text-xs mb-1">{t("Phone Number")}</div>
                 <div className="flex gap-2">
                   <input
                     value={editingPhone || detailModal.phone}
                     onChange={(e) => setEditingPhone(e.target.value)}
-                    placeholder="Add phone number"
+                    placeholder={t("Add phone number")}
+                    dir="ltr"
                     className="flex-1 bg-[#0e0e0e] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white"
                   />
                   <Button
@@ -1266,18 +1272,18 @@ export default function TelesalesDashboard({ userId }: Props) {
                     size="sm"
                     onClick={() => savePhone(detailModal.id)}
                   >
-                    Save Phone
+                    {t("Save Phone")}
                   </Button>
                 </div>
               </div>
               <div className="bg-[#1a1a1a] rounded p-3">
-                <div className="text-[#6b6b6b] text-xs mb-1">Status</div>
+                <div className="text-[#6b6b6b] text-xs mb-1">{t("Status")}</div>
                 <StatusBadge status={detailModal.status} />
               </div>
             </div>
             {detailModal.notes && (
               <div className="bg-[#1a1a1a] rounded p-3">
-                <div className="text-[#6b6b6b] text-xs mb-1">Notes</div>
+                <div className="text-[#6b6b6b] text-xs mb-1">{t("Notes")}</div>
                 <div className="text-[#d0d0d0] text-sm">
                   {detailModal.notes}
                 </div>
@@ -1285,7 +1291,7 @@ export default function TelesalesDashboard({ userId }: Props) {
             )}
             <div>
               <div className="text-[#6b6b6b] text-xs mb-2">
-                Comments ({(detailModal.comments || []).length})
+                {t("Comments ({n})", { n: (detailModal.comments || []).length })}
               </div>
               <div className="space-y-2">
                 {(detailModal.comments || []).map((c) => (
@@ -1302,7 +1308,7 @@ export default function TelesalesDashboard({ userId }: Props) {
                   </div>
                 ))}
                 {(detailModal.comments || []).length === 0 && (
-                  <p className="text-[#4a4a4a] text-xs">No comments yet.</p>
+                  <p className="text-[#4a4a4a] text-xs">{t("No comments yet.")}</p>
                 )}
               </div>
             </div>
@@ -1311,7 +1317,7 @@ export default function TelesalesDashboard({ userId }: Props) {
               size="sm"
               onClick={() => setDetailModal(null)}
             >
-              Close
+              {t("Close")}
             </Button>
           </div>
         )}
@@ -1321,19 +1327,19 @@ export default function TelesalesDashboard({ userId }: Props) {
       <Modal
         open={!!callModal}
         onClose={() => setCallModal(null)}
-        title={`Log Call — ${callModal?.name}`}
+        title={t("Log Call — {name}", { name: callModal?.name ?? "" })}
       >
         {callModal && (
           <div className="space-y-4">
             <div className="bg-[#1a1a1a] rounded p-3 flex gap-4">
               <div>
-                <div className="text-[#6b6b6b] text-xs">Phone</div>
-                <div className="text-[#dfff03] font-mono text-sm">
+                <div className="text-[#6b6b6b] text-xs">{t("Phone")}</div>
+                <div className="text-[#dfff03] font-mono text-sm" dir="ltr">
                   {callModal.phone}
                 </div>
               </div>
               <div>
-                <div className="text-[#6b6b6b] text-xs">Code</div>
+                <div className="text-[#6b6b6b] text-xs">{t("Code")}</div>
                 <div className="text-white font-mono text-sm">
                   {callModal.clientCode}
                 </div>
@@ -1341,7 +1347,7 @@ export default function TelesalesDashboard({ userId }: Props) {
             </div>
             <div>
               <label className="block text-xs text-[#a0a0a0] mb-1">
-                Call Outcome *
+                {t("Call Outcome *")}
               </label>
               <select
                 value={callStatus}
@@ -1350,7 +1356,7 @@ export default function TelesalesDashboard({ userId }: Props) {
               >
                 {CALL_STATUS_OPTIONS.map((s) => (
                   <option key={s.value} value={s.value}>
-                    {s.label}
+                    {t(s.label)}
                   </option>
                 ))}
               </select>
@@ -1358,7 +1364,7 @@ export default function TelesalesDashboard({ userId }: Props) {
             {callStatus === "Call Back Later" && (
               <div>
                 <label className="block text-xs text-[#a0a0a0] mb-1">
-                  Callback Date
+                  {t("Callback Date")}
                 </label>
                 <input
                   type="date"
@@ -1371,7 +1377,7 @@ export default function TelesalesDashboard({ userId }: Props) {
             {callStatus === "Free Trial" && (
               <div>
                 <label className="block text-xs text-[#a0a0a0] mb-1">
-                  Free Trial End Date
+                  {t("Free Trial End Date")}
                 </label>
                 <input
                   type="date"
@@ -1382,21 +1388,21 @@ export default function TelesalesDashboard({ userId }: Props) {
               </div>
             )}
             <div>
-              <label className="block text-xs text-[#a0a0a0] mb-1">Notes</label>
+              <label className="block text-xs text-[#a0a0a0] mb-1">{t("Notes")}</label>
               <textarea
                 value={callNotes}
                 onChange={(e) => setCallNotes(e.target.value)}
                 rows={3}
-                placeholder="What was discussed, objections, next steps..."
+                placeholder={t("What was discussed, objections, next steps...")}
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60 resize-none"
               />
             </div>
             <div className="flex gap-2">
               <Button variant="primary" onClick={logCall}>
-                Save Call Log
+                {t("Save Call Log")}
               </Button>
               <Button variant="ghost" onClick={() => setCallModal(null)}>
-                Cancel
+                {t("Cancel")}
               </Button>
             </div>
           </div>
@@ -1407,7 +1413,7 @@ export default function TelesalesDashboard({ userId }: Props) {
       <Modal
         open={!!commentModal}
         onClose={() => setCommentModal(null)}
-        title={`Comments — ${commentModal?.name}`}
+        title={t("Comments — {name}", { name: commentModal?.name ?? "" })}
       >
         {commentModal && (
           <div className="space-y-4">
@@ -1426,18 +1432,18 @@ export default function TelesalesDashboard({ userId }: Props) {
                 </div>
               ))}
               {(commentModal.comments || []).length === 0 && (
-                <p className="text-[#4a4a4a] text-xs">No comments yet.</p>
+                <p className="text-[#4a4a4a] text-xs">{t("No comments yet.")}</p>
               )}
             </div>
             <div>
               <label className="block text-xs text-[#a0a0a0] mb-1">
-                Add Comment
+                {t("Add Comment")}
               </label>
               <textarea
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 rows={3}
-                placeholder="Add a note about this client..."
+                placeholder={t("Add a note about this client...")}
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60 resize-none"
               />
             </div>
@@ -1447,10 +1453,10 @@ export default function TelesalesDashboard({ userId }: Props) {
                 disabled={!newComment.trim()}
                 onClick={addComment}
               >
-                Post Comment
+                {t("Post Comment")}
               </Button>
               <Button variant="ghost" onClick={() => setCommentModal(null)}>
-                Close
+                {t("Close")}
               </Button>
             </div>
           </div>
@@ -1461,20 +1467,19 @@ export default function TelesalesDashboard({ userId }: Props) {
       <Modal
         open={!!forwardModal}
         onClose={() => setForwardModal(null)}
-        title={`Request Meeting — ${forwardModal?.name}`}
+        title={t("Request Meeting — {name}", { name: forwardModal?.name ?? "" })}
       >
         {forwardModal && (
           <div className="space-y-4">
             <p className="text-[#a0a0a0] text-sm">
-              Choose a sales agent. They will accept the request and set the
-              meeting time.
+              {t("Choose a sales agent. They will accept the request and set the meeting time.")}
             </p>
             <div className="space-y-2">
               {salesUsers.map((u) => (
                 <button
                   key={u.id}
                   onClick={() => setForwardTo(u.id)}
-                  className={`w-full text-left p-3 rounded-lg border transition-all ${
+                  className={`w-full text-start p-3 rounded-lg border transition-all ${
                     forwardTo === u.id
                       ? "border-[#dfff03] bg-[#dfff03]/5"
                       : "border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]"
@@ -1489,10 +1494,10 @@ export default function TelesalesDashboard({ userId }: Props) {
             </div>
             <div>
               <label className="block text-xs text-[#a0a0a0] mb-1">
-                Meeting Notes
+                {t("Meeting Notes")}
               </label>
               <label className="mt-3 block text-xs text-[#a0a0a0]">
-                Preferred date and time (optional)
+                {t("Preferred date and time (optional)")}
                 <input
                   type="datetime-local"
                   value={preferredMeetingDate}
@@ -1516,14 +1521,14 @@ export default function TelesalesDashboard({ userId }: Props) {
                 disabled={!forwardTo || requestingMeeting}
                 onClick={requestMeeting}
               >
-                {requestingMeeting ? "Sending..." : "Request Meeting"}
+                {requestingMeeting ? t("Sending...") : t("Request Meeting")}
               </Button>
               <Button
                 variant="ghost"
                 disabled={requestingMeeting}
                 onClick={() => setForwardModal(null)}
               >
-                Cancel
+                {t("Cancel")}
               </Button>
             </div>
           </div>

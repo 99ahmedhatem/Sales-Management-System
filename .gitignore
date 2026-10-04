@@ -20,3 +20,6 @@ scripts/*.checkpoint.json
 # beside it.
 /.plugins/
 /.opencode-skills/
+
+# Stale nested clone of this repo
+/Sales-Management-System/

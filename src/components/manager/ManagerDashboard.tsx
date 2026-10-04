@@ -49,6 +49,7 @@ export default function ManagerDashboard({ userId }: Props) {
   const converted = myLeads.filter(l => ['Subscribed', 'Converted'].includes(l.status)).length;
 
   const telesalesTeam = myTeam.filter(u => u.role === 'telesales');
+  const assignableTelesales = telesalesTeam.filter(u => u.status === 'active');
   const salesTeam = myTeam.filter(u => u.role === 'sales');
 
   // Assignment
@@ -171,7 +172,7 @@ export default function ManagerDashboard({ userId }: Props) {
   });
 
   const handleAssign = async () => {
-    if (!assignTo || assignLeads.length === 0 || assigning) return;
+    if (!assignTo || assignLeads.length === 0 || assigning || !assignableTelesales.some(u => u.id === assignTo)) return;
     setAssigning(true);
     setErrorMsg('');
     const { error } = await supabase
@@ -523,7 +524,7 @@ export default function ManagerDashboard({ userId }: Props) {
           <div>
             <label className="block text-xs text-[#a0a0a0] mb-2">{t('Assign to:')}</label>
             <div className="space-y-2">
-              {telesalesTeam.map(u => {
+              {assignableTelesales.map(u => {
                 const count = myLeads.filter(l => l.assignedTo === u.id).length;
                 return (
                   <button

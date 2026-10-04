@@ -24,13 +24,14 @@ begin
   select count(distinct a.lead_id) into n
   from public.activity_logs a
   where a.actor_id = any(p_user_ids)
-    and a.activity_type = any(p_activity_types);
+    and a.activity_type = any(coalesce(p_activity_types, array['call', 'forward']));
   return n;
 end $$;
 
 revoke execute on function public.get_worked_clients_count(uuid[], text[]) from public, anon;
 grant execute on function public.get_worked_clients_count(uuid[], text[]) to authenticated;
 
-create index if not exists activity_logs_actor_type_idx on public.activity_logs (actor_id, activity_type);
+-- lead_id جوه الـ index عشان count(distinct lead_id) يتحسب من الـ index من غير ما يقرا الجدول.
+create index if not exists activity_logs_actor_type_lead_idx on public.activity_logs (actor_id, activity_type, lead_id);
 
 notify pgrst, 'reload schema';

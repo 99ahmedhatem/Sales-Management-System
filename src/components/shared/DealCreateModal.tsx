@@ -7,6 +7,7 @@ import {
 import { supabase } from "../../supabaseClient"
 import { Button, Modal } from "../ui"
 import { useI18n } from "../../i18n/I18nProvider"
+import ClientCodeLookup, { ClientLookupResult } from "./ClientCodeLookup"
 
 interface Props {
   open: boolean
@@ -67,6 +68,16 @@ export default function DealCreateModal({
   const [retryingReview, setRetryingReview] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  // Client picked by code (ClientCodeLookup); bumping lookupKey clears the code field.
+  const [codeClient, setCodeClient] = useState<ClientLookupResult | null>(null)
+  const [lookupKey, setLookupKey] = useState(0)
+  const priceIsValid = priceSar.trim() !== "" && Number.isFinite(Number(priceSar)) && Number(priceSar) >= 0
+
+  function changeClient() {
+    setCodeClient(null)
+    setLeadId("")
+    setLookupKey((key) => key + 1)
+  }
 
   const selectedPackage = useMemo(
     () => packages.find((item) => item.id === packageId),
@@ -285,6 +296,8 @@ export default function DealCreateModal({
     setNotes("")
     setRecording(null)
     setContractFile(null)
+    setCodeClient(null)
+    setLookupKey((key) => key + 1)
     onClose()
   }
 
@@ -350,6 +363,35 @@ export default function DealCreateModal({
         {!createdDealId && (
           <>
             {!initialLeadId && (
+              <ClientCodeLookup
+                key={lookupKey}
+                onFound={(client) => {
+                  setCodeClient(client)
+                  setLeadId(client.lead_id)
+                  setLeads((prev) =>
+                    prev.some((lead) => lead.id === client.lead_id)
+                      ? prev
+                      : [{ id: client.lead_id, name: client.name ?? "", phone: client.phone }, ...prev],
+                  )
+                }}
+                onClear={() => {
+                  setCodeClient(null)
+                  if (!initialLeadId) setLeadId("")
+                }}
+                disabled={!!initialLeadId}
+              />
+            )}
+            {codeClient ? (
+              <div className="flex items-center justify-between gap-3 rounded border border-[#2a2a2a] bg-[#1a1a1a] p-3">
+                <div className="min-w-0 text-xs text-[#a0a0a0]">
+                  {t("Lead *")}
+                  <div className="truncate text-sm font-medium text-white">{codeClient.name || "—"}</div>
+                </div>
+                <Button variant="ghost" size="sm" onClick={changeClient}>{t("Change client")}</Button>
+              </div>
+            ) : (
+            <>
+            {!initialLeadId && (
               <label className="block text-xs text-[#a0a0a0]">
                 {t("Find lead")}
                 <input
@@ -381,6 +423,8 @@ export default function DealCreateModal({
                 </span>
               )}
             </label>
+            </>
+            )}
             <label className="block text-xs text-[#a0a0a0]">
               {t("Package *")}
               <select
@@ -454,7 +498,7 @@ export default function DealCreateModal({
         )}
         <div className="flex gap-2">
           {!createdDealId && (
-            <Button disabled={saving || loading} onClick={() => void createDeal()}>
+            <Button disabled={saving || loading || !leadId || !packageId || !priceIsValid} onClick={() => void createDeal()}>
               {saving ? t("Creating deal...") : t("Create Deal")}
             </Button>
           )}

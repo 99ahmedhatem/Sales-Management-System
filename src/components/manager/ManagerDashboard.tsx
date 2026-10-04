@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
-import { MEETINGS, Lead, LeadStatus, User } from '../../data/mockData';
+import { Lead, LeadStatus, User } from '../../data/mockData';
+import { loadMeetingsPage, Meeting } from '../../data/meetings';
+import { dateLocale } from '../../i18n/locale';
 import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr, WebsiteLink } from '../ui';
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
 import { exportRowsToExcel } from '../shared/exportExcel';
@@ -23,7 +25,7 @@ interface Props {
 }
 
 export default function ManagerDashboard({ userId }: Props) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [users, setUsers] = useState<User[]>([]);
   const [allLeads, setAllLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,11 +40,13 @@ export default function ManagerDashboard({ userId }: Props) {
   // My leads: leads assigned to any of my team members OR directly to me
   const myLeads = allLeads.filter(l => l.assignedTo && (myTeamIds.includes(l.assignedTo) || l.assignedTo === userId));
 
-  // Meetings for my team
-  const myMeetings = MEETINGS.filter(m => myTeamIds.includes(m.assignedSalesId) || myTeamIds.includes(m.bookedById));
+  // Team meetings come from the real meetings table (exact counts per sales agent).
+  const [salesMeetingCounts, setSalesMeetingCounts] = useState<Record<string, { total: number; won: number }>>({});
+  const [upcomingMeetings, setUpcomingMeetings] = useState<Meeting[]>([]);
+  const teamMeetingTotal = Object.values(salesMeetingCounts).reduce((sum, row) => sum + row.total, 0);
+  const won = Object.values(salesMeetingCounts).reduce((sum, row) => sum + row.won, 0);
 
   const converted = myLeads.filter(l => ['Subscribed', 'Converted'].includes(l.status)).length;
-  const won = myMeetings.filter(m => m.outcome === 'Deal Closed – Won').length;
 
   const telesalesTeam = myTeam.filter(u => u.role === 'telesales');
   const salesTeam = myTeam.filter(u => u.role === 'sales');
@@ -70,6 +74,8 @@ export default function ManagerDashboard({ userId }: Props) {
     const [workedClientCount, setWorkedClientCount] = useState(0);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const [savingPhone, setSavingPhone] = useState(false);
   const pageSize = 100;
   useEffect(() => {
     async function loadManagerData() {
@@ -119,23 +125,39 @@ export default function ManagerDashboard({ userId }: Props) {
         })));
         setTotalTeamLeads(leadsRes.count ?? 0);
         const teamIds = mappedUsers.filter(user => user.managerId === userId).map(user => user.id);
-        const [receivedRes, distributedRes, activityRes] = await Promise.all([
+        const salesIds = mappedUsers.filter(user => user.managerId === userId && user.role === 'sales').map(user => user.id);
+        const meetingCount = (salesId: string, outcome?: string) => {
+          let query = supabase.from('meetings').select('id', { count: 'exact', head: true }).eq('assigned_sales_id', salesId);
+          if (outcome) query = query.eq('outcome', outcome);
+          return query;
+        };
+        const [receivedRes, distributedRes, workedRes, upcomingRes, ...salesCountRes] = await Promise.all([
           supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', userId),
           teamIds.length ? supabase.from('leads').select('id', { count: 'exact', head: true }).in('assigned_to', teamIds) : Promise.resolve({ count: 0, error: null }),
-          teamIds.length ? supabase.from('activity_logs').select('lead_id').in('actor_id', teamIds).in('activity_type', ['call', 'forward']) : Promise.resolve({ data: [], error: null }),
+          teamIds.length ? supabase.rpc('get_worked_clients_count', { p_user_ids: teamIds }) : Promise.resolve({ data: 0, error: null }),
+          salesIds.length
+            ? loadMeetingsPage({ page: 0, pageSize: 10, assignedSalesIds: salesIds, outcome: 'Scheduled', proposedAfter: new Date().toISOString() })
+            : Promise.resolve({ data: [] as Meeting[], count: 0, error: null }),
+          ...salesIds.flatMap(id => [meetingCount(id), meetingCount(id, 'Deal Closed – Won')]),
         ]);
+        const countError = receivedRes.error?.message || distributedRes.error?.message || workedRes.error?.message
+          || upcomingRes.error || salesCountRes.find(res => res.error)?.error?.message;
+        if (countError) setErrorMsg(countError);
         setReceivedCount(receivedRes.count ?? 0);
         setDistributedCount(distributedRes.count ?? 0);
-        const workedLeadIds = new Set((activityRes.data ?? []).map(row => row.lead_id));
-        MEETINGS.filter(meeting => teamIds.includes(meeting.assignedSalesId) || teamIds.includes(meeting.bookedById)).forEach(meeting => workedLeadIds.add(meeting.leadId));
-        setWorkedClientCount(workedLeadIds.size);
+        setWorkedClientCount(Number(workedRes.data ?? 0));
+        setUpcomingMeetings(upcomingRes.data ?? []);
+        setSalesMeetingCounts(Object.fromEntries(salesIds.map((id, index) => [id, {
+          total: salesCountRes[index * 2]?.count ?? 0,
+          won: salesCountRes[index * 2 + 1]?.count ?? 0,
+        }])));
       }
       setLoading(false);
     }
     loadManagerData();
   }, [leadPage, refreshVersion]);
 
-  useRealtimeRefresh(['leads', 'users'], () => setRefreshVersion(version => version + 1));
+  useRealtimeRefresh(['leads', 'users', 'meetings'], () => setRefreshVersion(version => version + 1));
 
   const agentStats = telesalesTeam.map(agent => {
     const leads = myLeads.filter(l => l.assignedTo === agent.id);
@@ -144,19 +166,21 @@ export default function ManagerDashboard({ userId }: Props) {
   });
 
   const salesStats = salesTeam.map(agent => {
-    const meetings = myMeetings.filter(m => m.assignedSalesId === agent.id);
-    const dealWon = meetings.filter(m => m.outcome === 'Deal Closed – Won').length;
-    return { agent, total: meetings.length, won: dealWon, rate: meetings.length ? Math.round(dealWon / meetings.length * 100) : 0 };
+    const { total, won: dealWon } = salesMeetingCounts[agent.id] ?? { total: 0, won: 0 };
+    return { agent, total, won: dealWon, rate: total ? Math.round(dealWon / total * 100) : 0 };
   });
 
   const handleAssign = async () => {
-    if (!assignTo || assignLeads.length === 0) return;
+    if (!assignTo || assignLeads.length === 0 || assigning) return;
+    setAssigning(true);
+    setErrorMsg('');
     const { error } = await supabase
       .from('leads')
       .update({ assigned_to: assignTo, status: 'Assigned' as LeadStatus, updated_at: new Date().toISOString() })
       .in('id', assignLeads);
     if (error) {
       setErrorMsg(error.message);
+      setAssigning(false);
       return;
     }
     await Promise.all(assignLeads.map(leadId => recordActivity({
@@ -174,6 +198,8 @@ export default function ManagerDashboard({ userId }: Props) {
     setAssignLeads([]);
     setAssignTo('');
     setSelectedPoolLeads([]);
+    setAssigning(false);
+    setRefreshVersion(version => version + 1);
   };
 
   const saveCustomerNumber = async (leadId: string) => {
@@ -191,10 +217,15 @@ export default function ManagerDashboard({ userId }: Props) {
   };
 
   const savePhone = async (leadId: string) => {
+    if (savingPhone) return;
     const phone = editingPhone.trim();
+    setSavingPhone(true);
+    setErrorMsg('');
     const { error } = await supabase.from('leads').update({ phone: phone || null, phone_source: phone ? 'manual' : null, updated_at: new Date().toISOString() }).eq('id', leadId);
+    setSavingPhone(false);
     if (error) { setErrorMsg(error.message); return; }
     setAllLeads(prev => prev.map(lead => lead.id === leadId ? { ...lead, phone } : lead));
+    setRefreshVersion(version => version + 1);
   };
 
   const saveInlinePhone = async (lead: Lead, value: string) => {
@@ -310,7 +341,7 @@ export default function ManagerDashboard({ userId }: Props) {
         <KpiCard label="Received from Admin" value={receivedCount} sub="Waiting in your pool" />
         <KpiCard label="Distributed" value={distributedCount} sub="Assigned to your team" />
         <KpiCard label="Converted" value={converted} accent sub={t('{n}% rate', { n: myLeads.length > 0 ? Math.round(converted / myLeads.length * 100) : 0 })} />
-        <KpiCard label="Deals Won" value={won} sub={t('{n} total meetings', { n: myMeetings.length })} />
+        <KpiCard label="Deals Won" value={won} sub={t('{n} total meetings', { n: teamMeetingTotal })} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -444,7 +475,7 @@ export default function ManagerDashboard({ userId }: Props) {
               <div className="text-[#6b6b6b] text-xs mb-1">{t('Phone Number')}</div>
               <div className="flex gap-2">
                 <input value={editingPhone || detailLead.phone} onChange={e => setEditingPhone(e.target.value)} placeholder={t('Add phone number')} dir="ltr" className="flex-1 bg-[#0e0e0e] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white" />
-                <Button variant="primary" size="sm" onClick={() => savePhone(detailLead.id)}>{t('Save Phone')}</Button>
+                <Button variant="primary" size="sm" disabled={savingPhone} onClick={() => savePhone(detailLead.id)}>{savingPhone ? t('Saving...') : t('Save Phone')}</Button>
               </div>
             </div>
             <div className="bg-[#1a1a1a] rounded p-3">
@@ -463,7 +494,7 @@ export default function ManagerDashboard({ userId }: Props) {
       <Card className="p-5">
         <h3 className="text-white font-semibold mb-4">{t('Team Upcoming Meetings')}</h3>
         <div className="space-y-2">
-          {myMeetings.filter(m => m.outcome === 'Scheduled').map(m => {
+          {upcomingMeetings.map(m => {
             const salesUser = users.find(u => u.id === m.assignedSalesId);
             return (
               <div key={m.id} className="flex items-center gap-4 p-3 bg-[#1a1a1a] rounded-lg">
@@ -472,14 +503,14 @@ export default function ManagerDashboard({ userId }: Props) {
                   <div className="text-[#6b6b6b] text-xs" dir="ltr">{m.leadPhone}</div>
                 </div>
                 <div className="text-end">
-                  <div className="text-[#dfff03] text-xs font-mono">{m.proposedDate}</div>
-                  <div className="text-[#6b6b6b] text-xs">{salesUser?.fullName}</div>
+                  <div className="text-[#dfff03] text-xs font-mono">{new Date(m.proposedDate).toLocaleString(dateLocale(lang))}</div>
+                  <div className="text-[#6b6b6b] text-xs">{salesUser?.fullName ?? m.assignedSalesName}</div>
                 </div>
                 <StatusBadge status={m.outcome} />
               </div>
             );
           })}
-          {myMeetings.filter(m => m.outcome === 'Scheduled').length === 0 && (
+          {upcomingMeetings.length === 0 && (
             <p className="text-[#4a4a4a] text-sm py-4">{t('No upcoming meetings.')}</p>
           )}
         </div>
@@ -511,7 +542,7 @@ export default function ManagerDashboard({ userId }: Props) {
             {assignLeads.length > 0 ? t('{n} lead(s) selected', { n: assignLeads.length }) : t('Select leads from your pool first')}
           </div>
           <div className="flex gap-2">
-            <Button variant="primary" disabled={!assignTo} onClick={handleAssign}>{t('Assign Leads')}</Button>
+            <Button variant="primary" disabled={!assignTo || assigning} onClick={handleAssign}>{assigning ? t('Saving...') : t('Assign Leads')}</Button>
             <Button variant="ghost" onClick={() => setAssignModal(false)}>{t('Cancel')}</Button>
           </div>
         </div>

@@ -208,6 +208,17 @@ export default function AdminLeads() {
   const [importRows, setImportRows] = useState<ImportLeadRow[]>([]);
   const [importError, setImportError] = useState('');
   const [importing, setImporting] = useState(false);
+  // Which save is in flight, so its button is disabled and double clicks are ignored.
+  const [busy, setBusy] = useState<'' | 'assign' | 'delete' | 'phone' | 'addLead' | 'comment'>('');
+  const runBusy = async (key: Exclude<typeof busy, ''>, action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(key);
+    try {
+      await action();
+    } finally {
+      setBusy('');
+    }
+  };
   const [importType, setImportType] = useState<'salla' | 'software'>('software');
   const [importDataQuality, setImportDataQuality] = useState<LeadDataQuality>('normal');
   const [importProgress, setImportProgress] = useState(0);
@@ -299,7 +310,9 @@ export default function AdminLeads() {
     if (!detailLead) return;
     setPhoneDraft(detailLead.phone ?? '');
     setPhoneMsg('');
-    loadClientComments(detailLead.id).then(({ data }) => {
+    setCommentError('');
+    loadClientComments(detailLead.id).then(({ data, error }) => {
+      if (error) setCommentError(error);
       setDetailLead(prev => (prev ? { ...prev, comments: data } : null));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -398,6 +411,7 @@ export default function AdminLeads() {
     setDetailLead(prev => (prev ? { ...prev, phone } : null));
     setLeads(prev => prev.map(l => (l.id === detailLead.id ? { ...l, phone } : l)));
     setPhoneMsg(t('Saved'));
+    await loadData(page, true);
   };
 
   const saveInlinePhone = async (lead: Lead, value: string) => {
@@ -678,7 +692,7 @@ export default function AdminLeads() {
         {selected.length > 0 && (
           <div className="flex gap-2">
             <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>{t('Assign {n} Selected', { n: selected.length })}</Button>
-            <Button variant="danger" size="sm" onClick={handleDeleteSelected}>{t('Delete {n}', { n: selected.length })}</Button>
+            <Button variant="danger" size="sm" disabled={busy === 'delete'} onClick={() => runBusy('delete', handleDeleteSelected)}>{t('Delete {n}', { n: selected.length })}</Button>
           </div>
         )}
       </div>
@@ -802,8 +816,8 @@ export default function AdminLeads() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={cleanPhone(phoneDraft) === (detailLead.phone ?? '')}
-                  onClick={handleSavePhone}
+                  disabled={busy === 'phone' || cleanPhone(phoneDraft) === (detailLead.phone ?? '')}
+                  onClick={() => runBusy('phone', handleSavePhone)}
                 >
                   {t('Save')}
                 </Button>
@@ -842,7 +856,7 @@ export default function AdminLeads() {
                 className="w-full mt-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60 resize-none"
               />
               {commentError && <p className="text-[#ff6464] text-xs mt-1">{commentError}</p>}
-              <Button variant="secondary" size="sm" className="mt-2" disabled={!commentText.trim()} onClick={handleAddComment}>
+              <Button variant="secondary" size="sm" className="mt-2" disabled={!commentText.trim() || busy === 'comment'} onClick={() => runBusy('comment', handleAddComment)}>
                 {t('Post Comment')}
               </Button>
             </div>
@@ -875,7 +889,7 @@ export default function AdminLeads() {
             })}
           </div>
           <div className="flex gap-2">
-            <Button variant="primary" disabled={!assignTo} onClick={handleAssign}>{t('Assign Leads')}</Button>
+            <Button variant="primary" disabled={!assignTo || busy === 'assign'} onClick={() => runBusy('assign', handleAssign)}>{busy === 'assign' ? t('Saving...') : t('Assign Leads')}</Button>
             <Button variant="ghost" onClick={() => setAssignModal(false)}>{t('Cancel')}</Button>
           </div>
         </div>
@@ -954,7 +968,7 @@ export default function AdminLeads() {
             </select>
           </div>
           <div className="flex gap-2 pt-2">
-            <Button variant="primary" disabled={!newLead.name} onClick={handleAddLead}>{t('Add Lead')}</Button>
+            <Button variant="primary" disabled={!newLead.name || busy === 'addLead'} onClick={() => runBusy('addLead', handleAddLead)}>{busy === 'addLead' ? t('Saving...') : t('Add Lead')}</Button>
             <Button variant="ghost" onClick={() => setAddModal(false)}>{t('Cancel')}</Button>
           </div>
         </div>

@@ -12,6 +12,8 @@ import CompleteAdminSetup from "./components/CompleteAdminSetup"
 
 import AppShell from "./components/AppShell"
 
+import ErrorBoundary from "./components/shared/ErrorBoundary"
+
 const AdminDashboard = lazy(() => import("./components/admin/AdminDashboard"))
 
 const InsightsDashboard = lazy(() => import("./components/shared/InsightsDashboard"))
@@ -25,6 +27,8 @@ const AdminUsers = lazy(() => import("./components/admin/AdminUsers"))
 const AdminMeetings = lazy(() => import("./components/admin/AdminMeetings"))
 
 const AdminReports = lazy(() => import("./components/admin/AdminReports"))
+
+const AdminAuditLog = lazy(() => import("./components/admin/AdminAuditLog"))
 
 const ManagerDashboard = lazy(
   () => import("./components/manager/ManagerDashboard"),
@@ -153,6 +157,7 @@ export default function App() {
       onLogout={() => supabase.auth.signOut()}
     >
       {(page) => (
+        <ErrorBoundary resetKey={page}>
         <Suspense
           fallback={
             <div className="p-6 text-sm text-[#6b6b6b]">Loading...</div>
@@ -170,6 +175,7 @@ export default function App() {
             <AdminMeetings userId={session.userId} />
           )}
           {session.role === "admin" && page === "reports" && <AdminReports />}
+          {session.role === "admin" && page === "audit" && <AdminAuditLog />}
           {session.role === "admin" && page === "contracts" && (
             <ContractsModule userId={session.userId} role="admin" />
           )}
@@ -197,6 +203,7 @@ export default function App() {
           )}
           {session.role === "sales" && page === "packages" && <PackagesList />}
         </Suspense>
+        </ErrorBoundary>
       )}
     </AppShell>
   )

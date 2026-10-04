@@ -3,7 +3,6 @@ import { useEffect, useState } from "react"
 import { supabase } from "../../supabaseClient"
 
 import {
-  CallLog,
   ClientComment,
   Lead,
   LeadStatus,
@@ -114,7 +113,18 @@ export default function TelesalesDashboard({ userId }: Props) {
 
   const [leads, setLeads] = useState<TelesalesLead[]>([])
 
-  const [callLogs, setCallLogs] = useState<CallLog[]>([])
+  // Exact counts from the server; the full call history is never loaded into the browser.
+  const [callCount, setCallCount] = useState(0)
+
+  const [workedClientCount, setWorkedClientCount] = useState(0)
+
+  const [savingCall, setSavingCall] = useState(false)
+
+  const [postingComment, setPostingComment] = useState(false)
+
+  const [savingPhone, setSavingPhone] = useState(false)
+
+  const [cancellingLeadId, setCancellingLeadId] = useState("")
 
   const [loading, setLoading] = useState(true)
 
@@ -136,7 +146,7 @@ export default function TelesalesDashboard({ userId }: Props) {
 
       setLoadError("")
 
-      const [userRes, leadRes, activityRes] = await Promise.all([
+      const [userRes, leadRes, callCountRes, workedRes] = await Promise.all([
         supabase
           .from("users")
           .select(
@@ -156,17 +166,22 @@ export default function TelesalesDashboard({ userId }: Props) {
 
         supabase
           .from("activity_logs")
-          .select("id, lead_id, actor_id, outcome, notes, created_at")
+          .select("id", { count: "exact", head: true })
           .eq("actor_id", userId)
-          .eq("activity_type", "call")
-          .order("created_at", { ascending: false }),
+          .eq("activity_type", "call"),
+
+        supabase.rpc("get_worked_clients_count", {
+          p_user_ids: [userId],
+          p_activity_types: ["call"],
+        }),
       ])
 
-      if (userRes.error || leadRes.error || activityRes.error) {
+      if (userRes.error || leadRes.error || callCountRes.error || workedRes.error) {
         setLoadError(
           userRes.error?.message ||
             leadRes.error?.message ||
-            activityRes.error?.message ||
+            callCountRes.error?.message ||
+            workedRes.error?.message ||
             "Could not load your queue.",
         )
       } else {
@@ -242,21 +257,9 @@ export default function TelesalesDashboard({ userId }: Props) {
 
         setTotalLeads(leadRes.count ?? 0)
 
-        setCallLogs(
-          (activityRes.data ?? []).map((row) => ({
-            id: row.id,
+        setCallCount(callCountRes.count ?? 0)
 
-            leadId: row.lead_id,
-
-            agentId: row.actor_id,
-
-            outcome: row.outcome as LeadStatus,
-
-            notes: row.notes ?? "",
-
-            calledAt: row.created_at,
-          })),
-        )
+        setWorkedClientCount(Number(workedRes.data ?? 0))
 
         const leadIds = (leadRes.data ?? []).map((row) => row.id)
 
@@ -403,7 +406,13 @@ export default function TelesalesDashboard({ userId }: Props) {
   }
 
   const savePhone = async (leadId: string) => {
+    if (savingPhone) return
+
     const phone = editingPhone.trim()
+
+    setSavingPhone(true)
+
+    setLoadError("")
 
     const { error } = await supabase
       .from("leads")
@@ -414,6 +423,8 @@ export default function TelesalesDashboard({ userId }: Props) {
       })
       .eq("id", leadId)
 
+    setSavingPhone(false)
+
     if (error) {
       setLoadError(error.message)
       return
@@ -422,6 +433,8 @@ export default function TelesalesDashboard({ userId }: Props) {
     setLeads((prev) =>
       prev.map((lead) => (lead.id === leadId ? { ...lead, phone } : lead)),
     )
+
+    setRefreshVersion((version) => version + 1)
   }
 
   const saveInlinePhone = async (lead: Lead, value: string) => {
@@ -501,7 +514,10 @@ export default function TelesalesDashboard({ userId }: Props) {
     if (!commentModal) return
 
     loadClientComments(commentModal.id).then(({ data, error }) => {
-      if (error) return
+      if (error) {
+        setLoadError(error)
+        return
+      }
 
       setLeads((prev) =>
         prev.map((lead) =>
@@ -636,9 +652,13 @@ export default function TelesalesDashboard({ userId }: Props) {
   }
 
   const logCall = async () => {
-    if (!callModal) return
+    if (!callModal || savingCall) return
 
     const lead = callModal
+
+    setSavingCall(true)
+
+    setLoadError("")
 
     const { error } = await supabase
       .from("leads")
@@ -660,6 +680,8 @@ export default function TelesalesDashboard({ userId }: Props) {
     if (error) {
       setLoadError(error.message)
 
+      setSavingCall(false)
+
       return
     }
 
@@ -679,27 +701,13 @@ export default function TelesalesDashboard({ userId }: Props) {
       notes: callNotes,
     })
 
+    setSavingCall(false)
+
     if (activityError) {
       setLoadError(activityError)
 
       return
     }
-
-    const log: CallLog = {
-      id: `c${Date.now()}`,
-
-      leadId: lead.id,
-
-      agentId: userId,
-
-      outcome: callStatus,
-
-      notes: callNotes,
-
-      calledAt: new Date().toLocaleString(),
-    }
-
-    setCallLogs((prev) => [...prev, log])
 
     updateLead(lead.id, {
       status: callStatus,
@@ -720,6 +728,9 @@ export default function TelesalesDashboard({ userId }: Props) {
     setCallbackDate("")
 
     setFreeTrialEnd("")
+
+    // Reload the queue and the call counts from the server.
+    setRefreshVersion((version) => version + 1)
   }
 
   const requestMeeting = async () => {
@@ -789,11 +800,13 @@ export default function TelesalesDashboard({ userId }: Props) {
 
   const cancelMeetingRequest = async (leadId: string) => {
     const request = meetingRequests.find((item) => item.leadId === leadId)
-    if (!request) return
+    if (!request || cancellingLeadId) return
     setLoadError("")
+    setCancellingLeadId(leadId)
     const { error } = await supabase.rpc("cancel_meeting_request", {
       target_request_id: request.id,
     })
+    setCancellingLeadId("")
     if (error) {
       setLoadError(error.message)
       return
@@ -806,10 +819,13 @@ export default function TelesalesDashboard({ userId }: Props) {
         lead.id === leadId ? { ...lead, needsMeeting: false } : lead,
       ),
     )
+    setRefreshVersion((version) => version + 1)
   }
 
   const addComment = async () => {
-    if (!commentModal || !newComment.trim()) return
+    if (!commentModal || !newComment.trim() || postingComment) return
+
+    setPostingComment(true)
 
     const { data: comment, error } = await addClientComment({
       leadId: commentModal.id,
@@ -823,8 +839,10 @@ export default function TelesalesDashboard({ userId }: Props) {
       text: newComment.trim(),
     })
 
+    setPostingComment(false)
+
     if (error || !comment) {
-      window.alert(
+      setLoadError(
         error || t("Could not save the comment. Run supabase-setup.sql first."),
       )
 
@@ -843,10 +861,6 @@ export default function TelesalesDashboard({ userId }: Props) {
 
     setNewComment("")
   }
-
-  const todayCalls = callLogs.length
-
-  const workedClientCount = new Set(callLogs.map((log) => log.leadId)).size
 
   const totalConverted = leads.filter((l) =>
     ["Subscribed", "Converted"].includes(l.status),
@@ -894,7 +908,7 @@ export default function TelesalesDashboard({ userId }: Props) {
           sub={t("{n}% rate", { n: convRate })}
         />
         <KpiCard label="Free Trial" value={freeTrial} sub="Awaiting decision" />
-        <KpiCard label="Calls Logged" value={todayCalls} sub="This session" />
+        <KpiCard label="Calls Logged" value={callCount} sub="All time" />
       </div>
 
       {/* Callback reminders */}
@@ -1183,6 +1197,7 @@ export default function TelesalesDashboard({ userId }: Props) {
                         <Button
                           variant="danger"
                           size="sm"
+                          disabled={cancellingLeadId === lead.id}
                           onClick={() => void cancelMeetingRequest(lead.id)}
                         >
                           {t("Cancel request")}
@@ -1270,9 +1285,10 @@ export default function TelesalesDashboard({ userId }: Props) {
                   <Button
                     variant="primary"
                     size="sm"
+                    disabled={savingPhone}
                     onClick={() => savePhone(detailModal.id)}
                   >
-                    {t("Save Phone")}
+                    {savingPhone ? t("Saving...") : t("Save Phone")}
                   </Button>
                 </div>
               </div>
@@ -1398,8 +1414,8 @@ export default function TelesalesDashboard({ userId }: Props) {
               />
             </div>
             <div className="flex gap-2">
-              <Button variant="primary" onClick={logCall}>
-                {t("Save Call Log")}
+              <Button variant="primary" disabled={savingCall} onClick={logCall}>
+                {savingCall ? t("Saving...") : t("Save Call Log")}
               </Button>
               <Button variant="ghost" onClick={() => setCallModal(null)}>
                 {t("Cancel")}
@@ -1450,10 +1466,10 @@ export default function TelesalesDashboard({ userId }: Props) {
             <div className="flex gap-2">
               <Button
                 variant="primary"
-                disabled={!newComment.trim()}
+                disabled={!newComment.trim() || postingComment}
                 onClick={addComment}
               >
-                {t("Post Comment")}
+                {postingComment ? t("Saving...") : t("Post Comment")}
               </Button>
               <Button variant="ghost" onClick={() => setCommentModal(null)}>
                 {t("Close")}

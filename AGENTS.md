@@ -8,7 +8,7 @@ Stack: React 19 + Vite + Tailwind v4 + TypeScript · Supabase (Postgres, Auth, R
 
 Before writing any query or RPC call, open `supabase/migrations/*.sql` and use the **exact** table, column and function names there. **Never invent a column or RPC name.** If something you need doesn't exist, add a new numbered migration file (`009_...sql`) and tell the user to run it. Past bug: the UI queried `deals.sales_user_id` / `meeting_requests.assigned_sales_id` while the live DB had different names, so every screen failed.
 
-Migration order: `supabase-setup.sql` (base) → `000b` → `001_packages` → `004_meetings` → `005_meeting_requests` → `006_deals` → `007_contract_reviews` → `008_money_commissions_payroll` → `009_management_tools` → `010_performance_security` → `011_repair` → `012_users_rls` → `013_leads_counts` → `014_repair_fixes` → `015_lead_status_counts`.
+Migration order: `supabase-setup.sql` (base) → `000b` → `001_packages` → `004_meetings` → `005_meeting_requests` → `006_deals` → `007_contract_reviews` → `008_money_commissions_payroll` → `009_management_tools` → `010_performance_security` → `011_repair` → `012_users_rls` → `013_leads_counts` → `014_repair_fixes` → `015_lead_status_counts` → `016_audit_everything` → `017_worked_clients_count`.
 
 **Every database change = a numbered migration file in the repo.** Never run SQL only from a chat / the SQL editor without saving it as the next numbered file in `supabase/migrations/`. If it isn't in the repo, it doesn't exist.
 
@@ -102,5 +102,15 @@ Use these exact names (read `supabase/migrations/009_management_tools.sql` for d
 - Counting rule: **never use `count: 'estimated'` on `leads` / `meetings` / `deals`.** The RLS policies use `OR` over functions, so Postgres estimates about a third of the real rows (it showed 10,856 instead of 32,567). Use `count: 'exact'` for small, filtered counts; for large counts call a dedicated count RPC and show its error instead of a guess:
   - `get_leads_counts()` (013, admin only) → `total, unassigned, without_phone`
   - `get_lead_status_counts()` (015, admin only) → one row per `status, total`
+  - `get_worked_clients_count(p_user_ids uuid[], p_activity_types text[] default {call,forward})` (017) → distinct leads worked; admin for anyone, otherwise yourself or your team
+
+## Audit log & stability (016)
+
+- Activity log page (admin): `get_audit_feed(p_limit, p_offset, p_table, p_user, p_from, p_to)` and `get_audit_tables()`. Never read `audit_log` directly.
+- Pages are wrapped in `ErrorBoundary` (`src/components/shared/ErrorBoundary.tsx`); `supabaseClient.ts` cuts requests after 25s (Storage uploads and Edge Functions are exempt).
+- Every `await supabase…` handles `error` and shows its message (no empty `catch {}`); every screen has loading, error and empty states.
+- Save/submit buttons are disabled while their request runs.
+- Reload the shown data after every successful write.
+- Never load a whole table: always `.range()`, a count (`head: true`), or an RPC.
 
 === END ===

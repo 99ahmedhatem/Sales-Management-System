@@ -221,6 +221,9 @@ export async function loadMeetingsPage(options: {
 
   assignedSalesId?: string
 
+  /** Meetings of any of these sales users (e.g. a manager's team). */
+  assignedSalesIds?: string[]
+
   outcome?: MeetingOutcome
 
   proposedAfter?: string
@@ -238,6 +241,9 @@ export async function loadMeetingsPage(options: {
 
   if (options.assignedSalesId)
     query = query.eq("assigned_sales_id", options.assignedSalesId)
+
+  if (options.assignedSalesIds)
+    query = query.in("assigned_sales_id", options.assignedSalesIds)
 
   if (options.outcome) query = query.eq("outcome", options.outcome)
 

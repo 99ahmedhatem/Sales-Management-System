@@ -146,6 +146,16 @@ const adminNav: NavItem[] = [
   },
 
   {
+    key: "audit",
+    label: "Activity log",
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+
+  {
     key: "reports",
 
     label: "Reports",
@@ -394,13 +404,17 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
 
   const [myNotifs, setMyNotifs] = useState<Notification[]>([])
 
+  const [notifError, setNotifError] = useState("")
+
   const loadNotifications = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("notifications")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(30)
+
+    setNotifError(error ? error.message : "")
 
     setMyNotifs(
       (data ?? []).map((row) => ({
@@ -596,18 +610,23 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
                   <div className="absolute right-0 top-full mt-1 w-80 bg-[#161616] border border-[#262626] rounded-xl shadow-2xl z-20 overflow-hidden">
                     <div className="px-4 py-3 border-b border-[#262626] flex items-center justify-between">
                       <span className="text-white font-medium text-sm">
-                        Notifications
+                        {t("Notifications")}
                       </span>
                       {unreadCount > 0 && (
                         <span className="text-[#dfff03] text-xs">
-                          {unreadCount} unread
+                          {t("{n} unread", { n: unreadCount })}
                         </span>
                       )}
                     </div>
                     <div className="max-h-72 overflow-y-auto">
-                      {myNotifs.length === 0 && (
+                      {notifError && (
+                        <div className="px-4 py-3 text-xs text-[#ff8888] break-words">
+                          {notifError}
+                        </div>
+                      )}
+                      {!notifError && myNotifs.length === 0 && (
                         <div className="p-6 text-center text-[#4a4a4a] text-sm">
-                          No notifications
+                          {t("No notifications")}
                         </div>
                       )}
                       {myNotifs.map((n) => (

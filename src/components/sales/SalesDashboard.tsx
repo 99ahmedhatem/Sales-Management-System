@@ -111,6 +111,13 @@ export default function SalesDashboard({ userId }: Props) {
 
   const [newComment, setNewComment] = useState("")
 
+  // Errors shown inside the open modal (the page banner sits behind it).
+  const [modalError, setModalError] = useState("")
+
+  const [modalSaving, setModalSaving] = useState(false)
+
+  const [decliningSaving, setDecliningSaving] = useState(false)
+
   const [customerNumber, setCustomerNumber] = useState<number | undefined>()
 
   const [customerWebsite, setCustomerWebsite] = useState<string | undefined>()
@@ -252,7 +259,11 @@ export default function SalesDashboard({ userId }: Props) {
   useEffect(() => {
     if (!commentModal) return
 
-    loadClientComments(commentModal.leadId).then(({ data }) => {
+    setModalError("")
+
+    loadClientComments(commentModal.leadId).then(({ data, error: commentsError }) => {
+      if (commentsError) setModalError(commentsError)
+
       setLeadComments((prev) => ({ ...prev, [commentModal.leadId]: data }))
     })
   }, [commentModal?.leadId])
@@ -260,12 +271,16 @@ export default function SalesDashboard({ userId }: Props) {
   useEffect(() => {
     if (!detail) return
 
+    setModalError("")
+
     supabase
       .from("leads")
       .select("customer_number, website, quantity, phone")
       .eq("id", detail.leadId)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data, error: leadError }) => {
+        if (leadError) setModalError(leadError.message)
+
         setCustomerNumber(data?.customer_number ?? undefined)
 
         setCustomerNumberInput(
@@ -283,27 +298,48 @@ export default function SalesDashboard({ userId }: Props) {
   }, [detail?.leadId])
 
   const saveCustomerNumber = async () => {
+    if (modalSaving) return
+
     const value = customerNumberInput.trim()
 
     const number = value ? Number(value) : null
 
-    if (number !== null && (!Number.isSafeInteger(number) || number <= 0))
+    if (number !== null && (!Number.isSafeInteger(number) || number <= 0)) {
+      setModalError("Customer number must be a positive whole number.")
+
       return
+    }
+
+    setModalSaving(true)
+
+    setModalError("")
 
     const { error } = await supabase.rpc("set_lead_customer_number", {
       target_lead_id: detail?.leadId,
       new_customer_number: number,
     })
 
-    if (!error) {
-      setCustomerNumber(number ?? undefined)
+    setModalSaving(false)
 
-      setEditingCustomerNumber(false)
+    if (error) {
+      setModalError(error.message)
+
+      return
     }
+
+    setCustomerNumber(number ?? undefined)
+
+    setEditingCustomerNumber(false)
   }
 
   const saveCustomerPhone = async () => {
+    if (modalSaving) return
+
     const phone = customerPhoneInput.trim()
+
+    setModalSaving(true)
+
+    setModalError("")
 
     const { error } = await supabase
       .from("leads")
@@ -314,7 +350,17 @@ export default function SalesDashboard({ userId }: Props) {
       })
       .eq("id", detail?.leadId)
 
-    if (!error) setCustomerPhone(phone)
+    setModalSaving(false)
+
+    if (error) {
+      setModalError(error.message)
+
+      return
+    }
+
+    setCustomerPhone(phone)
+
+    setRefreshVersion((version) => version + 1)
   }
 
   const updateOutcome = async (id: string, outcome: MeetingOutcome) => {
@@ -392,8 +438,10 @@ export default function SalesDashboard({ userId }: Props) {
   }
 
   const declineRequest = async () => {
-    if (!decliningRequest || !declineReason.trim()) return
+    if (!decliningRequest || !declineReason.trim() || decliningSaving) return
     setError("")
+
+    setDecliningSaving(true)
 
     const { error: requestError } = await supabase.rpc(
       "decline_meeting_request",
@@ -403,6 +451,8 @@ export default function SalesDashboard({ userId }: Props) {
         decline_reason_text: declineReason.trim(),
       },
     )
+
+    setDecliningSaving(false)
 
     if (requestError) {
       setError(requestError.message)
@@ -414,7 +464,11 @@ export default function SalesDashboard({ userId }: Props) {
   }
 
   const addComment = async () => {
-    if (!commentModal || !newComment.trim()) return
+    if (!commentModal || !newComment.trim() || modalSaving) return
+
+    setModalSaving(true)
+
+    setModalError("")
 
     const { data: comment, error } = await addClientComment({
       leadId: commentModal.leadId,
@@ -428,9 +482,11 @@ export default function SalesDashboard({ userId }: Props) {
       text: newComment.trim(),
     })
 
+    setModalSaving(false)
+
     if (error || !comment) {
-      window.alert(
-        error || t("Could not save the comment. Run supabase-setup.sql first."),
+      setModalError(
+        error || "Could not save the comment. Run supabase-setup.sql first.",
       )
 
       return
@@ -854,10 +910,10 @@ export default function SalesDashboard({ userId }: Props) {
             <div className="flex gap-2">
               <Button
                 variant="danger"
-                disabled={!declineReason.trim()}
+                disabled={!declineReason.trim() || decliningSaving}
                 onClick={() => void declineRequest()}
               >
-                {t("Decline Request")}
+                {decliningSaving ? t("Saving...") : t("Decline Request")}
               </Button>
               <Button
                 variant="ghost"
@@ -878,6 +934,11 @@ export default function SalesDashboard({ userId }: Props) {
       >
         {detail && (
           <div className="space-y-4">
+            {modalError && (
+              <div role="alert" className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]">
+                {t(modalError)}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               {[
                 ["Client", detail.leadName],
@@ -913,6 +974,7 @@ export default function SalesDashboard({ userId }: Props) {
                   <Button
                     variant="primary"
                     size="sm"
+                    disabled={modalSaving}
                     onClick={saveCustomerNumber}
                   >
                     {t("Save Number")}
@@ -954,6 +1016,7 @@ export default function SalesDashboard({ userId }: Props) {
                   <Button
                     variant="primary"
                     size="sm"
+                    disabled={modalSaving}
                     onClick={saveCustomerPhone}
                   >
                     {t("Save Phone")}
@@ -1027,6 +1090,11 @@ export default function SalesDashboard({ userId }: Props) {
       >
         {commentModal && (
           <div className="space-y-4">
+            {modalError && (
+              <div role="alert" className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]">
+                {t(modalError)}
+              </div>
+            )}
             <div className="max-h-40 overflow-y-auto space-y-2">
               {(leadComments[commentModal.leadId] || []).map((c) => (
                 <div key={c.id} className="bg-[#1a1a1a] rounded p-3">
@@ -1060,10 +1128,10 @@ export default function SalesDashboard({ userId }: Props) {
             <div className="flex gap-2">
               <Button
                 variant="primary"
-                disabled={!newComment.trim()}
+                disabled={!newComment.trim() || modalSaving}
                 onClick={addComment}
               >
-                {t("Post")}
+                {modalSaving ? t("Saving...") : t("Post")}
               </Button>
               <Button variant="ghost" onClick={() => setCommentModal(null)}>
                 {t("Close")}

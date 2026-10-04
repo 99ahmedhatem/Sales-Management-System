@@ -44,11 +44,18 @@ export default function AdminUsers() {
   const [creatingUser, setCreatingUser] = useState(false);
   const clientsRequestId = useRef(0);
   const [newUser, setNewUser] = useState(EMPTY_NEW_USER);
-  const [payUser, setPayUser] = useState<User | null>(null);
-  const [payForm, setPayForm] = useState<PayForm>(EMPTY_PAY);
-  const [payLoading, setPayLoading] = useState(false);
-  const [paySaving, setPaySaving] = useState(false);
-  const [payError, setPayError] = useState('');
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState<EditForm>(EMPTY_EDIT);
+  const [editInitial, setEditInitial] = useState<EditForm>(EMPTY_EDIT);
+  const [editTeamMembers, setEditTeamMembers] = useState(0);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [myId, setMyId] = useState('');
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setMyId(data.user?.id ?? ''));
+  }, []);
 
   const saveAssignedLeadPhone = async (lead: AssignedLead, value: string) => {
     const phone = value.replace(/[^\d+]/g, '');
@@ -163,49 +170,66 @@ export default function AdminUsers() {
     setAddModal(false);
   };
 
-  const openPay = async (u: User) => {
-    setPayUser(u);
-    setPayError('');
-    setPayForm(EMPTY_PAY);
-    setPayLoading(true);
-    const { data, error } = await supabase
-      .from('user_commission_rates')
-      .select('base_salary, base_currency, closer_percent, lead_percent, manager_percent')
-      .eq('user_id', u.id)
-      .maybeSingle();
-    if (error) setPayError(error.message);
-    else if (data) {
-      setPayForm({
-        baseSalary: String(data.base_salary ?? 0),
-        baseCurrency: data.base_currency === 'SAR' ? 'SAR' : 'EGP',
-        commissionPercent: String(data.closer_percent ?? 0),
-        leadPercent: String(data.lead_percent ?? 0),
-        managerPercent: String(data.manager_percent ?? 0),
-      });
+  const openEdit = async (u: User) => {
+    setEditUser(u);
+    setEditError('');
+    setEditForm(EMPTY_EDIT);
+    setEditLoading(true);
+    const { data, error } = await supabase.rpc('admin_get_user_pay', { p_user_id: u.id });
+    const row = Array.isArray(data) ? data[0] : data;
+    if (error || !row) {
+      setEditError(error?.message ?? 'User not found');
     } else {
-      setPayForm({ ...EMPTY_PAY, commissionPercent: String(u.commissionPercent ?? 0) });
+      const form: EditForm = {
+        fullName: row.full_name ?? '',
+        role: row.role,
+        managerId: row.manager_id ?? '',
+        status: row.status === 'inactive' ? 'inactive' : 'active',
+        baseSalary: String(row.base_salary ?? 0),
+        baseCurrency: row.base_currency === 'SAR' ? 'SAR' : 'EGP',
+        commissionPercent: String(row.closer_percent ?? 0),
+        leadPercent: String(row.lead_percent ?? 0),
+        managerPercent: String(row.manager_percent ?? 0),
+      };
+      setEditForm(form);
+      setEditInitial(form);
+      setEditTeamMembers(Number(row.team_members ?? 0));
     }
-    setPayLoading(false);
+    setEditLoading(false);
   };
 
-  const savePay = async () => {
-    if (!payUser) return;
-    setPaySaving(true);
-    setPayError('');
-    const { error } = await supabase.rpc('admin_set_user_pay', {
-      p_user_id: payUser.id,
-      p_base_salary: Number(payForm.baseSalary) || 0,
-      p_base_currency: payForm.baseCurrency,
-      p_closer_percent: payUser.role === 'manager' ? 0 : Number(payForm.commissionPercent) || 0,
-      p_lead_percent: payUser.role === 'telesales' ? Number(payForm.leadPercent) || 0 : 0,
-      p_manager_percent: payUser.role === 'manager' ? 0 : Number(payForm.managerPercent) || 0,
-    });
-    setPaySaving(false);
-    if (error) {
-      setPayError(error.message);
+  /** Sends only the fields that changed; the DB keeps the rest. */
+  const saveEdit = async () => {
+    if (!editUser) return;
+    const f = editForm, init = editInitial;
+    const changed = (key: keyof EditForm) => f[key] !== init[key];
+    const numberChanged = (key: keyof PayForm) => Number(f[key]) !== Number(init[key]);
+    const params: Record<string, unknown> = { p_user_id: editUser.id };
+    if (f.fullName.trim() !== init.fullName) params.p_full_name = f.fullName.trim();
+    if (changed('role')) params.p_role = f.role;
+    if (['sales', 'telesales'].includes(f.role) && changed('managerId')) {
+      params.p_set_manager = true;
+      params.p_manager_id = f.managerId || null;
+    }
+    if (changed('status')) params.p_status = f.status;
+    if (numberChanged('baseSalary')) params.p_base_salary = Number(f.baseSalary) || 0;
+    if (changed('baseCurrency')) params.p_base_currency = f.baseCurrency;
+    if (numberChanged('commissionPercent')) params.p_closer_percent = Number(f.commissionPercent) || 0;
+    if (f.role === 'telesales' && numberChanged('leadPercent')) params.p_lead_percent = Number(f.leadPercent) || 0;
+    if (['sales', 'telesales'].includes(f.role) && numberChanged('managerPercent')) params.p_manager_percent = Number(f.managerPercent) || 0;
+    if (Object.keys(params).length === 1) {
+      setEditUser(null);
       return;
     }
-    setPayUser(null);
+    setEditSaving(true);
+    setEditError('');
+    const { error } = await supabase.rpc('admin_update_user', params);
+    setEditSaving(false);
+    if (error) {
+      setEditError(error.message);
+      return;
+    }
+    setEditUser(null);
     await loadUsers();
   };
 
@@ -220,7 +244,7 @@ export default function AdminUsers() {
 
   const toggleStatus = async (u: User) => {
     const newStatus = u.status === 'active' ? 'inactive' : 'active';
-    const { error } = await supabase.from('users').update({ status: newStatus }).eq('id', u.id);
+    const { error } = await supabase.rpc('admin_update_user', { p_user_id: u.id, p_status: newStatus });
     if (error) {
       setErrorMsg(error.message);
       return;
@@ -230,7 +254,8 @@ export default function AdminUsers() {
 
   const saveCommission = async (u: User, value: string) => {
     const percent = Math.min(100, Math.max(0, Number(value) || 0));
-    const { error } = await supabase.from('users').update({ commission_percent: percent }).eq('id', u.id);
+    // Through admin_update_user so user_commission_rates.closer_percent stays in sync.
+    const { error } = await supabase.rpc('admin_update_user', { p_user_id: u.id, p_closer_percent: percent });
     if (error) {
       setErrorMsg(error.message);
       return;
@@ -368,7 +393,7 @@ export default function AdminUsers() {
                   <Button variant="ghost" size="sm" onClick={() => toggleStatus(u)}>
                     {u.status === 'active' ? t('Deactivate') : t('Activate')}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => openPay(u)}>{t('Pay')}</Button>
+                  <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>{t('Edit')}</Button>
                   <Button variant="ghost" size="sm" onClick={() => sendPasswordReset(u)}>{t('Change Password')}</Button>
                   <Button variant="ghost" size="sm" onClick={() => deleteUser(u)}>{t('Delete')}</Button>
                 </div>
@@ -509,19 +534,61 @@ export default function AdminUsers() {
         )}
       </Modal>
 
-      <Modal open={!!payUser} onClose={() => setPayUser(null)} title="Salary & Commission">
-        {payUser && (
+      <Modal open={!!editUser} onClose={() => setEditUser(null)} title="Edit User">
+        {editUser && (
           <div className="space-y-3">
-            <div className="text-white text-sm font-medium">{payUser.fullName} · {t(roleLabel[payUser.role])}</div>
-            {payError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs rounded p-2 break-words">{t(payError)}</div>}
-            {payLoading ? (
+            <div className="text-[#6b6b6b] text-xs">{editUser.email}</div>
+            {editError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs rounded p-2 break-words">{t(editError)}</div>}
+            {editLoading ? (
               <div className="text-[#6b6b6b] text-xs py-4">{t('Loading…')}</div>
             ) : (
-              <PayFields role={payUser.role} value={payForm} onChange={patch => setPayForm(prev => ({ ...prev, ...patch }))} />
+              <>
+                <div>
+                  <label className="block text-xs text-[#a0a0a0] mb-1">{t('Full Name *')}</label>
+                  <input value={editForm.fullName} onChange={e => setEditForm(prev => ({ ...prev, fullName: e.target.value }))} className={INPUT_CLASS} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-[#a0a0a0] mb-1">{t('Role *')}</label>
+                    <select
+                      value={editForm.role}
+                      disabled={editInitial.role === 'admin' || editUser.id === myId}
+                      onChange={e => setEditForm(prev => ({ ...prev, role: e.target.value as Role }))}
+                      className={`${INPUT_CLASS} disabled:opacity-50`}
+                    >
+                      {editInitial.role === 'admin' && <option value="admin">{t('Admin')}</option>}
+                      <option value="manager">{t('Manager')}</option>
+                      <option value="telesales">{t('Telesales')}</option>
+                      <option value="sales">{t('Sales')}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[#a0a0a0] mb-1">{t('Status')}</label>
+                    <select value={editForm.status} onChange={e => setEditForm(prev => ({ ...prev, status: e.target.value as EditForm['status'] }))} className={INPUT_CLASS}>
+                      <option value="active">{t('Active')}</option>
+                      <option value="inactive">{t('Inactive')}</option>
+                    </select>
+                  </div>
+                </div>
+                {['sales', 'telesales'].includes(editForm.role) && (
+                  <div>
+                    <label className="block text-xs text-[#a0a0a0] mb-1">{t('Assign to Manager')}</label>
+                    <select value={editForm.managerId} onChange={e => setEditForm(prev => ({ ...prev, managerId: e.target.value }))} className={INPUT_CLASS}>
+                      <option value="">{t('— No manager —')}</option>
+                      {managers.filter(m => m.id !== editUser.id).map(m => <option key={m.id} value={m.id}>{m.fullName}</option>)}
+                    </select>
+                  </div>
+                )}
+                {editInitial.role === 'manager' && (
+                  <div className="bg-[#1a1a1a] rounded p-2 text-xs text-[#a0a0a0]">{t('{n} team members', { n: editTeamMembers })}</div>
+                )}
+                <PayFields role={editForm.role} value={editForm} onChange={patch => setEditForm(prev => ({ ...prev, ...patch }))} managerCommission />
+                <p className="text-[#6b6b6b] text-[11px] leading-relaxed">{t('Changing the role or rates only affects new deals; approved deals keep the rates they were approved with.')}</p>
+              </>
             )}
             <div className="flex gap-2 pt-2">
-              <Button variant="primary" disabled={payLoading || paySaving} onClick={savePay}>{paySaving ? t('Saving…') : t('Save')}</Button>
-              <Button variant="ghost" onClick={() => setPayUser(null)}>{t('Cancel')}</Button>
+              <Button variant="primary" disabled={editLoading || editSaving || !editForm.fullName.trim()} onClick={saveEdit}>{editSaving ? t('Saving…') : t('Save')}</Button>
+              <Button variant="ghost" onClick={() => setEditUser(null)}>{t('Cancel')}</Button>
             </div>
           </div>
         )}
@@ -573,15 +640,24 @@ interface PayForm {
 }
 
 const EMPTY_PAY: PayForm = { baseSalary: '', baseCurrency: 'EGP', commissionPercent: '', leadPercent: '', managerPercent: '' };
+interface EditForm extends PayForm {
+  fullName: string;
+  role: Role;
+  managerId: string;
+  status: 'active' | 'inactive';
+}
+
+const EMPTY_EDIT: EditForm = { fullName: '', role: 'telesales', managerId: '', status: 'active', ...EMPTY_PAY };
+const INPUT_CLASS = 'w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60';
 const EMPTY_NEW_USER = { fullName: '', email: '', password: '', role: 'telesales' as Role, managerId: '', ...EMPTY_PAY };
 
 /**
  * Salary + percentages for one employee (stored in user_commission_rates).
- * manager → salary only · sales → + commission, manager % · telesales → + lead %.
+ * manager → salary only (+ commission % when managerCommission) · sales → + commission, manager % · telesales → + lead %.
  */
-function PayFields({ role, value, onChange }: { role: Role; value: PayForm; onChange: (patch: Partial<PayForm>) => void }) {
+function PayFields({ role, value, onChange, managerCommission = false }: { role: Role; value: PayForm; onChange: (patch: Partial<PayForm>) => void; managerCommission?: boolean }) {
   const { t } = useI18n();
-  const inputClass = 'w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60';
+  const inputClass = INPUT_CLASS;
   const percent = (key: 'commissionPercent' | 'leadPercent' | 'managerPercent', label: string, hint: string) => (
     <div key={key}>
       <label className="block text-xs text-[#a0a0a0] mb-1">{t(label)}</label>
@@ -606,7 +682,7 @@ function PayFields({ role, value, onChange }: { role: Role; value: PayForm; onCh
           </select>
         </div>
       </div>
-      {role !== 'manager' && role !== 'admin' && percent('commissionPercent', 'Commission %', 'Of each deal this employee closes')}
+      {(role === 'sales' || role === 'telesales' || (managerCommission && role === 'manager')) && percent('commissionPercent', 'Commission %', 'Of each deal this employee closes')}
       {role === 'telesales' && percent('leadPercent', 'Lead %', 'When a sales rep closes a deal on this employee’s lead')}
       {role !== 'manager' && role !== 'admin' && percent('managerPercent', 'Manager %', 'What this employee’s manager earns from each of their deals')}
     </div>

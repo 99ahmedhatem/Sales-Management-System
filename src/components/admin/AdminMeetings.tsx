@@ -1,3 +1,4 @@
+import { AnimatedNumber, TableSkeleton } from "../shared/motion"
 import { useEffect, useState } from "react"
 
 import { supabase } from "../../supabaseClient"
@@ -185,13 +186,13 @@ export default function AdminMeetings({ userId }: Props) {
       {error && (
         <div
           role="alert"
-          className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
+          className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888] anim-banner"
         >
           {t(error)}
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 anim-stagger">
         {[
           { label: "Scheduled", value: scheduledCount, color: "#dfff03" },
 
@@ -201,12 +202,12 @@ export default function AdminMeetings({ userId }: Props) {
 
           { label: "Total", value: total, color: "#6495ed" },
         ].map((stat) => (
-          <Card key={stat.label} className="p-4 text-center">
+          <Card key={stat.label} className="p-4 text-center anim-card">
             <div
               className="text-2xl font-bold font-mono"
               style={{ color: stat.color }}
             >
-              {stat.value}
+              <AnimatedNumber value={stat.value} />
             </div>
             <div className="mt-1 text-xs text-[#6b6b6b]">{t(stat.label)}</div>
           </Card>
@@ -230,7 +231,7 @@ export default function AdminMeetings({ userId }: Props) {
       <Card>
         {loading ? (
           <div className="p-8 text-center text-sm text-[#6b6b6b]">
-            {t("Loading meetings...")}
+            <TableSkeleton />
           </div>
         ) : meetings.length === 0 ? (
           <div className="p-8 text-center text-sm text-[#6b6b6b]">

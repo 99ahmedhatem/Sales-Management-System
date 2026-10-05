@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { useI18n } from '../i18n/I18nProvider';
+import { AnimatedNumber } from './shared/motion';
 export function normalizeWebsiteUrl(url: string): string {
   const trimmed = url.trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
@@ -67,9 +68,9 @@ export function Card({ children, className = '' }: { children: ReactNode; classN
 export function KpiCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: boolean }) {
   const { t } = useI18n();
   return (
-    <Card className="p-5">
+    <Card className="p-5 anim-card">
       <div className="text-[#6b6b6b] text-xs font-medium uppercase tracking-widest mb-2">{t(label)}</div>
-      <div className={`text-3xl font-bold leading-none mb-1 ${accent ? 'text-[#dfff03]' : 'text-white'}`}>{value}</div>
+      <div className={`text-3xl font-bold leading-none mb-1 ${accent ? 'text-[#dfff03]' : 'text-white'}`}>{typeof value === 'number' ? <AnimatedNumber value={value} /> : value}</div>
       {sub && <div className="text-[#6b6b6b] text-xs">{t(sub)}</div>}
     </Card>
   );
@@ -157,8 +158,8 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
-      <div className="relative bg-[#161616] border border-[#262626] rounded-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="absolute inset-0 bg-black/70 anim-backdrop" onClick={onClose} />
+      <div className="relative bg-[#161616] border border-[#262626] rounded-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto anim-modal">
         <div className="flex items-center justify-between p-5 border-b border-[#262626]">
           <h3 className="text-white font-semibold">{t(title)}</h3>
           <button onClick={onClose} aria-label={t('Close')} className="text-[#6b6b6b] hover:text-white transition-colors text-xl leading-none">&times;</button>
@@ -173,7 +174,7 @@ export function Table({ headers, children }: { headers: string[]; children: Reac
   const { t } = useI18n();
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="w-full text-sm anim-rows">
         <thead>
           <tr className="border-b border-[#262626]">
             {headers.map((h, i) => (

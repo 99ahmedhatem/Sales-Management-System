@@ -1,3 +1,4 @@
+import { AnimatedNumber, TableSkeleton } from '../shared/motion';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { ActivityLog } from '../../data/mockData';
@@ -148,18 +149,18 @@ export default function AdminActivity() {
       && (!phone || (phone === 'has' ? Boolean(lead?.phone) : !lead?.phone))
       && (!query || lead?.name.toLowerCase().includes(query) || lead?.phone.includes(query) || activity.actorName.toLowerCase().includes(query));
   });
-  const formatCount = (value?: number) => (counts && value !== undefined ? value.toLocaleString('en-US') : '—');
+  const formatCount = (value?: number) => (counts && value !== undefined ? <AnimatedNumber value={value} /> : '—');
 
-  if (loading) return <div className="p-6 text-[#a0a0a0] text-sm">{t('Loading worked clients...')}</div>;
+  if (loading) return <div className="p-6 text-[#a0a0a0] text-sm"><TableSkeleton /></div>;
 
   return (
     <div className="p-6 space-y-6">
-      {error && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3">{t(error)}</div>}
+      {error && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3 anim-banner">{t(error)}</div>}
       <div>
         <h1 className="text-white text-2xl font-bold">{t('Worked Clients')}</h1>
         <p className="text-[#6b6b6b] text-sm mt-0.5">{t('Every call, comment, and handoff stays here after a lead leaves the queue.')}</p>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 anim-stagger">
         <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Activities')}</div><div className="text-white text-2xl font-bold mt-1">{formatCount(counts?.total)}</div></Card>
         <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Clients Worked')}</div><div className="text-white text-2xl font-bold mt-1">{formatCount(counts?.clients)}</div></Card>
         <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Calls')}</div><div className="text-white text-2xl font-bold mt-1">{formatCount(counts?.calls)}</div></Card>

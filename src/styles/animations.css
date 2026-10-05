@@ -1,0 +1,112 @@
+/* UI motion — CSS only. Everything is disabled under prefers-reduced-motion. */
+
+@keyframes anim-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes anim-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes anim-pop {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes anim-slide-down {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes anim-shake-kf {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+@keyframes anim-grow-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes anim-spin-kf {
+  to { transform: rotate(360deg); }
+}
+@keyframes anim-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@keyframes anim-drawer-ltr {
+  from { transform: translateX(-100%); }
+  to { transform: none; }
+}
+@keyframes anim-drawer-rtl {
+  from { transform: translateX(100%); }
+  to { transform: none; }
+}
+@keyframes anim-pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(223, 255, 3, 0.55); }
+  70% { box-shadow: 0 0 0 6px rgba(223, 255, 3, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(223, 255, 3, 0); }
+}
+
+@layer components {
+/* Page transition */
+.anim-page { animation: anim-fade-up 0.28s ease-out both; }
+
+/* Modals */
+.anim-backdrop { animation: anim-fade-in 0.2s ease-out both; }
+.anim-modal { animation: anim-pop 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* Banners */
+.anim-banner { animation: anim-slide-down 0.25s ease-out both; }
+.anim-shake { animation: anim-slide-down 0.25s ease-out both, anim-shake-kf 0.4s ease-in-out 0.25s; }
+
+/* Table rows: first rows stagger in, the rest just fade */
+.anim-rows tbody tr { animation: anim-fade-in 0.3s ease-out both; }
+.anim-rows tbody tr:nth-child(1) { animation-delay: 0ms; }
+.anim-rows tbody tr:nth-child(2) { animation-delay: 25ms; }
+.anim-rows tbody tr:nth-child(3) { animation-delay: 50ms; }
+.anim-rows tbody tr:nth-child(4) { animation-delay: 75ms; }
+.anim-rows tbody tr:nth-child(5) { animation-delay: 100ms; }
+.anim-rows tbody tr:nth-child(6) { animation-delay: 125ms; }
+.anim-rows tbody tr:nth-child(7) { animation-delay: 150ms; }
+.anim-rows tbody tr:nth-child(8) { animation-delay: 175ms; }
+.anim-rows tbody tr:nth-child(n + 9) { animation-delay: 200ms; }
+
+/* KPI cards */
+.anim-card { animation: anim-fade-up 0.35s ease-out both; }
+.anim-stagger > .anim-card:nth-child(1), .anim-stagger > :nth-child(1) .anim-card { animation-delay: 0ms; }
+.anim-stagger > .anim-card:nth-child(2), .anim-stagger > :nth-child(2) .anim-card { animation-delay: 50ms; }
+.anim-stagger > .anim-card:nth-child(3), .anim-stagger > :nth-child(3) .anim-card { animation-delay: 100ms; }
+.anim-stagger > .anim-card:nth-child(4), .anim-stagger > :nth-child(4) .anim-card { animation-delay: 150ms; }
+.anim-stagger > .anim-card:nth-child(5), .anim-stagger > :nth-child(5) .anim-card { animation-delay: 200ms; }
+.anim-stagger > .anim-card:nth-child(6), .anim-stagger > :nth-child(6) .anim-card { animation-delay: 250ms; }
+.anim-stagger > .anim-card:nth-child(n + 7), .anim-stagger > :nth-child(n + 7) .anim-card { animation-delay: 300ms; }
+
+/* Progress bars (grow from the start edge, RTL aware) */
+.anim-bar { transform-origin: left center; animation: anim-grow-x 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+[dir='rtl'] .anim-bar { transform-origin: right center; }
+
+/* Spinner */
+.anim-spin { animation: anim-spin-kf 0.8s linear infinite; }
+
+/* Skeleton */
+.anim-skeleton {
+  background: linear-gradient(90deg, #1a1a1a 25%, #242424 50%, #1a1a1a 75%);
+  background-size: 200% 100%;
+  animation: anim-shimmer 1.4s ease-in-out infinite;
+  border-radius: 0.375rem;
+}
+
+/* Mobile drawer */
+.anim-drawer { animation: anim-drawer-ltr 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+[dir='rtl'] .anim-drawer { animation-name: anim-drawer-rtl; }
+
+/* Unread dot */
+.anim-pulse-dot { animation: anim-pulse-ring 1.8s ease-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-page, .anim-backdrop, .anim-modal, .anim-banner, .anim-shake,
+  .anim-rows tbody tr, .anim-card, .anim-bar, .anim-spin, .anim-skeleton,
+  .anim-drawer, .anim-pulse-dot {
+    animation: none !important;
+  }
+}
+}

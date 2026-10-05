@@ -1,3 +1,4 @@
+import { TableSkeleton } from '../shared/motion';
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -57,17 +58,17 @@ export default function AdminAuditLog() {
         </div>
       </div>
 
-      {error && <div className="text-sm text-white bg-[#2a1a1a] border border-[#4a2a2a] rounded p-3 break-words">⚠ {error}</div>}
+      {error && <div className="text-sm text-white bg-[#2a1a1a] border border-[#4a2a2a] rounded p-3 break-words anim-banner">⚠ {error}</div>}
 
       <div className="bg-[#161616] border border-[#262626] rounded-lg overflow-x-auto">
-        <table className="w-full text-xs text-white">
+        <table className="w-full text-xs text-white anim-rows">
           <thead>
             <tr className="text-[#6b6b6b] border-b border-[#262626] text-start">
               {[t('When'), t('Who'), t('Table'), t('Action'), t('Details')].map(h => <th key={h} className="text-start font-medium px-3 py-2.5 whitespace-nowrap">{h}</th>)}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={5} className="px-3 py-8 text-center text-[#6b6b6b]">{t('Loading…')}</td></tr>}
+            {loading && <tr><td colSpan={5} className="px-3 py-8 text-center text-[#6b6b6b]"><TableSkeleton /></td></tr>}
             {!loading && rows.length === 0 && <tr><td colSpan={5} className="px-3 py-8 text-center text-[#6b6b6b]">{t('No activity recorded yet')}</td></tr>}
             {!loading && rows.map(r => (
               <tr key={r.id} className="border-b border-[#1d1d1d] align-top">

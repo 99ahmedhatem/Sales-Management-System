@@ -1,3 +1,4 @@
+import { AnimatedNumber, TableSkeleton } from './motion';
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -96,17 +97,17 @@ export default function TeamPerformance({ mode, userId, role }: { mode: 'team' |
       </div>
 
       {error && <ErrorNote message={t(error)} />}
-      {loading && <div className="text-xs text-[#8a8a8a] py-6 text-center">{t('Loading…')}</div>}
+      {loading && <div className="text-xs text-[#8a8a8a] py-6 text-center"><TableSkeleton /></div>}
 
       {!loading && !error && visible.length === 0 && <Empty text={t('No data (or you don’t have access)')} />}
 
       {!loading && !error && visible.length > 0 && mode === 'mine' && me && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Kpi label={t('Base salary')} value={money(me.base_salary, me.base_currency)} />
-            <Kpi label={t('Commission (SAR)')} value={money(me.commission_sar, 'SAR')} sub={money(me.commission_egp, 'EGP')} />
-            <Kpi label={t('Deals closed')} value={nf(me.deals_count)} sub={money(me.deals_value_sar, 'SAR')} />
-            <Kpi label={t('Collected (SAR)')} value={money(me.collected_sar, 'SAR')} sub={money(me.collected_egp, 'EGP')} />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 anim-stagger">
+            <Kpi label={t('Base salary')} value={<AnimatedNumber value={Number(me.base_salary ?? 0)} format={n => money(n, me.base_currency)} />} />
+            <Kpi label={t('Commission (SAR)')} value={<AnimatedNumber value={Number(me.commission_sar ?? 0)} format={n => money(n, 'SAR')} />} sub={money(me.commission_egp, 'EGP')} />
+            <Kpi label={t('Deals closed')} value={<AnimatedNumber value={Number(me.deals_count ?? 0)} format={n => nf(n)} />} sub={money(me.deals_value_sar, 'SAR')} />
+            <Kpi label={t('Collected (SAR)')} value={<AnimatedNumber value={Number(me.collected_sar ?? 0)} format={n => money(n, 'SAR')} />} sub={money(me.collected_egp, 'EGP')} />
           </div>
           {/* Targets are monthly: with "All time" the current month is shown. */}
           <TargetProgress month={allTime ? thisMonth() : month} canEdit={role === 'admin'} />
@@ -121,11 +122,11 @@ export default function TeamPerformance({ mode, userId, role }: { mode: 'team' |
 
       {!loading && !error && visible.length > 0 && mode === 'team' && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Kpi label={t('Deals closed')} value={nf(sum('deals_count'))} sub={money(sum('deals_value_sar'), 'SAR')} />
-            <Kpi label={t('Collected (SAR)')} value={money(sum('collected_sar'), 'SAR')} sub={money(sum('collected_egp'), 'EGP')} />
-            <Kpi label={t('Commission (SAR)')} value={money(sum('commission_sar'), 'SAR')} sub={money(sum('commission_egp'), 'EGP')} />
-            <Kpi label={t('Team members')} value={nf(visible.length)} />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 anim-stagger">
+            <Kpi label={t('Deals closed')} value={<AnimatedNumber value={sum('deals_count')} format={n => nf(n)} />} sub={money(sum('deals_value_sar'), 'SAR')} />
+            <Kpi label={t('Collected (SAR)')} value={<AnimatedNumber value={sum('collected_sar')} format={n => money(n, 'SAR')} />} sub={money(sum('collected_egp'), 'EGP')} />
+            <Kpi label={t('Commission (SAR)')} value={<AnimatedNumber value={sum('commission_sar')} format={n => money(n, 'SAR')} />} sub={money(sum('commission_egp'), 'EGP')} />
+            <Kpi label={t('Team members')} value={<AnimatedNumber value={visible.length} format={n => nf(n)} />} />
           </div>
           <TargetProgress month={allTime ? thisMonth() : month} canEdit={role === 'admin'} />
           <Panel title={t('Per employee')} hint={t('Commission follows the deal snapshot taken at approval; cancelled deals are excluded')}>

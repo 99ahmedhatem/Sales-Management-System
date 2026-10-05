@@ -1,3 +1,4 @@
+import { AnimatedNumber, TableSkeleton } from '../shared/motion';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
 import { User, Role } from '../../data/mockData';
@@ -70,13 +71,20 @@ export default function AdminUsers() {
   async function loadUsers() {
     setLoading(true);
     setErrorMsg('');
-    const [usersRes, emailRes] = await Promise.all([
+    const [usersRes, emailRes, ratesRes] = await Promise.all([
       supabase.from('users').select('*').neq('role', 'admin').order('full_name'),
       supabase.rpc('list_email_confirmations'),
+      // Same source as Edit User (admin_get_user_pay): the closer % lives in user_commission_rates.
+      supabase.from('user_commission_rates').select('user_id, closer_percent'),
     ]);
     if (usersRes.error) setErrorMsg(usersRes.error.message);
+    else if (ratesRes.error) setErrorMsg(ratesRes.error.message);
     else {
-      const loadedUsers = (usersRes.data ?? []).map(mapUser);
+      const closer = new Map(((ratesRes.data ?? []) as { user_id: string; closer_percent: number | string }[]).map(r => [r.user_id, Number(r.closer_percent)]));
+      const loadedUsers = (usersRes.data ?? []).map(row => {
+        const user = mapUser(row);
+        return closer.has(user.id) ? { ...user, commissionPercent: closer.get(user.id) } : user;
+      });
       setUsers(loadedUsers);
       setSelectedUserId(current => current || loadedUsers[0]?.id || '');
     }
@@ -295,13 +303,13 @@ export default function AdminUsers() {
   };
 
   if (loading) {
-    return <div className="p-6 text-[#a0a0a0] text-sm">{t('Loading users…')}</div>;
+    return <div className="p-6 text-[#a0a0a0] text-sm"><TableSkeleton /></div>;
   }
 
   return (
     <div className="p-6 space-y-4">
       {errorMsg && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3">
+        <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3 anim-banner">
           {t(errorMsg)}
         </div>
       )}
@@ -360,6 +368,7 @@ export default function AdminUsers() {
               <Td>
                 <div onClick={event => event.stopPropagation()}>
                   <input
+                    key={`${u.id}-${u.commissionPercent ?? 0}`}
                     type="number"
                     min={0}
                     max={100}
@@ -409,11 +418,11 @@ export default function AdminUsers() {
           <Select value={selectedUserId} onChange={setSelectedUserId} options={users.map(user => ({ value: user.id, label: `${user.fullName} · ${t(roleLabel[user.role])}` }))} className="w-64" />
           <SearchInput value={clientSearch} onChange={setClientSearch} placeholder="Search assigned clients..." />
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 anim-stagger">
           <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Selected User')}</div><div className="text-white text-sm font-medium mt-1">{selectedUser?.fullName || '—'}</div></Card>
-          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Assigned Clients')}</div><div className="text-[#dfff03] text-2xl font-bold mt-1">{clientCounts.total.toLocaleString('en-US')}</div></Card>
-          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Active')}</div><div className="text-white text-2xl font-bold mt-1">{clientCounts.active.toLocaleString('en-US')}</div></Card>
-          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Converted')}</div><div className="text-white text-2xl font-bold mt-1">{clientCounts.converted.toLocaleString('en-US')}</div></Card>
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Assigned Clients')}</div><div className="text-[#dfff03] text-2xl font-bold mt-1"><AnimatedNumber value={clientCounts.total} /></div></Card>
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Active')}</div><div className="text-white text-2xl font-bold mt-1"><AnimatedNumber value={clientCounts.active} /></div></Card>
+          <Card className="p-4"><div className="text-[#6b6b6b] text-xs">{t('Converted')}</div><div className="text-white text-2xl font-bold mt-1"><AnimatedNumber value={clientCounts.converted} /></div></Card>
         </div>
         <Card>
           <Table headers={['No.', 'Code', 'Client', 'Phone', 'Company', 'Quantity', 'Status', 'Last Updated']}>
@@ -431,7 +440,7 @@ export default function AdminUsers() {
             ))}
           </Table>
           {!clientsLoading && assignedLeads.length === 0 && <div className="p-8 text-center text-[#4a4a4a] text-sm">{t('No clients are assigned to this user.')}</div>}
-          {clientsLoading && <div className="p-4 text-center text-[#6b6b6b] text-xs">{t('Loading clients…')}</div>}
+          {clientsLoading && <div className="p-4 text-center text-[#6b6b6b] text-xs"><TableSkeleton /></div>}
           <Pagination page={clientPage} pageSize={CLIENT_PAGE_SIZE} total={clientCounts.matching} onChange={next => loadClients(next)} />
         </Card>
       </>}
@@ -538,9 +547,9 @@ export default function AdminUsers() {
         {editUser && (
           <div className="space-y-3">
             <div className="text-[#6b6b6b] text-xs">{editUser.email}</div>
-            {editError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs rounded p-2 break-words">{t(editError)}</div>}
+            {editError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs rounded p-2 break-words anim-shake">{t(editError)}</div>}
             {editLoading ? (
-              <div className="text-[#6b6b6b] text-xs py-4">{t('Loading…')}</div>
+              <div className="text-[#6b6b6b] text-xs py-4"><TableSkeleton /></div>
             ) : (
               <>
                 <div>

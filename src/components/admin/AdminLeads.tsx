@@ -1,3 +1,4 @@
+import { TableSkeleton } from '../shared/motion';
 import { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../supabaseClient';
@@ -8,6 +9,7 @@ import { generateCode, Lead, LeadDataQuality, LeadStatus, User } from '../../dat
 import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Pagination, WebsiteLink } from '../ui';
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
 import { exportRowsToExcel } from '../shared/exportExcel';
+import DistributeLeadsModal, { QUALITY_FILTER_OPTIONS, REGION_OPTIONS } from '../shared/DistributeLeadsModal';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { useI18n } from '../../i18n/I18nProvider';
 
@@ -23,16 +25,6 @@ const STATUS_OPTIONS = [
   { value: 'No Answer', label: 'No Answer' },
 ];
 
-// Stored in the database as the English name in "value"
-const REGION_OPTIONS = [
-  { value: '', label: 'All Countries' },
-  { value: 'Saudi Arabia', label: 'Saudi Arabia (السعودية)' },
-  { value: 'Oman', label: 'Oman (عمان)' },
-  { value: 'Iraq', label: 'Iraq (العراق)' },
-  { value: 'UAE', label: 'UAE (الإمارات)' },
-  { value: 'Egypt', label: 'Egypt (مصر)' },
-];
-
 // Different ways a country can be written in a sheet, mapped to the names above
 const COUNTRY_ALIASES: Record<string, string[]> = {
   'Saudi Arabia': ['saudi arabia', 'saudi', 'ksa', 'sa', 'السعودية', 'السعوديه', 'المملكة العربية السعودية'],
@@ -46,13 +38,6 @@ const TYPE_FILTER_OPTIONS = [
   { value: '', label: 'All Types' },
   { value: 'software', label: 'Software' },
   { value: 'salla', label: 'Salla Store' },
-];
-
-const QUALITY_FILTER_OPTIONS = [
-  { value: '', label: 'All Quality' },
-  { value: 'normal', label: 'Normal (عادية)' },
-  { value: 'medium', label: 'Medium (متوسطة)' },
-  { value: 'high', label: 'Strong (قوية)' },
 ];
 
 const PHONE_FILTER_OPTIONS = [
@@ -191,6 +176,7 @@ export default function AdminLeads() {
   const [phoneMsg, setPhoneMsg] = useState('');
   const [assignModal, setAssignModal] = useState(false);
   const [assignTo, setAssignTo] = useState('');
+  const [distributeModal, setDistributeModal] = useState(false);
   const [addModal, setAddModal] = useState(false);
   const [newLead, setNewLead] = useState({
     name: '',
@@ -649,13 +635,13 @@ export default function AdminLeads() {
   };
 
   if (firstLoad) {
-    return <div className="p-6 text-[#a0a0a0] text-sm">{t('Loading leads…')}</div>;
+    return <div className="p-6 text-[#a0a0a0] text-sm"><TableSkeleton /></div>;
   }
 
   return (
     <div className="p-6 space-y-4">
       {errorMsg && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3">
+        <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3 anim-banner">
           {t(errorMsg)}
         </div>
       )}
@@ -689,6 +675,7 @@ export default function AdminLeads() {
         <Select value={phoneFilter} onChange={setPhoneFilter} options={PHONE_FILTER_OPTIONS} className="w-36" />
         <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: '', label: 'All Assignments' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
         <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? t('Exporting...') : t('Export Excel')}</Button>
+        <Button variant="secondary" size="sm" onClick={() => setDistributeModal(true)}>{t('Distribute evenly')}</Button>
         {selected.length > 0 && (
           <div className="flex gap-2">
             <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>{t('Assign {n} Selected', { n: selected.length })}</Button>
@@ -894,6 +881,13 @@ export default function AdminLeads() {
           </div>
         </div>
       </Modal>
+
+      <DistributeLeadsModal
+        open={distributeModal}
+        onClose={() => setDistributeModal(false)}
+        agents={users.filter(u => u.role === 'telesales' && u.status === 'active')}
+        onDone={() => { setSelected([]); void loadData(0); }}
+      />
 
       {/* Add Lead Modal */}
       <Modal open={addModal} onClose={() => setAddModal(false)} title="Add New Lead">

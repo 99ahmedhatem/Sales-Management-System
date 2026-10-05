@@ -1,3 +1,4 @@
+import { TableSkeleton } from "./motion"
 import { useCallback, useEffect, useState } from "react"
 import { Deal, loadDealsPage } from "../../data/deals"
 import {
@@ -244,7 +245,7 @@ export default function ContractsModule({ userId, role }: Props) {
       </div>
 
       {error && (
-        <div role="alert" className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]">
+        <div role="alert" className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888] anim-banner">
           {t(error)}
         </div>
       )}
@@ -276,7 +277,7 @@ export default function ContractsModule({ userId, role }: Props) {
 
       <Card>
         {loading ? (
-          <div className="p-8 text-center text-sm text-[#6b6b6b]">{t("Loading deals...")}</div>
+          <div className="p-8 text-center text-sm text-[#6b6b6b]"><TableSkeleton /></div>
         ) : visibleDeals.length === 0 ? (
           <div className="p-8 text-center text-sm text-[#6b6b6b]">{t("No deals found.")}</div>
         ) : (

@@ -34,12 +34,12 @@ export function Empty({ text }: { text?: string }) {
 }
 
 export function ErrorNote({ message }: { message: string }) {
-  return <div className="text-xs text-[#e5e5e5] bg-[#2a1a1a] border border-[#4a2a2a] rounded p-2 break-words">⚠ {message}</div>;
+  return <div className="text-xs text-[#e5e5e5] bg-[#2a1a1a] border border-[#4a2a2a] rounded p-2 break-words anim-banner">⚠ {message}</div>;
 }
 
-export function Kpi({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+export function Kpi({ label, value, sub, color }: { label: string; value: ReactNode; sub?: string; color?: string }) {
   return (
-    <div className="bg-[#161616] border border-[#262626] rounded-lg p-4 min-w-0">
+    <div className="bg-[#161616] border border-[#262626] rounded-lg p-4 min-w-0 anim-card">
       <div className="flex items-center gap-2 text-xs text-[#8a8a8a]">
         {color && <span className="inline-block w-2 h-2 rounded-sm" style={{ background: color }} />}
         {label}
@@ -133,7 +133,7 @@ export function HBars({ rows, unit = '', color = CHART_COLORS[0], format = (n: n
             <span className="text-[#a3a3a3] tabular-nums shrink-0">{format(r.value)}{unit && ` ${unit}`}{r.sub ? ` · ${r.sub}` : ''}</span>
           </div>
           <div className="h-2 bg-[#222] rounded-sm overflow-hidden">
-            <div className="h-full rounded-e-sm group-hover:opacity-80" style={{ width: `${Math.max(r.value > 0 ? 1.5 : 0, (r.value / max) * 100)}%`, background: r.color ?? color }} />
+            <div className="h-full rounded-e-sm group-hover:opacity-80 anim-bar" style={{ width: `${Math.max(r.value > 0 ? 1.5 : 0, (r.value / max) * 100)}%`, background: r.color ?? color }} />
           </div>
         </div>
       ))}
@@ -151,7 +151,7 @@ export function ProgressRow({ label, done, target, unit = '' }: { label: string;
         <span className="text-[#e5e5e5] tabular-nums">{nf(done)} / {target > 0 ? nf(target) : '—'}{target > 0 ? ` (${nf(pct)}%)` : ''}</span>
       </div>
       <div className="h-1.5 bg-[#222] rounded-sm overflow-hidden">
-        <div className="h-full rounded-e-sm" style={{ width: `${Math.min(100, pct)}%`, background: pct >= 100 ? CHART_COLORS[2] : CHART_COLORS[0] }} />
+        <div className="h-full rounded-e-sm anim-bar" style={{ width: `${Math.min(100, pct)}%`, background: pct >= 100 ? CHART_COLORS[2] : CHART_COLORS[0] }} />
       </div>
     </div>
   );
@@ -173,7 +173,7 @@ export function Funnel({ steps }: { steps: { label: string; value: number }[] })
               <span className="text-[#a3a3a3] tabular-nums">{nf(s.value)}{conv != null ? ` · ${nf(conv, 1)}%` : ''}</span>
             </div>
             <div className="h-3 bg-[#222] rounded-sm overflow-hidden">
-              <div className="h-full rounded-e-sm" style={{ width: `${Math.max(s.value > 0 ? 1.5 : 0, (s.value / top) * 100)}%`, background: CHART_COLORS[0] }} />
+              <div className="h-full rounded-e-sm anim-bar" style={{ width: `${Math.max(s.value > 0 ? 1.5 : 0, (s.value / top) * 100)}%`, background: CHART_COLORS[0] }} />
             </div>
           </div>
         );
@@ -185,7 +185,7 @@ export function Funnel({ steps }: { steps: { label: string; value: number }[] })
 export function SimpleTable({ head, rows }: { head: string[]; rows: (string | number)[][] }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-xs text-[#e5e5e5]">
+      <table className="w-full text-xs text-[#e5e5e5] anim-rows">
         <thead>
           <tr className="text-[#8a8a8a] border-b border-[#262626]">
             {head.map(h => <th key={h} className="text-start font-medium py-1.5 pe-3 whitespace-nowrap">{h}</th>)}

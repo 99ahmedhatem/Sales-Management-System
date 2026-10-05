@@ -1,3 +1,4 @@
+import { TableSkeleton } from "../shared/motion"
 import { useEffect, useState } from "react"
 
 import { supabase } from "../../supabaseClient"
@@ -522,13 +523,13 @@ export default function SalesDashboard({ userId }: Props) {
       {error && (
         <div
           role="alert"
-          className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
+          className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888] anim-banner"
         >
           {t(error)}
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 anim-stagger">
         <KpiCard
           label="Meeting Requests"
           value={totalRequests}
@@ -607,7 +608,7 @@ export default function SalesDashboard({ userId }: Props) {
         <Card>
           {loading ? (
             <div className="p-8 text-center text-sm text-[#6b6b6b]">
-              {t("Loading meeting requests...")}
+              <TableSkeleton />
             </div>
           ) : requests.length === 0 ? (
             <div className="p-8 text-center text-sm text-[#6b6b6b]">
@@ -845,7 +846,7 @@ export default function SalesDashboard({ userId }: Props) {
 
       {(tab === "upcoming" || tab === "all") && loading && (
         <div className="py-8 text-center text-sm text-[#6b6b6b]">
-          {t("Loading meetings...")}
+          <TableSkeleton />
         </div>
       )}
 
@@ -935,7 +936,7 @@ export default function SalesDashboard({ userId }: Props) {
         {detail && (
           <div className="space-y-4">
             {modalError && (
-              <div role="alert" className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]">
+              <div role="alert" className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888] anim-shake">
                 {t(modalError)}
               </div>
             )}
@@ -1091,7 +1092,7 @@ export default function SalesDashboard({ userId }: Props) {
         {commentModal && (
           <div className="space-y-4">
             {modalError && (
-              <div role="alert" className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]">
+              <div role="alert" className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888] anim-shake">
                 {t(modalError)}
               </div>
             )}

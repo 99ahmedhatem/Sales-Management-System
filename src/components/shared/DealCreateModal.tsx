@@ -305,7 +305,7 @@ export default function DealCreateModal({
     <Modal open={open} onClose={closeModal} title="New Deal">
       <div className="space-y-4">
         {error && (
-          <div role="alert" className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]">
+          <div role="alert" className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888] anim-shake">
             {error}
           </div>
         )}
@@ -472,7 +472,7 @@ export default function DealCreateModal({
               </label>
             </div>
             {isBelowMinimum && (
-              <div role="alert" className="rounded border border-[#ffc832]/30 bg-[#ffc832]/10 p-3 text-sm text-[#ffc832]">
+              <div role="alert" className="rounded border border-[#ffc832]/30 bg-[#ffc832]/10 p-3 text-sm text-[#ffc832] anim-banner">
                 {t("This closing price is below the package minimum. The deal will be flagged for the approver.")}
               </div>
             )}

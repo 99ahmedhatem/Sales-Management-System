@@ -1,3 +1,4 @@
+import { TableSkeleton } from "../shared/motion"
 import { useEffect, useState } from "react"
 
 import { supabase } from "../../supabaseClient"
@@ -873,13 +874,13 @@ export default function TelesalesDashboard({ userId }: Props) {
 
   // Kept after every hook: returning before a hook breaks React's rules of hooks.
   if (loading) {
-    return <div className="p-6 text-[#a0a0a0] text-sm">{t("Loading your queue…")}</div>
+    return <div className="p-6 text-[#a0a0a0] text-sm"><TableSkeleton /></div>
   }
 
   return (
     <div className="p-6 space-y-6">
       {loadError && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3">
+        <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3 anim-banner">
           {t(loadError)}
         </div>
       )}
@@ -890,7 +891,7 @@ export default function TelesalesDashboard({ userId }: Props) {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 anim-stagger">
         <KpiCard
           label="Clients Worked"
           value={workedClientCount}

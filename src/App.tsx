@@ -13,6 +13,7 @@ import CompleteAdminSetup from "./components/CompleteAdminSetup"
 import AppShell from "./components/AppShell"
 
 import ErrorBoundary from "./components/shared/ErrorBoundary"
+import { TableSkeleton } from "./components/shared/motion"
 
 const AdminDashboard = lazy(() => import("./components/admin/AdminDashboard"))
 
@@ -133,7 +134,7 @@ export default function App() {
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-[#0c0c0c] flex items-center justify-center text-[#a0a0a0] text-sm">
-        Loading…
+        <span role="status" aria-label="Loading" className="w-6 h-6 rounded-full border-2 border-[#262626] border-t-[#dfff03] anim-spin" />
       </div>
     )
   }
@@ -162,7 +163,7 @@ export default function App() {
         <ErrorBoundary resetKey={page}>
         <Suspense
           fallback={
-            <div className="p-6 text-sm text-[#6b6b6b]">Loading...</div>
+            <div className="p-6"><TableSkeleton rows={6} /></div>
           }
         >
           {session.role === "admin" && page === "dashboard" && (

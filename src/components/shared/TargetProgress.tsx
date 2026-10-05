@@ -1,3 +1,4 @@
+import { TableSkeleton } from './motion';
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -125,7 +126,7 @@ export default function TargetProgress({ month, canEdit }: { month: string; canE
         <span className="text-xs text-[#8a8a8a]">{month}</span>
       </div>
       {error && <ErrorNote message={t(error)} />}
-      {loading && <div className="text-xs text-[#8a8a8a] py-4 text-center">{t('Loading…')}</div>}
+      {loading && <div className="text-xs text-[#8a8a8a] py-4 text-center"><TableSkeleton /></div>}
       {!loading && !error && rows.length === 0 && <Empty text={t('No targets to show')} />}
       {!loading && !error && teams.map(team => (
         <div key={team.user_id} className="space-y-3">
@@ -150,7 +151,7 @@ export default function TargetProgress({ month, canEdit }: { month: string; canE
             {editing.kind === 'team' && (
               <p className="text-[#6b6b6b] text-xs">{t('A manager’s target is for their whole team’s total.')}</p>
             )}
-            {saveError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs rounded p-2 break-words">{t(saveError)}</div>}
+            {saveError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs rounded p-2 break-words anim-shake">{t(saveError)}</div>}
             {([
               ['revenue', 'Revenue target (SAR)'],
               ['deals', 'Deals target'],

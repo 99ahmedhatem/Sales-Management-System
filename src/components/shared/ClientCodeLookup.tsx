@@ -95,7 +95,7 @@ export default function ClientCodeLookup({ onFound, onClear, disabled }: Props) 
             {t("Status")}: {client.status ? t(client.status) : "—"} · {t("Owner")}: {client.owner_name ?? "—"}
           </div>
           {client.reason && (
-            <div role="alert" className="mt-1 rounded border border-[#ffc832]/30 bg-[#ffc832]/10 p-2 text-[#ffc832]">
+            <div role="alert" className="mt-1 rounded border border-[#ffc832]/30 bg-[#ffc832]/10 p-2 text-[#ffc832] anim-banner">
               {t(client.reason)}{client.open_deal_status ? ` (${t(client.open_deal_status.replace("_", " "))})` : ""}
             </div>
           )}

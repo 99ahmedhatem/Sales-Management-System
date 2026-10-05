@@ -1,3 +1,4 @@
+import { TableSkeleton } from "./motion"
 import { useEffect, useState } from "react"
 import {
   loadManageableMeetingRequestsPage,
@@ -124,14 +125,14 @@ export default function MeetingRequestsManagement({ role, userId }: Props) {
       {error && (
         <div
           role="alert"
-          className="mb-3 rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
+          className="mb-3 rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888] anim-banner"
         >
           {t(error)}
         </div>
       )}
       {loading ? (
         <div className="py-6 text-center text-sm text-[#6b6b6b]">
-          {t("Loading requests...")}
+          <TableSkeleton />
         </div>
       ) : requests.length === 0 ? (
         <div className="py-6 text-center text-sm text-[#6b6b6b]">

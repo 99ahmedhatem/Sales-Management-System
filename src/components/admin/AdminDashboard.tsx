@@ -1,3 +1,4 @@
+import { TableSkeleton } from "../shared/motion"
 import { useEffect, useState } from "react"
 
 import { supabase } from "../../supabaseClient"
@@ -20,6 +21,10 @@ interface DashboardCounts {
   convertedLeads: number
 
   newLeads: number
+
+  assignedStatusLeads: number
+
+  noAnswerLeads: number
 
   contactedLeads: number
 
@@ -46,6 +51,10 @@ const EMPTY_COUNTS: DashboardCounts = {
   convertedLeads: 0,
 
   newLeads: 0,
+
+  assignedStatusLeads: 0,
+
+  noAnswerLeads: 0,
 
   contactedLeads: 0,
 
@@ -170,7 +179,11 @@ export default function AdminDashboard() {
 
           convertedLeads: statusCount("Converted"),
 
-          newLeads: statusCount("New", "Assigned"),
+          newLeads: statusCount("New"),
+
+          assignedStatusLeads: statusCount("Assigned"),
+
+          noAnswerLeads: statusCount("No Answer"),
 
           contactedLeads: statusCount("Contacted"),
 
@@ -205,7 +218,9 @@ export default function AdminDashboard() {
   )
 
   const statuses = [
-    { label: "New / Uncontacted", count: counts.newLeads, color: "#6495ed" },
+    { label: "New", count: counts.newLeads, color: "#6495ed" },
+
+    { label: "Assigned", count: counts.assignedStatusLeads, color: "#a78bfa" },
 
     { label: "Contacted", count: counts.contactedLeads, color: "#64c8ff" },
 
@@ -217,6 +232,8 @@ export default function AdminDashboard() {
       color: "#ffc832",
     },
 
+    { label: "No Answer", count: counts.noAnswerLeads, color: "#969696" },
+
     {
       label: "Not Interested",
       count: counts.notInterestedLeads,
@@ -225,6 +242,14 @@ export default function AdminDashboard() {
 
     { label: "Converted", count: counts.convertedLeads, color: "#dfff03" },
   ]
+
+  // Every status not listed above (e.g. Subscribed), so the rows add up to Total Leads.
+  const otherLeads =
+    counts.totalLeads - statuses.reduce((sum, row) => sum + row.count, 0)
+
+  if (otherLeads > 0) {
+    statuses.push({ label: "Other", count: otherLeads, color: "#4a4a4a" })
+  }
 
   return (
     <div className="space-y-6 p-6">
@@ -238,13 +263,13 @@ export default function AdminDashboard() {
       {error && (
         <div
           role="alert"
-          className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
+          className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888] anim-banner"
         >
           {t(error)}
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 anim-stagger">
         <KpiCard
           label="Total Leads"
           value={loading ? "—" : counts.totalLeads}
@@ -267,7 +292,7 @@ export default function AdminDashboard() {
         <Card className="col-span-1 p-5">
           <h3 className="mb-4 font-semibold text-white">{t("Lead Status")}</h3>
           {loading ? (
-            <div className="text-sm text-[#6b6b6b]">{t("Loading...")}</div>
+            <div className="text-sm text-[#6b6b6b]"><TableSkeleton /></div>
           ) : (
             statuses.map((row) => (
               <div key={row.label} className="mb-3">
@@ -277,7 +302,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="h-1.5 rounded-full bg-[#1e1e1e]">
                   <div
-                    className="h-full rounded-full transition-all"
+                    className="h-full rounded-full transition-all anim-bar"
                     style={{
                       width: `${
                         counts.totalLeads > 0
@@ -296,7 +321,7 @@ export default function AdminDashboard() {
         <Card className="col-span-1 p-5 lg:col-span-2">
           <h3 className="mb-4 font-semibold text-white">{t("Upcoming Meetings")}</h3>
           {loading ? (
-            <div className="text-sm text-[#6b6b6b]">{t("Loading meetings...")}</div>
+            <div className="text-sm text-[#6b6b6b]"><TableSkeleton /></div>
           ) : counts.meetings.length === 0 ? (
             <div className="py-6 text-center text-sm text-[#6b6b6b]">
               {t("No upcoming meetings.")}

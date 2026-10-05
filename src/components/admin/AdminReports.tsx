@@ -1,3 +1,4 @@
+import { TableSkeleton } from "../shared/motion"
 import { useEffect, useState } from "react"
 
 import { supabase } from "../../supabaseClient"
@@ -73,9 +74,38 @@ export default function AdminReports() {
         setError(rpcError.message)
 
         setSummary(EMPTY_SUMMARY)
-      } else {
-        setSummary({ ...EMPTY_SUMMARY, ...(data as ReportsSummary | null) })
+
+        setLoading(false)
+
+        return
       }
+
+      const report = { ...EMPTY_SUMMARY, ...(data as ReportsSummary | null) }
+
+      // Calls per telesales: exact count of their 'call' rows in activity_logs (one small head query each).
+      const callCounts = await Promise.all(
+        report.telesales.map((row) =>
+          supabase
+            .from("activity_logs")
+            .select("id", { count: "exact", head: true })
+            .eq("actor_id", row.user_id)
+            .eq("activity_type", "call"),
+        ),
+      )
+
+      if (!active) return
+
+      const callsError = callCounts.find((res) => res.error)?.error
+
+      if (callsError) setError(callsError.message)
+
+      setSummary({
+        ...report,
+        telesales: report.telesales.map((row, i) => ({
+          ...row,
+          calls: callCounts[i].error ? row.calls : callCounts[i].count ?? 0,
+        })),
+      })
 
       setLoading(false)
     }
@@ -132,17 +162,17 @@ export default function AdminReports() {
       {error && (
         <div
           role="alert"
-          className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
+          className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888] anim-banner"
         >
           {t(error)}
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 anim-stagger">
         <KpiCard
           label="Total Leads"
           value={loading ? "—" : totalLeads}
-          sub="All assigned leads"
+          sub={t("{n} assigned", { n: assignedLeads.toLocaleString("en-US") })}
         />
         <KpiCard
           label="Conversion Rate"
@@ -173,7 +203,7 @@ export default function AdminReports() {
       <Card className="p-5">
         <h3 className="mb-4 font-semibold text-white">{t("Lead Sources")}</h3>
         {loading ? (
-          <div className="text-sm text-[#6b6b6b]">{t("Loading report data...")}</div>
+          <div className="text-sm text-[#6b6b6b]"><TableSkeleton /></div>
         ) : sourceData.length === 0 ? (
           <div className="text-sm text-[#6b6b6b]">{t("No lead source data.")}</div>
         ) : (
@@ -217,7 +247,7 @@ export default function AdminReports() {
             {t("Telesales Performance")}
           </h3>
           {loading ? (
-            <div className="text-sm text-[#6b6b6b]">{t("Loading...")}</div>
+            <div className="text-sm text-[#6b6b6b]"><TableSkeleton /></div>
           ) : agentStats.length === 0 ? (
             <div className="text-sm text-[#6b6b6b]">
               {t("No telesales users found.")}
@@ -256,7 +286,7 @@ export default function AdminReports() {
         <Card className="p-5">
           <h3 className="mb-4 font-semibold text-white">{t("Sales Performance")}</h3>
           {loading ? (
-            <div className="text-sm text-[#6b6b6b]">{t("Loading...")}</div>
+            <div className="text-sm text-[#6b6b6b]"><TableSkeleton /></div>
           ) : salesStats.length === 0 ? (
             <div className="text-sm text-[#6b6b6b]">{t("No sales users found.")}</div>
           ) : (

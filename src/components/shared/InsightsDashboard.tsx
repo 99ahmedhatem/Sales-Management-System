@@ -1,3 +1,4 @@
+import { AnimatedNumber, TableSkeleton } from './motion';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -126,9 +127,10 @@ export default function InsightsDashboard({ role }: { role: Role }) {
   const sarTotal12 = months.reduce((s, x) => s + x.sar, 0);
 
   const Status = ({ s }: { s: Section<any> }) =>
-    s.loading ? <div className="text-xs text-[#8a8a8a] py-6 text-center">{t("Loading…")}</div>
+    s.loading ? <div className="text-xs text-[#8a8a8a] py-6 text-center"><TableSkeleton /></div>
       : s.error ? <ErrorNote message={s.error} /> : null;
   const ready = (s: Section<any>) => !s.loading && !s.error;
+  const num = (v: unknown) => (v == null || Number.isNaN(Number(v)) ? nf(null) : <AnimatedNumber value={Number(v)} format={n => nf(n)} />);
 
   return (
     <div className="p-4 md:p-6 space-y-4" dir={dir}>
@@ -150,12 +152,12 @@ export default function InsightsDashboard({ role }: { role: Role }) {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <Kpi label={t("Confirmed revenue (SAR)")} value={ready(month1) ? nf(m?.confirmed_sar) : '…'} sub={ready(month1) ? t("{n} payments", { n: nf(m?.confirmed_count) }) : undefined} color={CHART_COLORS[0]} />
-        <Kpi label={t("Confirmed revenue (EGP)")} value={ready(month1) ? nf(m?.confirmed_egp) : '…'} color={CHART_COLORS[1]} />
-        <Kpi label={t("Unconfirmed payments (SAR)")} value={ready(month1) ? nf(m?.pending_sar) : '…'} sub={ready(month1) ? t("{n} payments", { n: nf(m?.pending_count) }) : undefined} />
-        <Kpi label={t("New deals")} value={ready(month1) ? nf(m?.new_deals) : '…'} sub={ready(month1) ? `${nf(m?.new_deals_value_sar)} ${t("SAR")}` : undefined} />
-        <Kpi label={t("Needs attention")} value={ready(attention) ? nf(attention.data.length) : '…'} sub={ready(attention) ? t("{n} urgent", { n: highCount }) : undefined} />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 anim-stagger">
+        <Kpi label={t("Confirmed revenue (SAR)")} value={ready(month1) ? num(m?.confirmed_sar) : '…'} sub={ready(month1) ? t("{n} payments", { n: nf(m?.confirmed_count) }) : undefined} color={CHART_COLORS[0]} />
+        <Kpi label={t("Confirmed revenue (EGP)")} value={ready(month1) ? num(m?.confirmed_egp) : '…'} color={CHART_COLORS[1]} />
+        <Kpi label={t("Unconfirmed payments (SAR)")} value={ready(month1) ? num(m?.pending_sar) : '…'} sub={ready(month1) ? t("{n} payments", { n: nf(m?.pending_count) }) : undefined} />
+        <Kpi label={t("New deals")} value={ready(month1) ? num(m?.new_deals) : '…'} sub={ready(month1) ? `${nf(m?.new_deals_value_sar)} ${t("SAR")}` : undefined} />
+        <Kpi label={t("Needs attention")} value={ready(attention) ? num(attention.data.length) : '…'} sub={ready(attention) ? t("{n} urgent", { n: highCount }) : undefined} />
       </div>
       {month1.error && <ErrorNote message={`${t("Revenue")}: ${month1.error}`} />}
 

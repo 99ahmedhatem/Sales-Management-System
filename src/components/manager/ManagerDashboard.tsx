@@ -1,3 +1,4 @@
+import { TableSkeleton } from '../shared/motion';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { Lead, LeadStatus, User } from '../../data/mockData';
@@ -6,6 +7,7 @@ import { dateLocale } from '../../i18n/locale';
 import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr, WebsiteLink } from '../ui';
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
 import { exportRowsToExcel } from '../shared/exportExcel';
+import DistributeLeadsModal from '../shared/DistributeLeadsModal';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
@@ -56,6 +58,7 @@ export default function ManagerDashboard({ userId }: Props) {
   const [assignModal, setAssignModal] = useState(false);
   const [assignLeads, setAssignLeads] = useState<string[]>([]);
   const [assignTo, setAssignTo] = useState('');
+  const [distributeModal, setDistributeModal] = useState(false);
   const [selectedPoolLeads, setSelectedPoolLeads] = useState<string[]>([]);
   const [editingCustomerNumberId, setEditingCustomerNumberId] = useState<string | null>(null);
   const [editingCustomerNumber, setEditingCustomerNumber] = useState('');
@@ -320,25 +323,28 @@ export default function ManagerDashboard({ userId }: Props) {
   };
 
   if (loading) {
-    return <div className="p-6 text-[#a0a0a0] text-sm">{t('Loading team data…')}</div>;
+    return <div className="p-6 text-[#a0a0a0] text-sm"><TableSkeleton /></div>;
   }
 
   return (
     <div className="p-6 space-y-6">
-      {errorMsg && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3">{t(errorMsg)}</div>}
+      {errorMsg && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3 anim-banner">{t(errorMsg)}</div>}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-white text-2xl font-bold">{t('Team Overview')}</h1>
           <p className="text-[#6b6b6b] text-sm mt-0.5">{me?.fullName || t('Manager')} — {t('Manager')}</p>
         </div>
-        {poolLeads.length > 0 && (
-          <Button variant="primary" size="sm" disabled={!selectedPoolLeads.length} onClick={() => { setAssignLeads(selectedPoolLeads); setAssignTo(''); setAssignModal(true); }}>
-            {t('Distribute Selected ({n})', { n: selectedPoolLeads.length })}
-          </Button>
-        )}
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setDistributeModal(true)}>{t('Distribute evenly')}</Button>
+          {poolLeads.length > 0 && (
+            <Button variant="primary" size="sm" disabled={!selectedPoolLeads.length} onClick={() => { setAssignLeads(selectedPoolLeads); setAssignTo(''); setAssignModal(true); }}>
+              {t('Distribute Selected ({n})', { n: selectedPoolLeads.length })}
+            </Button>
+          )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 anim-stagger">
         <KpiCard label="Clients Worked" value={workedClientCount} sub="Distinct team clients" />
         <KpiCard label="Team Members" value={myTeam.length} sub={t('{a} telesales · {b} sales', { a: telesalesTeam.length, b: salesTeam.length })} />
         <KpiCard label="Received from Admin" value={receivedCount} sub="Waiting in your pool" />
@@ -369,7 +375,7 @@ export default function ManagerDashboard({ userId }: Props) {
                   </div>
                 </div>
                 <div className="h-1.5 bg-[#262626] rounded-full">
-                  <div className="h-full bg-[#dfff03] rounded-full" style={{ width: `${rate}%` }} />
+                  <div className="h-full bg-[#dfff03] rounded-full anim-bar" style={{ width: `${rate}%` }} />
                 </div>
               </div>
             ))}
@@ -395,7 +401,7 @@ export default function ManagerDashboard({ userId }: Props) {
                   </div>
                 </div>
                 <div className="h-1.5 bg-[#262626] rounded-full">
-                  <div className="h-full bg-[#64dc78] rounded-full" style={{ width: `${rate}%` }} />
+                  <div className="h-full bg-[#64dc78] rounded-full anim-bar" style={{ width: `${rate}%` }} />
                 </div>
               </div>
             ))}
@@ -520,6 +526,13 @@ export default function ManagerDashboard({ userId }: Props) {
       </Card>
 
       {/* Assign leads modal */}
+      <DistributeLeadsModal
+        open={distributeModal}
+        onClose={() => setDistributeModal(false)}
+        agents={assignableTelesales}
+        onDone={() => setRefreshVersion(version => version + 1)}
+      />
+
       <Modal open={assignModal} onClose={() => setAssignModal(false)} title="Distribute Leads to Team Member">
         <div className="space-y-4">
           <p className="text-[#a0a0a0] text-sm">{t('Assign leads from your pool to a telesales agent on your team.')}</p>

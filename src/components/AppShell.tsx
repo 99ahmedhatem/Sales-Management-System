@@ -9,6 +9,7 @@ import { Avatar, Badge } from "./ui"
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh"
 
 import { LanguageSwitch, useI18n } from "../i18n/I18nProvider"
+import { PageTransition } from "./shared/motion"
 
 type AdminPage = "dashboard" | "leads" | "users" | "meetings" | "reports"
 
@@ -487,7 +488,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/60 z-20 lg:hidden"
+          className="fixed inset-0 bg-black/60 z-20 lg:hidden anim-backdrop"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -495,7 +496,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
       {/* Sidebar */}
       <aside
         className={`fixed lg:static inset-y-0 left-0 z-30 w-56 bg-[#0e0e0e] border-r border-[#1e1e1e] flex flex-col transition-transform ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          sidebarOpen ? "translate-x-0 anim-drawer lg:animate-none" : "-translate-x-full"
         } lg:translate-x-0`}
       >
         {/* Brand */}
@@ -620,7 +621,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
                   />
                 </svg>
                 {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 w-4 h-4 bg-[#dfff03] text-black text-[10px] font-bold rounded-full flex items-center justify-center">
+                  <span className="absolute top-1 right-1 w-4 h-4 bg-[#dfff03] text-black text-[10px] font-bold rounded-full flex items-center justify-center anim-pulse-dot">
                     {unreadCount}
                   </span>
                 )}
@@ -632,7 +633,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
                     className="fixed inset-0 z-10"
                     onClick={() => setNotifOpen(false)}
                   />
-                  <div className="absolute right-0 top-full mt-1 w-80 bg-[#161616] border border-[#262626] rounded-xl shadow-2xl z-20 overflow-hidden">
+                  <div className="absolute right-0 top-full mt-1 w-80 bg-[#161616] border border-[#262626] rounded-xl shadow-2xl z-20 overflow-hidden anim-banner">
                     <div className="px-4 py-3 border-b border-[#262626] flex items-center justify-between">
                       <span className="text-white font-medium text-sm">
                         {t("Notifications")}
@@ -691,7 +692,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto" dir={dir}>
-          {children(page)}
+          <PageTransition pageKey={page}>{children(page)}</PageTransition>
         </main>
       </div>
     </div>

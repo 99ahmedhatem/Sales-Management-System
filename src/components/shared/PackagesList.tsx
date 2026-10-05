@@ -1,3 +1,4 @@
+import { TableSkeleton } from "./motion"
 import { useEffect, useState } from "react"
 
 import { supabase } from "../../supabaseClient"
@@ -94,14 +95,14 @@ export default function PackagesList() {
       {error && (
         <div
           role="alert"
-          className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888]"
+          className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888] anim-banner"
         >
           {error}
         </div>
       )}
       {loading ? (
         <div className="py-12 text-center text-sm text-[#6b6b6b]">
-          {t("Loading packages...")}
+          <TableSkeleton />
         </div>
       ) : !error && packages.length === 0 ? (
         <div className="py-12 text-center text-sm text-[#6b6b6b]">

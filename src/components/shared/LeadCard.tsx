@@ -259,7 +259,7 @@ export default function LeadCard({ leadId, role, onClose }: { leadId: string; ro
             <>
               {/* Actions */}
               <div className="flex flex-wrap items-center gap-2">
-                {lead.phone && <WhatsAppButton leadId={lead.id} leadStatus={lead.status} />}
+                {lead.phone && <WhatsAppButton leadId={lead.id} leadStatus={lead.status} allowTemplatePick />}
                 {data.can_edit && can('leads.edit') && !editing && <Button size="sm" variant="secondary" onClick={startEdit}>{t('Edit')}</Button>}
                 {saveMsg && <span className="text-xs text-[#64dc78]">{saveMsg}</span>}
               </div>

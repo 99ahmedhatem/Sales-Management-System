@@ -36,11 +36,14 @@ const positiveInt = (value: string) => {
 };
 
 /**
- * Spreads unassigned leads evenly over active telesales (admin: all, manager: their team).
- * The database does the work: count_unassigned_leads + distribute_unassigned_leads.
+ * Spreads leads evenly over active telesales. The database picks the leads (030):
+ * admin = unassigned leads to any active telesales, manager = leads assigned to the manager, to their team.
+ * count_unassigned_leads previews, distribute_unassigned_leads moves them; the country filter is leads.region.
  */
-export default function DistributeLeadsModal({ open, onClose, agents, onDone }: {
+export default function DistributeLeadsModal({ open, onClose, agents, onDone, managerPool = false }: {
   open: boolean;
+  /** Manager: the source is the leads assigned to them, not the unassigned ones. */
+  managerPool?: boolean;
   onClose: () => void;
   agents: Agent[];
   onDone: () => void;
@@ -179,7 +182,7 @@ export default function DistributeLeadsModal({ open, onClose, agents, onDone }: 
               </label>
               <label className="block">
                 <span className="mb-1 block text-xs text-[#a0a0a0]">{t('How many leads')}</span>
-                <Input type="number" value={limit} onChange={setLimit} placeholder={t('All unassigned')} className="w-full" />
+                <Input type="number" value={limit} onChange={setLimit} placeholder={managerPool ? t('All in your pool') : t('All unassigned')} className="w-full" />
               </label>
               <label className="block">
                 <span className="mb-1 block text-xs text-[#a0a0a0]">{t('Country')}</span>
@@ -196,7 +199,7 @@ export default function DistributeLeadsModal({ open, onClose, agents, onDone }: 
                 ? t('Counting...')
                 : matchCount === null
                   ? '—'
-                  : t('{n} unassigned leads match', { n: matchCount.toLocaleString('en-US') })}
+                  : t(managerPool ? '{n} leads in your pool match' : '{n} unassigned leads match', { n: matchCount.toLocaleString('en-US') })}
             </p>
 
             <div className="flex gap-2">

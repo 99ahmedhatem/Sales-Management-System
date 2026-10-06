@@ -757,4 +757,6 @@ export const ar: Record<string, string> = {
   "Distribute {n} leads to {k} agents?": "توزيع {n} عميل على {k} موظف؟",
   "{n} leads distributed": "تم توزيع {n} عميل",
   "Not assigned": "ما اتوزّعش",
+  "All in your pool": "كل العملاء اللي معاك",
+  "{n} leads in your pool match": "{n} عميل من اللي معاك مطابق",
 };

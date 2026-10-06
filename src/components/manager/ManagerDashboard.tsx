@@ -530,6 +530,7 @@ export default function ManagerDashboard({ userId }: Props) {
         open={distributeModal}
         onClose={() => setDistributeModal(false)}
         agents={assignableTelesales}
+        managerPool
         onDone={() => setRefreshVersion(version => version + 1)}
       />
 

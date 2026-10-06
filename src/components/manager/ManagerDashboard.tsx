@@ -12,6 +12,7 @@ import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
 import { useI18n } from '../../i18n/I18nProvider';
+import { ClientLink } from '../shared/AppOverlays';
 
 const ROLE_REGION_OPTIONS = [
   { value: '', label: 'All Countries' },
@@ -447,7 +448,7 @@ export default function ManagerDashboard({ userId }: Props) {
                   </div>
                 </Td>
                 <Td><span className="font-mono text-xs text-[#dfff03]">{l.clientCode}</span></Td>
-                <Td><span className="text-white font-medium">{l.name}</span></Td>
+                <Td><ClientLink leadId={l.id} className="text-white font-medium">{l.name}</ClientLink></Td>
                 <Td><EditablePhoneCell phone={l.phone} onSave={phone => saveInlinePhone(l, phone)} /></Td>
                 <Td><span className="text-[#a0a0a0] text-xs">{l.company || '—'}</span></Td>
                 <Td><WebsiteLink url={l.website} className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block" /></Td>
@@ -508,7 +509,7 @@ export default function ManagerDashboard({ userId }: Props) {
             return (
               <div key={m.id} className="flex items-center gap-4 p-3 bg-[#1a1a1a] rounded-lg">
                 <div className="flex-1">
-                  <div className="text-white text-sm font-medium">{m.leadName}</div>
+                  <div className="text-white text-sm font-medium"><ClientLink leadId={m.leadId}>{m.leadName}</ClientLink></div>
                   <div className="text-[#6b6b6b] text-xs" dir="ltr">{m.leadPhone}</div>
                 </div>
                 <div className="text-end">

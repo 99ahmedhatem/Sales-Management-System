@@ -7,6 +7,7 @@ import { EditablePhoneCell } from '../shared/LeadRowControls';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { useI18n } from '../../i18n/I18nProvider';
 import { dateLocale } from '../../i18n/locale';
+import { ClientLink, useProfileViewer } from '../shared/AppOverlays';
 
 function mapUser(row: any): User {
   return {
@@ -24,6 +25,7 @@ function mapUser(row: any): User {
 
 export default function AdminUsers() {
   const { t, lang } = useI18n();
+  const openProfile = useProfileViewer();
   const [users, setUsers] = useState<User[]>([]);
   const [emailConfirmed, setEmailConfirmed] = useState<Record<string, boolean>>({});
   const [togglingEmail, setTogglingEmail] = useState<Record<string, boolean>>({});
@@ -402,6 +404,7 @@ export default function AdminUsers() {
                   <Button variant="ghost" size="sm" onClick={() => toggleStatus(u)}>
                     {u.status === 'active' ? t('Deactivate') : t('Activate')}
                   </Button>
+                  {u.role !== 'admin' && <Button variant="ghost" size="sm" onClick={() => openProfile(u.id)}>{t('Profile')}</Button>}
                   <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>{t('Edit')}</Button>
                   <Button variant="ghost" size="sm" onClick={() => sendPasswordReset(u)}>{t('Change Password')}</Button>
                   <Button variant="ghost" size="sm" onClick={() => deleteUser(u)}>{t('Delete')}</Button>
@@ -430,7 +433,7 @@ export default function AdminUsers() {
               <Tr key={lead.id}>
                 <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.customerNumber ?? '—'}</span></Td>
                 <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
-                <Td><span className="text-white font-medium">{lead.name}</span></Td>
+                <Td><ClientLink leadId={lead.id} className="text-white font-medium">{lead.name}</ClientLink></Td>
                 <Td><EditablePhoneCell phone={lead.phone} onSave={value => saveAssignedLeadPhone(lead, value)} /></Td>
                 <Td><span className="text-[#a0a0a0] text-xs">{lead.company || '—'}</span></Td>
                 <Td><span className="font-mono text-xs text-[#a0a0a0]">{lead.quantity}</span></Td>

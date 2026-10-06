@@ -10,6 +10,7 @@ import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh"
 
 import { LanguageSwitch, useI18n } from "../i18n/I18nProvider"
 import { PageTransition } from "./shared/motion"
+import { onNavigate } from "../lib/navigation"
 
 type AdminPage = "dashboard" | "leads" | "users" | "meetings" | "reports"
 
@@ -391,6 +392,26 @@ const earningsNavItem: NavItem = {
   ),
 }
 
+const profileNavItem: NavItem = {
+  key: "profile",
+  label: "My profile",
+  icon: (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  ),
+}
+
+const whatsappNavItem: NavItem = {
+  key: "whatsapp",
+  label: "WhatsApp templates",
+  icon: (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+    </svg>
+  ),
+}
+
 interface Props {
   role: Role
 
@@ -415,14 +436,23 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
 
   const nav =
     role === "manager"
-      ? [...roleNav, teamNavItem]
+      ? [...roleNav, teamNavItem, profileNavItem]
       : role === "admin"
-        ? [...roleNav, teamNavItem, packagesNavItem]
-        : [...roleNav, earningsNavItem, packagesNavItem]
+        ? [...roleNav, teamNavItem, packagesNavItem, whatsappNavItem, profileNavItem]
+        : [...roleNav, earningsNavItem, packagesNavItem, profileNavItem]
 
   const defaultPage = nav[0].key
 
   const [page, setPage] = useState(defaultPage)
+
+  // Other screens can switch the page (e.g. "Open deal" from the client card)
+  useEffect(
+    () =>
+      onNavigate((next) => {
+        if (nav.some((item) => item.key === next)) setPage(next)
+      }),
+    [nav],
+  )
 
   const [notifOpen, setNotifOpen] = useState(false)
 

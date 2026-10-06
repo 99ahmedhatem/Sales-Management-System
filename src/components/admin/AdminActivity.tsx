@@ -8,6 +8,7 @@ import { Card, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr } fro
 import { EditablePhoneCell } from '../shared/LeadRowControls';
 import { useI18n } from '../../i18n/I18nProvider';
 import { dateLocale } from '../../i18n/locale';
+import { ClientLink, useLeadCard } from '../shared/AppOverlays';
 
 interface LeadRow {
   id: string;
@@ -46,6 +47,7 @@ const STATUS_OPTIONS = [
 
 export default function AdminActivity() {
   const { t, lang } = useI18n();
+  const openLead = useLeadCard();
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [leads, setLeads] = useState<LeadRow[]>([]);
   const [counts, setCounts] = useState<ActivityCounts | null>(null);
@@ -180,8 +182,8 @@ export default function AdminActivity() {
         <Table headers={['Client', 'Phone', 'Agent', 'Activity', 'Outcome', 'Notes', 'Time']}>
           {visible.map(activity => {
             const lead = leadById.get(activity.leadId);
-            return <Tr key={activity.id}>
-              <Td><div className="text-white font-medium">{lead?.name || t('Deleted client')}</div><div className="text-[#dfff03] text-xs font-mono">{lead?.clientCode}</div></Td>
+            return <Tr key={activity.id} onClick={lead ? () => openLead(activity.leadId) : undefined}>
+              <Td><div className="text-white font-medium"><ClientLink leadId={lead ? activity.leadId : null}>{lead?.name || t('Deleted client')}</ClientLink></div><div className="text-[#dfff03] text-xs font-mono">{lead?.clientCode}</div></Td>
               <Td>{lead ? <EditablePhoneCell phone={lead.phone} onSave={value => saveLeadPhone(lead, value)} /> : <span className="font-mono text-xs">—</span>}</Td>
               <Td><div className="text-white text-sm">{activity.actorName}</div><div className="text-[#6b6b6b] text-xs">{t(activity.actorRole)}</div></Td>
               <Td><span className="text-[#a0a0a0] text-xs capitalize">{t(activity.activityType)}</span></Td>

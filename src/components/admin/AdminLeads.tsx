@@ -2,7 +2,6 @@ import { TableSkeleton } from '../shared/motion';
 import { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../supabaseClient';
-import { addClientComment, loadClientComments } from '../../data/clientComments';
 import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
 import { generateCode, Lead, LeadDataQuality, LeadStatus, User } from '../../data/mockData';
@@ -13,6 +12,10 @@ import DistributeLeadsModal, { QUALITY_FILTER_OPTIONS, REGION_OPTIONS } from '..
 import AutoDistributionCard from './AutoDistributionCard';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { useI18n } from '../../i18n/I18nProvider';
+import { normalizeWebsite } from '../../lib/websiteKey';
+import { useLeadCard } from '../shared/AppOverlays';
+import WebsiteChecks, { WEBSITE_REASON_FILTER_OPTIONS, WEBSITE_STATUS_FILTER_OPTIONS, websiteCategoryLabel } from '../shared/WebsiteChecks';
+import WhatsAppButton from '../shared/WhatsAppButton';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -63,9 +66,6 @@ function normalizeCountry(value: string): string {
   return value.trim();
 }
 
-// A lead as shown in the details modal (comments are loaded separately)
-type LeadWithComments = Lead & { comments?: any[] };
-
 interface ImportLeadRow {
   customerNumber?: number;
   website?: string;
@@ -105,15 +105,6 @@ function cleanPhone(value: string): string {
   return value.replace(/[^\d+]/g, '');
 }
 
-function normalizeWebsite(url: string): string {
-  return url
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\/(www\.)?/, '')
-    .replace(/[?#].*$/, '')
-    .replace(/\/+$/, '');
-}
-
 function mapLead(row: any): Lead {
   return {
     id: row.id,
@@ -121,6 +112,7 @@ function mapLead(row: any): Lead {
     website: row.website ?? undefined,
     websiteStatus: row.website_status ?? undefined,
     websiteStatusSource: row.website_status_source ?? undefined,
+    websiteCheckCategory: row.website_check_category ?? undefined,
     phoneSource: row.phone_source ?? undefined,
     quantity: row.quantity ?? 0,
     clientCode: row.client_code,
@@ -156,6 +148,7 @@ function mapUser(row: any): User {
 
 export default function AdminLeads() {
   const { t } = useI18n();
+  const openLead = useLeadCard();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -169,12 +162,10 @@ export default function AdminLeads() {
   const [typeFilter, setTypeFilter] = useState('');
   const [qualityFilter, setQualityFilter] = useState('');
   const [assignmentFilter, setAssignmentFilter] = useState('');
+  const [websiteFilter, setWebsiteFilter] = useState('');
+  const [websiteReasonFilter, setWebsiteReasonFilter] = useState('');
+  const [showWebsiteChecks, setShowWebsiteChecks] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
-  const [detailLead, setDetailLead] = useState<LeadWithComments | null>(null);
-  const [commentText, setCommentText] = useState('');
-  const [commentError, setCommentError] = useState('');
-  const [phoneDraft, setPhoneDraft] = useState('');
-  const [phoneMsg, setPhoneMsg] = useState('');
   const [assignModal, setAssignModal] = useState(false);
   const [assignTo, setAssignTo] = useState('');
   const [distributeModal, setDistributeModal] = useState(false);
@@ -220,6 +211,15 @@ export default function AdminLeads() {
   const requestId = useRef(0);
   const pageSize = 100;
 
+  /** Website status / check reason filters (033), shared by the list and the Excel export. */
+  function applyWebsiteFilters<Q extends { eq: (c: string, v: string) => Q; is: (c: string, v: null) => Q; not: (c: string, op: string, v: null) => Q }>(query: Q): Q {
+    let q = query;
+    if (websiteFilter === 'working' || websiteFilter === 'not_working') q = q.eq('website_status', websiteFilter);
+    if (websiteFilter === 'unchecked') q = q.not('website', 'is', null).is('website_checked_at', null).is('website_status', null);
+    if (websiteReasonFilter) q = q.eq('website_check_category', websiteReasonFilter);
+    return q;
+  }
+
   async function loadData(nextPage = page, silent = false) {
     const reqId = ++requestId.current;
     if (!silent) setLoading(true);
@@ -230,7 +230,7 @@ export default function AdminLeads() {
     const managerIds = loadedUsers.filter(user => user.role === 'manager').map(user => user.id);
 
     const q = debouncedSearch.replace(/[%,()]/g, ' ').trim();
-    const otherFilters = Boolean(q || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter);
+    const otherFilters = Boolean(q || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || websiteFilter || websiteReasonFilter);
     // With no filters (or only "Not distributed") the total comes from get_leads_counts, so skip the slow count.
     const countFromRpc = !otherFilters && (assignmentFilter === '' || assignmentFilter === 'unassigned');
 
@@ -248,6 +248,7 @@ export default function AdminLeads() {
     if (phoneFilter === 'has') leadsQuery = leadsQuery.not('phone', 'is', null);
     if (typeFilter) leadsQuery = leadsQuery.eq('is_salla_store', typeFilter === 'salla');
     if (qualityFilter) leadsQuery = leadsQuery.eq('data_quality', qualityFilter);
+    leadsQuery = applyWebsiteFilters(leadsQuery);
     if (assignmentFilter === 'manager') {
       if (managerIds.length) leadsQuery = leadsQuery.in('assigned_to', managerIds);
       else leadsQuery = leadsQuery.eq('id', '00000000-0000-0000-0000-000000000000');
@@ -291,19 +292,7 @@ export default function AdminLeads() {
     setSelected([]);
     loadData(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter, qualityFilter, assignmentFilter]);
-
-  useEffect(() => {
-    if (!detailLead) return;
-    setPhoneDraft(detailLead.phone ?? '');
-    setPhoneMsg('');
-    setCommentError('');
-    loadClientComments(detailLead.id).then(({ data, error }) => {
-      if (error) setCommentError(error);
-      setDetailLead(prev => (prev ? { ...prev, comments: data } : null));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detailLead?.id]);
+  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter, qualityFilter, assignmentFilter, websiteFilter, websiteReasonFilter]);
 
   // Live updates: when anyone changes a lead or a user, this page refreshes by itself
   useRealtimeRefresh(['leads', 'users'], () => loadData(page, true));
@@ -383,24 +372,6 @@ export default function AdminLeads() {
     setEditingCustomerNumberId(null);
   };
 
-  const handleSavePhone = async () => {
-    if (!detailLead) return;
-    const phone = cleanPhone(phoneDraft);
-    const { error } = await supabase
-      .from('leads')
-      .update({ phone: phone || null, phone_source: phone ? 'manual' : null, updated_at: new Date().toISOString() })
-      .eq('id', detailLead.id);
-    if (error) {
-      setPhoneMsg(error.message);
-      return;
-    }
-    setPhoneDraft(phone);
-    setDetailLead(prev => (prev ? { ...prev, phone } : null));
-    setLeads(prev => prev.map(l => (l.id === detailLead.id ? { ...l, phone } : l)));
-    setPhoneMsg(t('Saved'));
-    await loadData(page, true);
-  };
-
   const saveInlinePhone = async (lead: Lead, value: string) => {
     const phone = cleanPhone(value);
     const { error } = await supabase.from('leads').update({
@@ -439,6 +410,7 @@ export default function AdminLeads() {
       if (phoneFilter === 'has') query = query.not('phone', 'is', null);
       if (typeFilter) query = query.eq('is_salla_store', typeFilter === 'salla');
       if (qualityFilter) query = query.eq('data_quality', qualityFilter);
+      query = applyWebsiteFilters(query);
       if (assignmentFilter === 'manager') query = managerIds.length ? query.in('assigned_to', managerIds) : query.eq('id', '00000000-0000-0000-0000-000000000000');
       if (assignmentFilter === 'unassigned') query = query.is('assigned_to', null);
       const data: any[] = [];
@@ -503,24 +475,6 @@ export default function AdminLeads() {
     await loadData(0);
     setNewLead({ name: '', phone: '', company: '', website: '', region: '', source: '', isSallaStore: false, dataQuality: 'normal', quantity: 0 });
     setAddModal(false);
-  };
-
-  const handleAddComment = async () => {
-    if (!detailLead || !commentText.trim()) return;
-    setCommentError('');
-    const { data, error } = await addClientComment({
-      leadId: detailLead.id,
-      authorId: (await supabase.auth.getUser()).data.user?.id || '',
-      authorName: 'Admin',
-      actorRole: 'admin',
-      text: commentText.trim(),
-    });
-    if (error || !data) {
-      setCommentError(error || t('Could not save the comment.'));
-      return;
-    }
-    setDetailLead(prev => (prev ? { ...prev, comments: [...(prev.comments || []), data] } : null));
-    setCommentText('');
   };
 
   const handleImportFile = async (file: File | undefined) => {
@@ -671,6 +625,13 @@ export default function AdminLeads() {
         onDistributed={() => { setSelected([]); void loadData(0); }}
       />
 
+      <div>
+        <Button variant="secondary" size="sm" onClick={() => setShowWebsiteChecks(v => !v)}>
+          {showWebsiteChecks ? t('Hide website checks') : t('Website checks')}
+        </Button>
+        {showWebsiteChecks && <div className="mt-3"><WebsiteChecks canRun /></div>}
+      </div>
+
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <SearchInput value={search} onChange={setSearch} placeholder="Search name, phone, company..." />
@@ -679,6 +640,8 @@ export default function AdminLeads() {
         <Select value={typeFilter} onChange={setTypeFilter} options={TYPE_FILTER_OPTIONS} className="w-36" />
         <Select value={qualityFilter} onChange={setQualityFilter} options={QUALITY_FILTER_OPTIONS} className="w-40" />
         <Select value={phoneFilter} onChange={setPhoneFilter} options={PHONE_FILTER_OPTIONS} className="w-36" />
+        <Select value={websiteFilter} onChange={setWebsiteFilter} options={WEBSITE_STATUS_FILTER_OPTIONS} className="w-44" />
+        <Select value={websiteReasonFilter} onChange={setWebsiteReasonFilter} options={WEBSITE_REASON_FILTER_OPTIONS} className="w-52" />
         <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: '', label: 'All Assignments' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
         <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? t('Exporting...') : t('Export Excel')}</Button>
         <Button variant="secondary" size="sm" onClick={() => setDistributeModal(true)}>{t('Distribute evenly')}</Button>
@@ -710,7 +673,7 @@ export default function AdminLeads() {
             {leads.map(lead => {
               const assignedUser = users.find(u => u.id === lead.assignedTo);
               return (
-                <Tr key={lead.id} onClick={() => setDetailLead(lead)}>
+                <Tr key={lead.id} onClick={() => openLead(lead.id)}>
                   <Td>
                     <input
                       type="checkbox"
@@ -724,7 +687,12 @@ export default function AdminLeads() {
                   <Td><span className="font-medium text-white">{lead.name}</span></Td>
                   <Td><EditablePhoneCell phone={lead.phone} onSave={phone => saveInlinePhone(lead, phone)} /></Td>
                   <Td><WebsiteLink url={lead.website} className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block" /></Td>
-                  <Td><WebsiteStatusToggle status={lead.websiteStatus} onToggle={nextStatus => toggleWebsiteStatus(lead, nextStatus)} /></Td>
+                  <Td>
+                    <WebsiteStatusToggle status={lead.websiteStatus} onToggle={nextStatus => toggleWebsiteStatus(lead, nextStatus)} />
+                    {lead.websiteCheckCategory && lead.websiteCheckCategory !== 'ok' && (
+                      <div className="mt-1 text-[10px] text-[#6b6b6b]" title={t(websiteCategoryLabel(lead.websiteCheckCategory))}>{t(websiteCategoryLabel(lead.websiteCheckCategory))}</div>
+                    )}
+                  </Td>
                   <Td>
                     <span className={lead.isSallaStore ? 'text-[#dfff03] text-xs' : 'text-[#6b6b6b] text-xs'}>
                       {lead.isSallaStore ? t('Yes') : t('No')}
@@ -741,13 +709,15 @@ export default function AdminLeads() {
                   </Td>
                   <Td><span className="text-xs font-mono text-[#6b6b6b]">{lead.updatedAt?.slice(0, 10)}</span></Td>
                   <Td>
+                    <div className="flex items-center gap-3">
+                    {lead.phone && <WhatsAppButton variant="icon" leadId={lead.id} leadStatus={lead.status} />}
                     <button
                       className="text-[#4a4a4a] hover:text-[#dfff03] transition-colors"
                       title={t('View details')}
                       aria-label={t('View details')}
                       onClick={e => {
                         e.stopPropagation();
-                        setDetailLead(lead);
+                        openLead(lead.id);
                       }}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -755,6 +725,7 @@ export default function AdminLeads() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
                     </button>
+                    </div>
                   </Td>
                 </Tr>
               );
@@ -771,94 +742,6 @@ export default function AdminLeads() {
           />
         </Card>
       </div>
-
-      {/* Lead Detail Modal */}
-      <Modal open={!!detailLead} onClose={() => setDetailLead(null)} title="Lead Details">
-        {detailLead && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                ['Name', detailLead.name],
-                ['Quantity', detailLead.quantity ?? 0],
-                ['Company', detailLead.company || '—'],
-                ['Website', detailLead.website || '—'],
-                ['Country', detailLead.region ? t(detailLead.region) : '—'],
-                ['Source', detailLead.source || '—'],
-                ['Salla Store', detailLead.isSallaStore ? t('Yes') : t('No')],
-                ['Data Quality', t(detailLead.dataQuality ?? 'normal')],
-                ['Created', detailLead.createdAt?.slice(0, 10)],
-              ].map(([k, v]) => (
-                <div key={k} className="bg-[#1a1a1a] rounded-lg p-3">
-                  <div className="text-[#6b6b6b] text-xs mb-1">{t(String(k))}</div>
-                  <div className="text-white text-sm font-medium break-words">{k === 'Website' ? <WebsiteLink url={String(v)} /> : v}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Phone (add or edit manually) */}
-            <div className="bg-[#1a1a1a] rounded-lg p-3">
-              <div className="text-[#6b6b6b] text-xs mb-1">{t('Phone')}</div>
-              <div className="flex gap-2">
-                <input
-                  value={phoneDraft}
-                  onChange={e => { setPhoneDraft(e.target.value); setPhoneMsg(''); }}
-                  placeholder={t('Add phone number')}
-                  dir="ltr"
-                  className="flex-1 bg-[#111] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60"
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={busy === 'phone' || cleanPhone(phoneDraft) === (detailLead.phone ?? '')}
-                  onClick={() => runBusy('phone', handleSavePhone)}
-                >
-                  {t('Save')}
-                </Button>
-              </div>
-              {phoneMsg && <p className="text-xs mt-1 text-[#a0a0a0]">{phoneMsg}</p>}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-[#6b6b6b] text-xs">{t('Status:')}</span>
-              <StatusBadge status={detailLead.status} />
-            </div>
-            {detailLead.notes && (
-              <div className="bg-[#1a1a1a] rounded-lg p-3">
-                <div className="text-[#6b6b6b] text-xs mb-1">{t('Notes')}</div>
-                <div className="text-[#d0d0d0] text-sm">{detailLead.notes}</div>
-              </div>
-            )}
-            <div>
-              <div className="text-[#6b6b6b] text-xs mb-2">{t('Comments ({n})', { n: (detailLead.comments || []).length })}</div>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {(detailLead.comments || []).map((comment: any) => (
-                  <div key={comment.id} className="bg-[#1a1a1a] rounded-lg p-3">
-                    <div className="flex justify-between mb-1">
-                      <span className="text-[#dfff03] text-xs font-medium">{comment.authorName}</span>
-                      <span className="text-[#4a4a4a] text-xs">{comment.createdAt}</span>
-                    </div>
-                    <p className="text-[#d0d0d0] text-sm">{comment.text}</p>
-                  </div>
-                ))}
-              </div>
-              <textarea
-                value={commentText}
-                onChange={e => setCommentText(e.target.value)}
-                rows={3}
-                placeholder={t('Add a comment about this client...')}
-                className="w-full mt-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60 resize-none"
-              />
-              {commentError && <p className="text-[#ff6464] text-xs mt-1">{commentError}</p>}
-              <Button variant="secondary" size="sm" className="mt-2" disabled={!commentText.trim() || busy === 'comment'} onClick={() => runBusy('comment', handleAddComment)}>
-                {t('Post Comment')}
-              </Button>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button variant="secondary" size="sm" onClick={() => setDetailLead(null)}>{t('Close')}</Button>
-            </div>
-          </div>
-        )}
-      </Modal>
 
       {/* Assign Modal */}
       <Modal open={assignModal} onClose={() => setAssignModal(false)} title={t('Assign {n} Leads', { n: selected.length })}>

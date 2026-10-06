@@ -1,6 +1,8 @@
 import { AnimatedNumber, TableSkeleton } from './motion';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../supabaseClient';
+import { InstallmentsOverview } from './Installments';
+import WebsiteChecks from './WebsiteChecks';
 import { useI18n } from '../../i18n/I18nProvider';
 import {
   CHART_COLORS, ColumnChart, Empty, ErrorNote, Funnel, HBars, Kpi, Legend, Panel, ProgressRow, SimpleTable, nf,
@@ -333,6 +335,12 @@ export default function InsightsDashboard({ role }: { role: Role }) {
             rows={[...payroll.data].sort((a, b) => Number(b.total_sar) - Number(a.total_sar)).map(r => ({ label: r.full_name, value: Number(r.total_sar), sub: `${t("Commission")} ${nf(r.commission_sar)}` }))} />
         ))}
       </Panel>
+
+      {/* Installments: overdue + due in the next 14 days */}
+      <InstallmentsOverview />
+
+      {/* Website checks (admin runs them from the Leads page) */}
+      {role === 'manager' && <WebsiteChecks canRun={false} />}
     </div>
   );
 }

@@ -1,4 +1,4 @@
--- 046: خيار "موقع عادي على أي منصة": أي موقع في البلد المختارة يُقبل حتى لو مفيش ميزة مطابقة
+-- 046 (+ حماية: أي خطأ في صفحة واحدة يُسجَّل ولا يوقف باقي المعالجة): خيار "موقع عادي على أي منصة": أي موقع في البلد المختارة يُقبل حتى لو مفيش ميزة مطابقة
 set lock_timeout = 0; set statement_timeout = 0;
 create or replace function public.start_discovery_run(p_name text default 'default', p_config jsonb default null) returns uuid language plpgsql security definer set search_path = public as $f$
 declare cfg jsonb; rid uuid; qs jsonb; pg int; n int;
@@ -62,6 +62,7 @@ begin
   for r in select g.id, g.run_id, g.domain, g.name, g.url, g.kind, g.country_code, p.status_code, p.content from public.discovery_pages g join net._http_response p on p.id = g.request_id where g.state = 'sent' limit 60 loop
     select config into cfg from public.discovery_runs where id = r.run_id; html := case when r.status_code between 200 and 399 then left(coalesce(r.content,''), 200000) end;
     ccs := array(select cfg->'country_defs'->c->>'cc' from jsonb_array_elements_text(coalesce(cfg->'countries','[]'::jsonb)) c);
+    begin
     if html is null and r.kind = 'home' then update public.discovery_runs set st_fetch_failed = st_fetch_failed + 1 where id = r.run_id; end if;
     if html is not null then
       if r.kind = 'home' then
@@ -106,6 +107,8 @@ begin
         end if;
       end if;
     end if;
+    exception when others then update public.discovery_runs set errors = errors + 1, last_error = left('page ' || coalesce(r.domain,'?') || ': ' || sqlerrm, 200) where id = r.run_id;
+    end;
     delete from public.discovery_pages where id = r.id; cnt := cnt + 1;
   end loop;
   begin delete from net._http_response where id in (select request_id from public.discovery_queries where state = 'done' and request_id is not null and sent_at > now() - interval '1 day'); exception when others then null; end;

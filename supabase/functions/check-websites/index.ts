@@ -1,177 +1,132 @@
-// check-websites: يفحص مواقع العملاء (يعمل / لا يعمل + السبب) ويحفظ النتيجة عبر save_website_checks.
-// المستدعي: الأدمن من الموقع (JWT) أو الجدولة (header x-cron-secret = CRON_SECRET).
-//   body { batch: 40 }  → يحجز دفعة بـ claim_websites_to_check ويفحصها
-//   body { lead_id }    → يفحص عميل واحد (أدمن أو مدير يقدر يشوف العميل)
-// يرجّع { checked, saved, by_category, remaining }
-// انشره بـ --no-verify-jwt عشان الجدولة تقدر تناديه بالـ secret؛ التحقق بيتم هنا.
+// check-websites: يفحص مواقع الـ Leads على دفعات ويسجل (يعمل / لا يعمل + سبب المشكلة).
+// الاستدعاء: POST (من الأدمن بالـ JWT، أو من الـ cron بـ header  x-cron-secret = CRON_SECRET)
+//   body اختياري: { "batch": 40, "lead_id": "<uuid>" }  — lead_id لفحص عميل واحد فوراً.
+import { findWorkingHost } from './suggest.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { CheckResult, classifyError, classifyResponse, invalidUrl, normalizeUrl } from './classify.ts'
+import { classifyNetworkError, classifyResponse, normalizeUrl, type CheckResult } from './classify.ts'
 
-const corsHeaders = {
+const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, apikey, x-client-info, content-type, x-cron-secret',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const json = (s: number, b: unknown) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, 'Content-Type': 'application/json' } })
+
 const TIMEOUT_MS = 12_000
-const MAX_BODY_BYTES = 200_000
 const CONCURRENCY = 8
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36'
+const UA = 'Mozilla/5.0 (compatible; IntillaqSiteCheck/1.0; +internal)'
 
-function json(status: number, body: Record<string, unknown>): Response {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-}
-
-async function readSome(response: Response): Promise<string> {
-  if (!response.body) return ''
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
-  try {
-    while (size < MAX_BODY_BYTES) {
-      const { done, value } = await reader.read()
-      if (done || !value) break
-      chunks.push(value)
-      size += value.length
-    }
-  } finally {
-    reader.cancel().catch(() => {})
-  }
-  const all = new Uint8Array(size)
-  let offset = 0
-  for (const c of chunks) { all.set(c, offset); offset += c.length }
-  return new TextDecoder('utf-8', { fatal: false }).decode(all)
-}
-
-async function fetchOnce(url: string): Promise<CheckResult> {
-  const response = await fetch(url, {
-    redirect: 'follow',
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-    headers: { 'User-Agent': USER_AGENT, 'Accept': 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'ar,en;q=0.8' },
-  })
-  const body = await readSome(response)
-  return classifyResponse(response.status, response.url || url, body, response.headers.get('server') ?? '')
-}
-
-export async function checkWebsite(raw: string): Promise<CheckResult> {
+async function checkOne(raw: string): Promise<CheckResult> {
   const url = normalizeUrl(raw)
-  if (!url) return invalidUrl()
-  try {
-    return await fetchOnce(url)
-  } catch (error) {
-    const first = classifyError(error)
-    // بعض المواقع القديمة شغالة على http بس (أو شهادتها بايظة): نجرب http قبل ما نحكم
-    if ((first.category === 'ssl' || first.category === 'refused' || first.category === 'network') && url.startsWith('https://')) {
-      try {
-        const viaHttp = await fetchOnce(url.replace(/^https:/, 'http:'))
-        if (viaHttp.status === 'working' && first.category === 'ssl') {
-          return { ...viaHttp, note: `${viaHttp.note} (يعمل على http فقط — شهادة SSL غير صالحة)` }
+  if (!url) return { status: 'not_working', category: 'invalid_url', note: 'رابط الموقع غير صالح أو ناقص.', httpStatus: null, isSalla: false, finalUrl: null }
+  const tryFetch = async (u: string) => {
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
+    try {
+      const res = await fetch(u, { redirect: 'follow', signal: ctrl.signal, headers: { 'User-Agent': UA, 'Accept': 'text/html,*/*;q=0.8', 'Accept-Language': 'ar,en;q=0.8' } })
+      const reader = res.body?.getReader()
+      let html = ''
+      if (reader) {
+        const dec = new TextDecoder()
+        while (html.length < 200_000) {
+          const { done, value } = await reader.read()
+          if (done) break
+          html += dec.decode(value, { stream: true })
         }
-        return viaHttp
-      } catch { /* نرجّع الخطأ الأول */ }
+        reader.cancel().catch(() => {})
+      }
+      const headers: Record<string, string> = {}
+      res.headers.forEach((v, k) => { headers[k] = v })
+      return classifyResponse(u, res.url || u, res.status, html, headers)
+    } finally { clearTimeout(t) }
+  }
+  try {
+    return await tryFetch(url)
+  } catch (e1) {
+    // لو https فشل بسبب SSL/اتصال، جرّب http مرة واحدة قبل الحكم
+    const r1 = classifyNetworkError(e1)
+    if (url.startsWith('https://') && ['ssl', 'refused', 'network'].includes(r1.category)) {
+      try {
+        const r2 = await tryFetch('http://' + url.slice(8))
+        if (r2.status === 'working') return { ...r2, note: 'يعمل على http فقط (شهادة https بها مشكلة).' }
+      } catch { /* نرجع بنتيجة https */ }
     }
-    return first
+    if (r1.category === 'dns') {
+      try {
+        const host = new URL(url).hostname
+        const alt = await findWorkingHost(host)
+        if (alt) return { ...r1, category: 'dns_typo', note: `الدومين غير موجود (${host}) — ربما المقصود: ${alt} (راجع كتابة الرابط).` }
+        return { ...r1, note: `الدومين غير موجود أو منتهي (${host}) — ولا يوجد بديل قريب؛ غالباً الدومين انتهى أو الرابط خاطئ.` }
+      } catch { /* نرجع بنتيجة dns */ }
+    }
+    return r1
   }
 }
 
-async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+async function pool<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length)
-  let next = 0
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++
-      out[i] = await fn(items[i])
-    }
-  })
-  await Promise.all(workers)
+  let i = 0
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (i < items.length) { const k = i++; out[k] = await fn(items[k]) }
+  }))
   return out
 }
 
-Deno.serve(async (request) => {
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
-  if (request.method !== 'POST') return json(405, { error: 'Method not allowed' })
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
+  if (req.method !== 'POST') return json(405, { error: 'Method not allowed' })
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  const url = Deno.env.get('SUPABASE_URL')!
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  const service = createClient(url, serviceKey, { auth: { persistSession: false } })
+
+  let body: { batch?: number; lead_id?: string } = {}
+  try { body = await req.json() } catch { /* body اختياري */ }
+
+  // --- صلاحية: cron secret أو أدمن (أو مدير لعميل واحد) ---
   const cronSecret = Deno.env.get('CRON_SECRET')
-  if (!supabaseUrl || !anonKey || !serviceKey) return json(500, { error: 'Supabase function secrets are not configured' })
-
-  let body: Record<string, unknown> = {}
-  try {
-    const parsed = await request.json()
-    if (parsed && typeof parsed === 'object') body = parsed as Record<string, unknown>
-  } catch { /* empty body = default batch */ }
-
-  const leadId = typeof body.lead_id === 'string' ? body.lead_id : ''
-  if (leadId && !UUID_PATTERN.test(leadId)) return json(400, { error: 'Invalid lead_id' })
-  const batch = Math.min(Math.max(Number(body.batch) || 40, 1), 100)
-
-  // ---- مين بينادي؟ ----
-  const fromCron = Boolean(cronSecret) && request.headers.get('x-cron-secret') === cronSecret
+  const fromCron = !!cronSecret && req.headers.get('x-cron-secret') === cronSecret
   if (!fromCron) {
-    const authorization = request.headers.get('Authorization')
-    if (!authorization?.startsWith('Bearer ')) return json(401, { error: 'Authentication required' })
-    const userClient = createClient(supabaseUrl, anonKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-      global: { headers: { Authorization: authorization } },
-    })
-    const { data: authData, error: authError } = await userClient.auth.getUser()
-    if (authError || !authData.user) return json(401, { error: 'Invalid or expired access token' })
-    const { data: role, error: roleError } = await userClient.rpc('my_role')
-    if (roleError) return json(500, { error: `Could not verify caller role: ${roleError.message}` })
-    if (leadId) {
-      if (role !== 'admin' && role !== 'manager') return json(403, { error: 'Only admin or manager can check a website' })
-      const { data: canView, error: viewError } = await userClient.rpc('can_view_lead', { p_lead_id: leadId })
-      if (viewError) return json(500, { error: viewError.message })
+    const auth = req.headers.get('Authorization')
+    if (!auth?.startsWith('Bearer ')) return json(401, { error: 'Authentication required' })
+    const userClient = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } })
+    const { data: u } = await userClient.auth.getUser()
+    if (!u?.user) return json(401, { error: 'Invalid session' })
+    const { data: prof } = await service.from('users').select('role,status').eq('id', u.user.id).single()
+    if (prof?.status !== 'active') return json(403, { error: 'Admin only' })
+    if (prof?.role !== 'admin') {
+      // المدير يقدر يعيد فحص عميل واحد يقدر يشوفه (زر Re-check في كارت العميل)، مش الفحص الجماعي
+      if (prof?.role !== 'manager' || !body.lead_id) return json(403, { error: 'Admin only' })
+      const { data: canView, error: viewErr } = await userClient.rpc('can_view_lead', { p_lead_id: body.lead_id })
+      if (viewErr) return json(500, { error: viewErr.message })
       if (!canView) return json(403, { error: 'You are not allowed to view this client' })
-    } else if (role !== 'admin') {
-      return json(403, { error: 'Only admin can run the website check' })
     }
   }
+  const batch = Math.min(Math.max(Number(body.batch) || 40, 1), 100)
 
-  const service = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
-
-  // ---- إيه اللي هيتفحص؟ ----
-  let rows: { id: string; website: string }[] = []
-  if (leadId) {
-    const { data, error } = await service.from('leads').select('id, website').eq('id', leadId).maybeSingle()
+  let rows: { id: string; website: string }[] | null = null
+  if (body.lead_id) {
+    const { data, error } = await service.from('leads').select('id,website').eq('id', body.lead_id).not('website', 'is', null)
     if (error) return json(500, { error: error.message })
-    if (!data) return json(404, { error: 'Client not found' })
-    if (!data.website || !String(data.website).trim()) return json(400, { error: 'This client has no website' })
-    rows = [{ id: data.id, website: data.website }]
+    rows = data as { id: string; website: string }[]
   } else {
     const { data, error } = await service.rpc('claim_websites_to_check', { p_limit: batch })
     if (error) return json(500, { error: error.message })
-    rows = (data ?? []) as { id: string; website: string }[]
+    rows = data as { id: string; website: string }[]
   }
+  if (!rows?.length) return json(200, { checked: 0, remaining: 0, message: 'Nothing to check' })
 
-  const results = await mapPool(rows, CONCURRENCY, async row => ({ id: row.id, ...(await checkWebsite(row.website)) }))
+  const results = await pool(rows, CONCURRENCY, async (r) => ({ id: r.id, ...(await checkOne(r.website)) }))
+  const payload = results.map((r) => ({ id: r.id, status: r.status, category: r.category, note: r.note, http_status: r.httpStatus, is_salla: r.isSalla }))
+  const { data: saved, error: saveErr } = await service.rpc('save_website_checks', { p_results: payload })
+  if (saveErr) return json(500, { error: saveErr.message })
 
-  let saved = 0
-  if (results.length) {
-    const { data, error } = await service.rpc('save_website_checks', { p_results: results })
-    if (error) return json(500, { error: error.message })
-    saved = Number(data ?? 0)
-  }
-
-  const byCategory: Record<string, number> = {}
-  for (const r of results) byCategory[r.category] = (byCategory[r.category] ?? 0) + 1
-
-  // المتبقي: مواقع لسه ما اتفحصتش أبداً (ونفس شروط claim_websites_to_check)
-  const { count, error: countError } = await service
-    .from('leads')
-    .select('id', { count: 'exact', head: true })
-    .not('website', 'is', null)
-    .neq('website', '')
-    .is('website_checked_at', null)
-    .or('website_status_source.is.null,website_status_source.neq.manual,website_status.is.null')
-
+  const summary: Record<string, number> = {}
+  for (const r of results) summary[r.category] = (summary[r.category] ?? 0) + 1
+  const { count } = await service.from('leads').select('id', { count: 'exact', head: true }).not('website', 'is', null).is('website_checked_at', null)
   return json(200, {
-    checked: results.length,
-    saved,
-    by_category: byCategory,
-    remaining: countError ? null : count ?? 0,
-    results: leadId ? results : undefined,
+    checked: results.length, saved, by_category: summary, remaining: count ?? null,
+    // لعميل واحد: النتيجة نفسها عشان كارت العميل يعرضها على طول
+    results: body.lead_id ? payload : undefined,
   })
 })

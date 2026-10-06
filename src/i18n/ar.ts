@@ -851,6 +851,8 @@ export const ar: Record<string, string> = {
   "Site or store suspended": "الموقع أو المتجر موقوف",
   "Invalid website address": "رابط الموقع غلط",
   "Connection error": "خطأ اتصال",
+  "Domain typo (a similar domain works)": "غلطة في كتابة الدومين (فيه دومين قريب شغال)",
+  "Redirect loop": "تحويل متكرر (Redirect loop)",
   "Due today": "مستحق النهارده",
   "In {n} days": "بعد {n} يوم",
   "{n} days late": "متأخر {n} يوم",

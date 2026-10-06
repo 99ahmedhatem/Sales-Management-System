@@ -1,98 +1,93 @@
-// تصنيف نتيجة فحص موقع: يعمل / لا يعمل + سبب واضح بالعربي.
-// منطق خالص (بدون شبكة) عشان يتختبر بسهولة؛ الشبكة في index.ts.
-
-export type WebsiteCategory =
-  | 'ok' | 'ok_protected'
-  | 'dns' | 'timeout' | 'ssl' | 'refused' | 'network' | 'invalid_url'
-  | 'http_404' | 'http_4xx' | 'http_5xx' | 'parked' | 'suspended'
+// منطق تصنيف حالة الموقع — دوال نقية (تشتغل في Deno و Node) عشان تتختبر بسهولة.
+export type Category =
+  | 'ok' | 'ok_protected' | 'dns' | 'dns_typo' | 'timeout' | 'ssl' | 'refused' | 'network'
+  | 'http_404' | 'http_4xx' | 'http_5xx' | 'parked' | 'suspended' | 'redirect_loop' | 'invalid_url'
 
 export interface CheckResult {
   status: 'working' | 'not_working'
-  category: WebsiteCategory
-  note: string
-  http_status: number | null
-  is_salla: boolean
-}
-
-const NOTES: Record<WebsiteCategory, string> = {
-  ok: 'الموقع يفتح بشكل طبيعي.',
-  ok_protected: 'الموقع موجود لكنه محمي (Cloudflare/حماية من البوتات) فما قدرناش نقرأ محتواه.',
-  dns: 'الدومين غير موجود أو منتهي (مفيش DNS).',
-  timeout: 'الموقع ما ردّش خلال المهلة (بطيء جداً أو السيرفر واقف).',
-  ssl: 'شهادة الأمان (SSL) منتهية أو غير صالحة.',
-  refused: 'السيرفر رافض الاتصال (الاستضافة واقفة).',
-  network: 'خطأ اتصال أثناء فتح الموقع.',
-  invalid_url: 'رابط الموقع مكتوب غلط.',
-  http_404: 'الصفحة غير موجودة (404).',
-  http_4xx: 'الموقع رجّع خطأ في الطلب.',
-  http_5xx: 'خطأ في سيرفر الموقع.',
-  parked: 'الدومين معروض للبيع أو صفحة Parking (مفيش موقع فعلي).',
-  suspended: 'الموقع أو المتجر موقوف/مغلق.',
+  category: Category
+  note: string          // وصف المشكلة بالعربي (يتخزن كملاحظة/كومنت)
+  httpStatus: number | null
+  isSalla: boolean
+  finalUrl: string | null
 }
 
 const PARKED = [
-  /domain (is )?for sale/i, /buy this domain/i, /this domain (name )?(is|has been) (parked|registered)/i,
-  /parkingcrew|sedoparking|sedo\.com|bodis\.com|dan\.com\/buy|afternic|hugedomains/i,
-  /godaddy.{0,40}(parked|coming soon)/i, /هذا النطاق (للبيع|معروض)/, /الدومين للبيع/,
+  /this domain (is|may be) for sale/i, /domain is for sale/i, /buy this domain/i, /the domain .{0,40} has expired/i,
+  /parked (free|domain)/i, /sedo\.com/i, /godaddy\.com\/domainsearch/i, /hugedomains/i, /dan\.com/i,
+  /هذا النطاق (معروض|للبيع)/, /النطاق للبيع/,
 ]
 const SUSPENDED = [
-  /account (has been )?suspended/i, /this (site|website|account) (is|has been) suspended/i,
-  /website (is )?(expired|disabled)/i, /store (is )?(closed|unavailable|not found)/i,
-  /المتجر (مغلق|متوقف|غير متاح)/, /المتجر تحت الصيانة/, /تم إيقاف (المتجر|الموقع)/, /الموقع موقوف/,
+  /account (has been )?suspended/i, /this account has been suspended/i, /bandwidth limit exceeded/i,
+  /site (is )?(temporarily )?(unavailable|disabled)/i, /الحساب (معلق|موقوف)/, /الموقع (متوقف|معطل)/,
 ]
-const PROTECTED = [/cf-challenge|challenge-platform|just a moment\.\.\.|attention required! \| cloudflare/i, /captcha/i, /ddos-guard/i]
-const SALLA = [/salla\.(sa|network|store)/i, /cdn\.salla/i]
+const BOT_PROTECTION = [/cf-ray/i, /just a moment/i, /attention required/i, /cloudflare/i, /captcha/i, /access denied/i, /akamai/i, /incapsula/i, /sucuri/i]
+const SALLA = [/cdn\.salla\.network/i, /salla\.sa/i, /<meta[^>]+salla/i, /salla-?(theme|app)/i, /\bSalla\b/]
 
-export function normalizeUrl(raw: string): string | null {
-  const trimmed = raw.trim()
-  if (!trimmed) return null
-  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+export function normalizeUrl(raw: string | null | undefined): string | null {
+  let s = (raw ?? '').trim()
+  if (!s) return null
+  if (!/^https?:\/\//i.test(s)) s = 'https://' + s.replace(/^\/+/, '')
   try {
-    const url = new URL(withScheme)
-    if (!url.hostname.includes('.') || /\s/.test(url.hostname)) return null
-    return url.toString()
-  } catch {
-    return null
-  }
+    const u = new URL(s)
+    if (!u.hostname.includes('.')) return null
+    return u.toString()
+  } catch { return null }
 }
 
-function result(category: WebsiteCategory, http: number | null, isSalla: boolean, extra = ''): CheckResult {
-  const working = category === 'ok' || category === 'ok_protected'
-  return {
-    status: working ? 'working' : 'not_working',
-    category,
-    note: extra ? `${NOTES[category]} ${extra}` : NOTES[category],
-    http_status: http,
-    is_salla: isSalla,
-  }
+export function detectSalla(html: string, headers: Record<string, string> = {}): boolean {
+  const h = Object.entries(headers).map(([k, v]) => `${k}:${v}`).join('\n')
+  return SALLA.some((r) => r.test(html) || r.test(h))
 }
 
-/** خطأ شبكة (fetch رمى exception) → تصنيف. */
-export function classifyError(error: unknown): CheckResult {
-  const msg = String((error as Error)?.message ?? error).toLowerCase()
-  const name = String((error as Error)?.name ?? '')
-  if (name === 'TimeoutError' || name === 'AbortError' || msg.includes('timed out') || msg.includes('timeout')) return result('timeout', null, false)
-  if (/dns|lookup|name or service not known|nodename nor servname|no address associated|failed to resolve/.test(msg)) return result('dns', null, false)
-  if (/certificate|ssl|tls|handshake|unknownissuer|notvalidforname|expired/.test(msg)) return result('ssl', null, false)
-  if (/connection refused|econnrefused|refused/.test(msg)) return result('refused', null, false)
-  if (/invalid url|relative url|url parse/.test(msg)) return result('invalid_url', null, false)
-  return result('network', null, false)
+function hostOf(u: string | null): string {
+  try { return new URL(u ?? '').hostname.replace(/^www\./, '') } catch { return '' }
 }
 
-/** استجابة HTTP (مع أول جزء من الصفحة) → تصنيف. */
-export function classifyResponse(status: number, finalUrl: string, body: string, server = ''): CheckResult {
-  const isSalla = SALLA.some(re => re.test(finalUrl) || re.test(body))
-  const protectedPage = PROTECTED.some(re => re.test(body)) || /cloudflare|ddos-guard/i.test(server)
-  if ((status === 401 || status === 403 || status === 429 || status === 503) && protectedPage) return result('ok_protected', status, isSalla)
-  if (status === 404 || status === 410) return result('http_404', status, isSalla)
-  if (status >= 500) return result('http_5xx', status, isSalla, `(HTTP ${status})`)
-  if (status === 401 || status === 403 || status === 429) return result('ok_protected', status, isSalla)
-  if (status >= 400) return result('http_4xx', status, isSalla, `(HTTP ${status})`)
-  if (PARKED.some(re => re.test(body))) return result('parked', status, isSalla)
-  if (SUSPENDED.some(re => re.test(body))) return result('suspended', status, isSalla)
-  return result('ok', status, isSalla)
+/** يصنّف خطأ الشبكة من رسالته. */
+export function classifyNetworkError(err: unknown): CheckResult {
+  const name = (err as { name?: string })?.name ?? ''
+  const msg = String((err as { message?: string })?.message ?? err ?? '').toLowerCase()
+  const cause = String(((err as { cause?: { code?: string; message?: string } })?.cause?.code ?? '') + ' ' +
+                       ((err as { cause?: { message?: string } })?.cause?.message ?? '')).toLowerCase()
+  const all = `${name} ${msg} ${cause}`.toLowerCase()
+  const base = { httpStatus: null, isSalla: false, finalUrl: null } as const
+  if (name === 'AbortError' || /timeout|timed out|aborted/.test(all))
+    return { ...base, status: 'not_working', category: 'timeout', note: 'الموقع لا يستجيب (انتهت مهلة الاتصال 12 ثانية) — قد يكون بطيئاً جداً أو متوقفاً.' }
+  if (/enotfound|dns|failed to lookup|name resolution|getaddrinfo|no such host|name or service not known/.test(all))
+    return { ...base, status: 'not_working', category: 'dns', note: 'الدومين غير موجود أو منتهي (فشل DNS) — راجع كتابة الرابط أو أن الدومين ما زال مسجلاً.' }
+  if (/certificate|ssl|tls|self.signed|cert_|handshake|unable to verify/.test(all))
+    return { ...base, status: 'not_working', category: 'ssl', note: 'مشكلة شهادة الأمان (SSL) — المتصفح سيحذّر الزائر أو الموقع لا يفتح بـ https.' }
+  if (/econnrefused|connection refused|refused/.test(all))
+    return { ...base, status: 'not_working', category: 'refused', note: 'السيرفر رفض الاتصال — الموقع متوقف.' }
+  if (/redirect/.test(all))
+    return { ...base, status: 'not_working', category: 'redirect_loop', note: 'الموقع يعيد التوجيه في حلقة ولا يفتح.' }
+  return { ...base, status: 'not_working', category: 'network', note: `تعذّر الاتصال بالموقع (${(msg || name || 'خطأ شبكة').slice(0, 80)}).` }
 }
 
-export function invalidUrl(): CheckResult {
-  return result('invalid_url', null, false)
+/** يصنّف استجابة HTTP (status + body + headers + الرابط النهائي بعد التحويلات). */
+export function classifyResponse(
+  originalUrl: string, finalUrl: string | null, status: number, html: string, headers: Record<string, string> = {},
+): CheckResult {
+  const isSalla = detectSalla(html, headers)
+  const common = { httpStatus: status, isSalla, finalUrl }
+  const hdr = Object.entries(headers).map(([k, v]) => `${k}:${v}`).join('\n')
+  const protectedBy = BOT_PROTECTION.some((r) => r.test(html) || r.test(hdr))
+
+  if (status >= 500)
+    return { ...common, status: 'not_working', category: 'http_5xx', note: `السيرفر يرجع خطأ ${status} — الموقع معطّل من جهة الاستضافة.` }
+  if (status === 404 || status === 410)
+    return { ...common, status: 'not_working', category: 'http_404', note: `الصفحة غير موجودة (${status}) — الرابط المسجّل خاطئ أو الموقع اتحذف.` }
+  if ([401, 403, 429, 503].includes(status) && protectedBy)
+    return { ...common, status: 'working', category: 'ok_protected', note: `الموقع يعمل لكن محمي ضد الفحص الآلي (${status}) — يحتاج فتح يدوي للتأكد.` }
+  if (status >= 400)
+    return { ...common, status: 'not_working', category: 'http_4xx', note: `الموقع يرد بخطأ ${status} — غير متاح للزوار.` }
+
+  if (SUSPENDED.some((r) => r.test(html)))
+    return { ...common, status: 'not_working', category: 'suspended', note: 'الموقع موقوف (الاستضافة معلّقة أو انتهت).' }
+  const movedAway = hostOf(finalUrl) && hostOf(originalUrl) && hostOf(finalUrl) !== hostOf(originalUrl)
+  if (PARKED.some((r) => r.test(html)) || (movedAway && /(sedo|godaddy|hugedomains|dan\.com|parking)/i.test(finalUrl ?? '')))
+    return { ...common, status: 'not_working', category: 'parked', note: 'الدومين معروض للبيع أو غير مستخدم (صفحة Parked) — مفيش موقع فعلي.' }
+
+  return { ...common, status: 'working', category: 'ok', note: movedAway ? `يعمل (تم تحويله إلى ${hostOf(finalUrl)}).` : 'الموقع يعمل.' }
 }

@@ -38,7 +38,7 @@ const KIND_LABEL: Record<string, string> = {
 
 /** Charts dashboard: reads everything from RPCs/views; RLS decides what each role sees. */
 export default function InsightsDashboard({ role }: { role: Role }) {
-  const { t, lang, dir } = useI18n();
+  const { t, lang } = useI18n();
   const { can } = usePermissions();
   const kind = (k: string) => (KIND_LABEL[k] ? t(KIND_LABEL[k]) : k);
   // loss_reasons only stores an Arabic label (label_ar); in English show the code, prettified
@@ -153,7 +153,7 @@ export default function InsightsDashboard({ role }: { role: Role }) {
   const num = (v: unknown) => (v == null || Number.isNaN(Number(v)) ? nf(null) : <AnimatedNumber value={Number(v)} format={n => nf(n)} />);
 
   return (
-    <div className="p-4 md:p-6 space-y-4" dir={dir}>
+    <div className="p-4 md:p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-[#e5e5e5]">{t("Insights")}</h1>

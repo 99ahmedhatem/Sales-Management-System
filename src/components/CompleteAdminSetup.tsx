@@ -12,7 +12,7 @@ interface Props {
 // Shown once: right after the very first confirmed sign-in, when there is no
 // matching row in public.users yet. Creates that row as the admin account.
 export default function CompleteAdminSetup({ authId, email, onDone }: Props) {
-  const { t, dir } = useI18n();
+  const { t } = useI18n();
   const [fullName, setFullName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -39,7 +39,7 @@ export default function CompleteAdminSetup({ authId, email, onDone }: Props) {
   };
 
   return (
-    <div className="min-h-screen bg-[#0c0c0c] flex items-center justify-center p-4" dir={dir}>
+    <div className="min-h-screen bg-[#0c0c0c] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <h1 className="text-white font-semibold text-xl">{t('Finish setting up your admin account')}</h1>

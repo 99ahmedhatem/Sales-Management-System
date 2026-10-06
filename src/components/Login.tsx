@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { LanguageSwitch, useI18n } from '../i18n/I18nProvider';
 
 export default function Login() {
-  const { t, dir } = useI18n();
+  const { t } = useI18n();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -52,7 +52,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0c0c0c] flex items-center justify-center p-4" dir={dir}>
+    <div className="min-h-screen bg-[#0c0c0c] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="flex justify-end mb-4"><LanguageSwitch /></div>
         {/* Brand */}

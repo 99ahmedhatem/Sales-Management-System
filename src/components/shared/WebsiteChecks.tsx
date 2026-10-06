@@ -4,12 +4,14 @@ import { useI18n } from '../../i18n/I18nProvider';
 import { Button, Card } from '../ui';
 
 /** Reason codes written by the check-websites Edge Function. */
-export const WEBSITE_CATEGORIES = ['ok', 'ok_protected', 'dns', 'timeout', 'ssl', 'refused', 'http_404', 'http_4xx', 'http_5xx', 'parked', 'suspended', 'invalid_url', 'network'] as const;
+export const WEBSITE_CATEGORIES = ['ok', 'ok_protected', 'dns', 'dns_typo', 'timeout', 'ssl', 'refused', 'http_404', 'http_4xx', 'http_5xx', 'parked', 'suspended', 'invalid_url', 'redirect_loop', 'network'] as const;
 
 const CATEGORY_LABELS: Record<string, string> = {
   ok: 'Opens normally',
   ok_protected: 'Works (protected page)',
   dns: 'Domain not found / expired',
+  dns_typo: 'Domain typo (a similar domain works)',
+  redirect_loop: 'Redirect loop',
   timeout: 'No response (timeout)',
   ssl: 'Invalid SSL certificate',
   refused: 'Server refused the connection',

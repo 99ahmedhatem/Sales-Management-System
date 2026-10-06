@@ -1064,4 +1064,6 @@ export const ar: Record<string, string> = {
   // Lead discovery: any site (046)
   "Any regular website (any platform)": "أي موقع عادي (أي منصة)",
   "\"Any regular website\" shows every site with the same business types and country, on any platform or none.": "\"أي موقع عادي\" بيعرض كل المواقع اللي بنفس الأنشطة والدولة، بأي منصة أو من غير منصة معروفة.",
+  // Packages for all roles (047)
+  "Minimum price: {price}": "الحد الأدنى: {price}",
 };

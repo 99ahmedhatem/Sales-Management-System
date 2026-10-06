@@ -211,6 +211,7 @@ export default function App() {
           {session.role === "manager" && page === "meetings" && (
             <MeetingRequestsManagement role="manager" userId={session.userId} />
           )}
+          {session.role === "manager" && page === "packages" && <PackagesList />}
           {session.role === "manager" && page === "contracts" && (
             <ContractsModule userId={session.userId} role="manager" />
           )}

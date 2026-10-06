@@ -469,15 +469,15 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
 
   const allNav =
     role === "manager"
-      ? [...roleNav, teamNavItem, profileNavItem]
+      ? [...roleNav, teamNavItem, packagesNavItem, profileNavItem]
       : role === "admin"
         ? [...roleNav, teamNavItem, packagesNavItem, whatsappNavItem, discoveryNavItem, permissionsNavItem, profileNavItem]
         : [...roleNav, earningsNavItem, packagesNavItem, profileNavItem]
 
-  // Packages is a read-only list for sales/telesales; only the admin page manages them.
+  // Packages: admin manages them (packages.manage); other roles get a read-only list (packages.view, 047).
   const nav = allNav.filter((item) => {
-    const needed = PAGE_PERMISSIONS[item.key]
-    if (!needed || (item.key === "packages" && role !== "admin")) return true
+    const needed = item.key === "packages" && role !== "admin" ? "packages.view" : PAGE_PERMISSIONS[item.key]
+    if (!needed) return true
     return permissionsLoading || can(needed)
   })
 

@@ -1,11 +1,13 @@
-# نشر دوال Supabase (admin-create-user و review-contract) بأمر واحد.
+# نشر دوال Supabase (admin-create-user و review-contract و check-websites و send-notifications) بأمر واحد.
 # التشغيل من فولدر المشروع الرئيسي في PowerShell:
 #     powershell -ExecutionPolicy Bypass -File .\scripts\deploy-functions.ps1
 # الاتنين هيطلبوا منك توكن Supabase (بيتكتب مخفي، ومش بيتخزن في أي ملف).
 
 $ErrorActionPreference = 'Stop'
 $ProjectRef = 'zchhqqsagrqyexzpfrms'
-$Functions  = @('admin-create-user', 'review-contract')
+$Functions  = @('admin-create-user', 'review-contract', 'check-websites', 'send-notifications')
+# الدوال دي بتتنادى من الجدولة بـ x-cron-secret (من غير JWT)، والتحقق جوه الدالة نفسها
+$NoVerifyJwt = @('check-websites', 'send-notifications')
 
 function Run($cmd) {
     Write-Host "`n> $cmd" -ForegroundColor Cyan
@@ -28,7 +30,10 @@ foreach ($f in $Functions) {
 
 # 3) ربط المشروع ثم نشر الدوال
 Run "npx --yes supabase link --project-ref $ProjectRef"
-foreach ($f in $Functions) { Run "npx --yes supabase functions deploy $f" }
+foreach ($f in $Functions) {
+    if ($NoVerifyJwt -contains $f) { Run "npx --yes supabase functions deploy $f --no-verify-jwt" }
+    else { Run "npx --yes supabase functions deploy $f" }
+}
 
 Write-Host "`nتم. الدوال المنشورة:" -ForegroundColor Green
 Run "npx --yes supabase functions list --project-ref $ProjectRef"

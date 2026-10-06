@@ -42,6 +42,8 @@ import { exportRowsToExcel } from "../shared/exportExcel"
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 
 import { useI18n } from "../../i18n/I18nProvider"
+import { ClientLink } from "../shared/AppOverlays"
+import { usePermissions } from "../../hooks/usePermissions"
 
 const ROLE_REGION_OPTIONS = [
   { value: "", label: "All Countries" },
@@ -107,6 +109,7 @@ interface PendingLeadMeetingRequest {
 
 export default function TelesalesDashboard({ userId }: Props) {
   const { t } = useI18n()
+  const { can } = usePermissions()
 
   const [users, setUsers] = useState<User[]>([])
 
@@ -1034,14 +1037,16 @@ export default function TelesalesDashboard({ userId }: Props) {
           ]}
           className="w-44"
         />
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={exporting}
-          onClick={exportLeads}
-        >
-          {exporting ? t("Exporting...") : t("Export Excel")}
-        </Button>
+        {can("leads.export") && (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={exporting}
+            onClick={exportLeads}
+          >
+            {exporting ? t("Exporting...") : t("Export Excel")}
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -1098,7 +1103,7 @@ export default function TelesalesDashboard({ userId }: Props) {
                 </span>
               </Td>
               <Td>
-                <span className="font-medium text-white">{lead.name}</span>
+                <ClientLink leadId={lead.id} className="font-medium text-white">{lead.name}</ClientLink>
               </Td>
               <Td>
                 <EditablePhoneCell

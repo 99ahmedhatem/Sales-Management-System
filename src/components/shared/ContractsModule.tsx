@@ -15,6 +15,10 @@ import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 import { Button, Card, Modal, Pagination, SearchInput, StatusBadge, Table, Td, Tr } from "../ui"
 import DealCreateModal from "./DealCreateModal"
 import { useI18n } from "../../i18n/I18nProvider"
+import { ClientLink } from "./AppOverlays"
+import { DealInstallments } from "./Installments"
+import { onOpenDeal, takePendingDealId } from "../../lib/navigation"
+import { usePermissions } from "../../hooks/usePermissions"
 
 interface Props {
   userId: string
@@ -38,6 +42,7 @@ const STATUS_LABELS: Record<Deal["status"], string> = {
 
 export default function ContractsModule({ userId, role }: Props) {
   const { t } = useI18n()
+  const { can } = usePermissions()
   const [deals, setDeals] = useState<Deal[]>([])
   const [page, setPage] = useState(0)
   const [total, setTotal] = useState(0)
@@ -77,6 +82,20 @@ export default function ContractsModule({ userId, role }: Props) {
   }, [load])
 
   useRealtimeRefresh(["deals"], () => void load())
+
+  // "Open deal" from the client card or the installments panel
+  const openDealById = useCallback(async (dealId: string) => {
+    const result = await loadDealsPage(0, 1, dealId)
+    if (result.error) setError(result.error)
+    else if (result.data?.[0]) { setError(""); setSelectedDeal(result.data[0]) }
+    else setError("Deal not found or you don't have access to it.")
+  }, [])
+
+  useEffect(() => {
+    const pending = takePendingDealId()
+    if (pending) void openDealById(pending)
+    return onOpenDeal((dealId) => { takePendingDealId(); void openDealById(dealId) })
+  }, [openDealById])
 
   useEffect(() => {
     if (!selectedDeal) return
@@ -153,10 +172,10 @@ export default function ContractsModule({ userId, role }: Props) {
       deal.packageName.toLowerCase().includes(query)
     )
   })
-  const canCreateDeal = role === "sales" || role === "telesales" || role === "manager"
+  const canCreateDeal = (role === "sales" || role === "telesales" || role === "manager") && can("deals.create")
   const canUploadContract =
     canCreateDeal && selectedDeal?.closedByUserId === userId
-  const canApprove = role === "admin" || role === "manager"
+  const canApprove = (role === "admin" || role === "manager") && can("deals.approve")
   const canRequestReview =
     role === "admin" ||
     role === "manager" ||
@@ -285,7 +304,7 @@ export default function ContractsModule({ userId, role }: Props) {
             {visibleDeals.map((deal) => (
               <Tr key={deal.id} onClick={() => { setError(""); setSelectedDeal(deal) }}>
                 <Td>
-                  <div className="font-medium text-white">{deal.leadName}</div>
+                  <div className="font-medium text-white"><ClientLink leadId={deal.leadId}>{deal.leadName}</ClientLink></div>
                   <div className="font-mono text-xs text-[#6b6b6b]" dir="ltr">{deal.leadPhone || "—"}</div>
                   {deal.belowMinPrice && <div className="mt-1 text-xs text-[#ffc832]">{t("Below package minimum")}</div>}
                 </Td>
@@ -358,6 +377,12 @@ export default function ContractsModule({ userId, role }: Props) {
                 <p className="mt-1 text-sm text-[#d0d0d0]">{selectedDeal.approvalOverrideReason}</p>
               </div>
             )}
+            <DealInstallments
+              dealId={selectedDeal.id}
+              priceSar={selectedDeal.priceSar}
+              dealStatus={selectedDeal.status}
+              canManage={role === "admin" || role === "manager"}
+            />
             <div className="space-y-2 rounded bg-[#1a1a1a] p-3">
               <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t("Private files")}</div>
               {signingUrls ? (

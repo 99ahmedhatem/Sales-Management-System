@@ -4,6 +4,7 @@ import { supabase } from '../../supabaseClient';
 import { useI18n } from '../../i18n/I18nProvider';
 import { Empty, ErrorNote, Kpi, Panel, SimpleTable, nf } from './charts';
 import TargetProgress from './TargetProgress';
+import { useProfileViewer } from './AppOverlays';
 
 /** One row of get_team_performance (018). Numeric columns arrive as numbers or numeric strings. */
 interface PerformanceRow {
@@ -40,6 +41,7 @@ const monthEnd = (ym: string) => {
  */
 export default function TeamPerformance({ mode, userId, role }: { mode: 'team' | 'mine'; userId: string; role: string }) {
   const { t, dir } = useI18n();
+  const openProfile = useProfileViewer();
   const [month, setMonth] = useState(thisMonth());
   const [allTime, setAllTime] = useState(false);
   const [rows, setRows] = useState<PerformanceRow[]>([]);
@@ -133,13 +135,16 @@ export default function TeamPerformance({ mode, userId, role }: { mode: 'team' |
             <SimpleTable
               head={[
                 t('Employee'), t('Role'), t('Manager'), t('Base salary'), t('Commission %'), t('Lead %'), t('Manager %'),
-                t('Deals'), t('Deals value (SAR)'), t('Collected (SAR)'), t('Collected all time (SAR)'), t('Commission (SAR)'), t('Commission (EGP)'),
+                t('Deals'), t('Deals value (SAR)'), t('Collected (SAR)'), t('Collected all time (SAR)'), t('Commission (SAR)'), t('Commission (EGP)'), '',
               ]}
               rows={visible.map(r => [
                 r.full_name ?? '—', roleLabel(r.role), r.manager_name ?? '—', money(r.base_salary, r.base_currency),
                 `${nf(r.closer_percent, 2)}%`, r.role === 'telesales' ? `${nf(r.lead_percent, 2)}%` : '—', `${nf(r.manager_percent, 2)}%`,
                 nf(r.deals_count), money(r.deals_value_sar, 'SAR'), money(r.collected_sar, 'SAR'), money(r.collected_total_sar, 'SAR'),
                 money(r.commission_sar, 'SAR'), money(r.commission_egp, 'EGP'),
+                r.user_id === userId ? '' : (
+                  <button onClick={() => openProfile(r.user_id)} className="text-xs text-[#dfff03] hover:underline">{t('Profile')}</button>
+                ),
               ])}
             />
           </Panel>

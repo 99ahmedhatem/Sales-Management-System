@@ -34,6 +34,7 @@ import { WebsiteLink } from "../ui"
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 
 import { useI18n } from "../../i18n/I18nProvider"
+import { ClientLink } from "../shared/AppOverlays"
 
 import { dateLocale } from "../../i18n/locale"
 
@@ -709,7 +710,7 @@ export default function SalesDashboard({ userId }: Props) {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h3 className="text-white font-semibold text-base">
-                      {m.leadName}
+                      <ClientLink leadId={m.leadId}>{m.leadName}</ClientLink>
                     </h3>
                     <p className="text-[#dfff03] font-mono text-sm mt-0.5" dir="ltr">
                       {m.leadPhone}
@@ -788,7 +789,7 @@ export default function SalesDashboard({ userId }: Props) {
               return (
                 <Tr key={m.id} onClick={() => setDetail(m)}>
                   <Td>
-                    <span className="font-medium text-white">{m.leadName}</span>
+                    <ClientLink leadId={m.leadId} className="font-medium text-white">{m.leadName}</ClientLink>
                   </Td>
                   <Td>
                     <span className="font-mono text-xs" dir="ltr">{m.leadPhone}</span>

@@ -182,7 +182,7 @@ export function Funnel({ steps }: { steps: { label: string; value: number }[] })
   );
 }
 
-export function SimpleTable({ head, rows }: { head: string[]; rows: (string | number)[][] }) {
+export function SimpleTable({ head, rows }: { head: string[]; rows: ReactNode[][] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs text-[#e5e5e5] anim-rows">

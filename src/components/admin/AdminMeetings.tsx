@@ -11,6 +11,7 @@ import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 import MeetingRequestsManagement from "../shared/MeetingRequestsManagement"
 import { useI18n } from "../../i18n/I18nProvider"
 import { dateLocale } from "../../i18n/locale"
+import { ClientLink } from "../shared/AppOverlays"
 
 import {
   Avatar,
@@ -252,9 +253,9 @@ export default function AdminMeetings({ userId }: Props) {
             {meetings.map((meeting) => (
               <Tr key={meeting.id} onClick={() => setDetail(meeting)}>
                 <Td>
-                  <span className="font-medium text-white">
+                  <ClientLink leadId={meeting.leadId} className="font-medium text-white">
                     {meeting.leadName}
-                  </span>
+                  </ClientLink>
                 </Td>
                 <Td>
                   <span className="font-mono text-xs" dir="ltr">{meeting.leadPhone}</span>

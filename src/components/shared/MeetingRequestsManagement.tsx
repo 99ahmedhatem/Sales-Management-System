@@ -9,6 +9,7 @@ import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 import { Avatar, Button, Card, Pagination, Select } from "../ui"
 import { useI18n } from "../../i18n/I18nProvider"
 import { dateLocale } from "../../i18n/locale"
+import { ClientLink } from "./AppOverlays"
 
 const PAGE_SIZE = 20
 
@@ -149,7 +150,7 @@ export default function MeetingRequestsManagement({ role, userId }: Props) {
                 className="flex flex-col gap-4 py-4 lg:flex-row lg:items-center lg:justify-between"
               >
                 <div className="min-w-0">
-                  <div className="font-medium text-white">{request.leadName}</div>
+                  <div className="font-medium text-white"><ClientLink leadId={request.leadId}>{request.leadName}</ClientLink></div>
                   <div className="mt-1 font-mono text-xs text-[#a0a0a0]" dir="ltr">
                     {request.leadPhone}
                   </div>

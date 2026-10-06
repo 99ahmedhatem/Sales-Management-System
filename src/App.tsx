@@ -14,6 +14,9 @@ import AppShell from "./components/AppShell"
 
 import ErrorBoundary from "./components/shared/ErrorBoundary"
 import { TableSkeleton } from "./components/shared/motion"
+import { AppOverlaysProvider } from "./components/shared/AppOverlays"
+import { registerServiceWorker } from "./lib/push"
+import { PermissionsProvider } from "./hooks/usePermissions"
 
 const AdminDashboard = lazy(() => import("./components/admin/AdminDashboard"))
 
@@ -50,6 +53,12 @@ const ContractsModule = lazy(
 const AdminPackages = lazy(() => import("./components/admin/AdminPackages"))
 
 const PackagesList = lazy(() => import("./components/shared/PackagesList"))
+
+const ProfileView = lazy(() => import("./components/shared/ProfileView"))
+
+const WhatsAppTemplates = lazy(() => import("./components/admin/WhatsAppTemplates"))
+
+const AdminPermissions = lazy(() => import("./components/admin/AdminPermissions"))
 
 const MeetingRequestsManagement = lazy(
   () => import("./components/shared/MeetingRequestsManagement"),
@@ -96,6 +105,9 @@ export default function App() {
 
     if (profile) {
       setSession({ role: profile.role, userId: profile.id })
+
+      // Needed for push notifications (enabled per device from My profile)
+      void registerServiceWorker()
 
       setNeedsProfile(null)
     } else {
@@ -154,6 +166,8 @@ export default function App() {
   }
 
   return (
+    <PermissionsProvider role={session.role} userId={session.userId}>
+    <AppOverlaysProvider role={session.role}>
     <AppShell
       role={session.role}
       userId={session.userId}
@@ -211,9 +225,14 @@ export default function App() {
             <ContractsModule userId={session.userId} role="sales" />
           )}
           {session.role === "sales" && page === "packages" && <PackagesList />}
+          {page === "profile" && <ProfileView />}
+          {session.role === "admin" && page === "whatsapp" && <WhatsAppTemplates />}
+          {session.role === "admin" && page === "permissions" && <AdminPermissions />}
         </Suspense>
         </ErrorBoundary>
       )}
     </AppShell>
+    </AppOverlaysProvider>
+    </PermissionsProvider>
   )
 }

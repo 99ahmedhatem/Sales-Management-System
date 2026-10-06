@@ -49,6 +49,8 @@ export interface Lead {
   website?: string;
   websiteStatus?: 'working' | 'not_working';
   websiteStatusSource?: 'manual' | 'auto_checked';
+  /** Reason code from the automatic website check (033). */
+  websiteCheckCategory?: string;
   phoneSource?: 'manual' | 'website' | 'auto_scraped';
   quantity?: number;
   clientCode: string;

@@ -22,6 +22,7 @@ const LABELS_EN: Record<string, string> = {
   'leads.view_all': 'View all clients', 'leads.edit': 'Edit client data', 'leads.export': 'Export clients',
   'leads.distribute': 'Distribute clients', 'leads.delete': 'Delete clients', 'deals.create': 'Create deals',
   'deals.approve': 'Approve deals', 'payments.confirm': 'Confirm payments', 'packages.manage': 'Manage packages',
+  'packages.view': 'View packages', 'packages.view_min_price': 'View package minimum price',
   'users.manage': 'Manage users', 'salaries.view': 'View salaries & commissions', 'reports.view': 'View reports',
   'audit.view': 'View activity log',
 };

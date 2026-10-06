@@ -5,7 +5,7 @@ import { supabase } from '../supabaseClient';
 export type PermissionKey =
   | 'leads.view_all' | 'leads.edit' | 'leads.export' | 'leads.distribute' | 'leads.delete'
   | 'deals.create' | 'deals.approve' | 'payments.confirm'
-  | 'packages.manage' | 'users.manage' | 'salaries.view' | 'reports.view' | 'audit.view';
+  | 'packages.manage' | 'packages.view' | 'packages.view_min_price' | 'users.manage' | 'salaries.view' | 'reports.view' | 'audit.view';
 
 interface PermissionsValue {
   /** Admin is always allowed. Others: role defaults + per-user overrides (has_permission). */

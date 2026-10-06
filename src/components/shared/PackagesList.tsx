@@ -20,10 +20,13 @@ const formatSar = new Intl.NumberFormat("en-US", {
   currency: "SAR",
 })
 
+/** list_packages() returns min_price_sar = null without the packages.view_min_price permission (047). */
+type ListedPackage = SalesPackage & { minPriceVisible: number | null }
+
 export default function PackagesList() {
   const { t } = useI18n()
 
-  const [packages, setPackages] = useState<SalesPackage[]>([])
+  const [packages, setPackages] = useState<ListedPackage[]>([])
 
   const [page, setPage] = useState(0)
 
@@ -43,21 +46,8 @@ export default function PackagesList() {
 
       const from = page * PAGE_SIZE
 
-      const { data, error: queryError } = await supabase
-
-        .from("packages")
-
-        .select(
-          "id, name, description, features, duration_months, price_sar, min_price_sar, is_active",
-        )
-
-        .eq("is_active", true)
-
-        .order("price_sar")
-
-        .order("name")
-
-        .range(from, from + PAGE_SIZE)
+      // Read-only for every role with packages.view; sensitive columns are hidden by the RPC
+      const { data, error: queryError } = await supabase.rpc("list_packages")
 
       if (!active) return
 
@@ -66,11 +56,18 @@ export default function PackagesList() {
 
         setPackages([])
       } else {
-        const rows = (data ?? []) as SalesPackageRow[]
+        const rows = ((data ?? []) as (Omit<SalesPackageRow, "min_price_sar"> & { min_price_sar: number | null })[])
+          .filter((row) => row.is_active)
+          .sort((a, b) => Number(a.price_sar) - Number(b.price_sar) || a.name.localeCompare(b.name))
 
-        setHasMore(rows.length > PAGE_SIZE)
+        setHasMore(rows.length > from + PAGE_SIZE)
 
-        setPackages(rows.slice(0, PAGE_SIZE).map(mapSalesPackage))
+        setPackages(
+          rows.slice(from, from + PAGE_SIZE).map((row) => ({
+            ...mapSalesPackage({ ...row, min_price_sar: row.min_price_sar ?? 0 }),
+            minPriceVisible: row.min_price_sar == null ? null : Number(row.min_price_sar),
+          })),
+        )
       }
 
       setLoading(false)
@@ -145,6 +142,11 @@ export default function PackagesList() {
                 <div className="mt-1 text-xl font-bold text-[#dfff03]">
                   {formatSar.format(item.priceSar)}
                 </div>
+                {item.minPriceVisible != null && (
+                  <div className="mt-1 text-xs text-[#a0a0a0]">
+                    {t("Minimum price: {price}", { price: formatSar.format(item.minPriceVisible) })}
+                  </div>
+                )}
               </div>
             </Card>
           ))}

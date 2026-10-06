@@ -12,7 +12,8 @@ interface CustomFeature { label: string; keywords: string[] }
 interface Config {
   countries: string[];
   country_defs: Record<string, CountryDef>;
-  features: { app: boolean; dashboard: boolean; wordpress: boolean };
+  /** any_site (046): accept any website in the chosen countries, whatever the platform. */
+  features: { app: boolean; dashboard: boolean; wordpress: boolean; any_site?: boolean };
   custom_features: CustomFeature[];
   sectors: string[];
   include_cities: boolean;
@@ -26,6 +27,7 @@ const FEATURES = [
   { key: 'wordpress', label: 'WordPress' },
   { key: 'app', label: 'Mobile app' },
   { key: 'dashboard', label: 'Dashboard / client portal' },
+  { key: 'any_site', label: 'Any regular website (any platform)' },
 ] as const;
 const ADV_LISTS = ['skip_domains', 'contact_paths', 'app_signals', 'dashboard_signals', 'wordpress_signals'] as const;
 const ADV_NUMBERS = ['pages_per_query', 'serper_per_min', 'fetch_per_min'] as const;
@@ -496,6 +498,7 @@ export default function AdminDiscovery() {
                   </span>
                 ))}
               </div>
+              <p className="text-xs text-[#6b6b6b]">{t('"Any regular website" shows every site with the same business types and country, on any platform or none.')}</p>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input value={customLabel} onChange={e => setCustomLabel(e.target.value)} placeholder={t('Add something else to look for (e.g. Shopify)')} className={`${input} sm:w-64`} dir="auto" />
                 <input value={customKeywords} onChange={e => setCustomKeywords(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addCustom(); }}

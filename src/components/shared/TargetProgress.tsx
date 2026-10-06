@@ -5,17 +5,22 @@ import { useI18n } from '../../i18n/I18nProvider';
 import { Button, Modal } from '../ui';
 import { Empty, ErrorNote, ProgressRow } from './charts';
 
-/** One row of get_target_progress_v2 (023). kind 'team' = a manager's whole-team total. */
+/**
+ * One row of get_target_progress_v2 as it runs on Supabase (025). There is no kind column:
+ * a manager's row is their whole-team total, so `kind` is derived here from `role`.
+ */
 interface TargetRow {
   kind: 'member' | 'team';
   user_id: string;
   full_name: string;
   role: 'manager' | 'sales' | 'telesales';
   manager_id: string | null;
+  team_size: number;
   calls_done: number;
   meetings_done: number;
   deals_done: number;
   revenue_sar: number;
+  collected_sar: number;
   calls_target: number;
   meetings_target: number;
   deals_target: number;
@@ -48,8 +53,10 @@ export default function TargetProgress({ month, canEdit }: { month: string; canE
       setError(rpcError.message);
       setRows([]);
     } else {
-      setRows(((data ?? []) as TargetRow[]).map(r => ({
+      setRows(((data ?? []) as Omit<TargetRow, 'kind'>[]).map(r => ({
         ...r,
+        kind: r.role === 'manager' ? 'team' : 'member',
+        team_size: Number(r.team_size ?? 0), collected_sar: Number(r.collected_sar ?? 0),
         calls_done: Number(r.calls_done), meetings_done: Number(r.meetings_done), deals_done: Number(r.deals_done),
         revenue_sar: Number(r.revenue_sar), calls_target: Number(r.calls_target), meetings_target: Number(r.meetings_target),
         deals_target: Number(r.deals_target), revenue_target_sar: Number(r.revenue_target_sar),
@@ -101,7 +108,7 @@ export default function TargetProgress({ month, canEdit }: { month: string; canE
           <div className="text-sm font-medium text-[#e5e5e5] truncate">
             {row.kind === 'team' ? t('Team of {name}', { name: row.full_name }) : row.full_name}
           </div>
-          <div className="text-[11px] text-[#8a8a8a]">{row.kind === 'team' ? t('Whole-team total') : roleLabel(row.role)}</div>
+          <div className="text-[11px] text-[#8a8a8a]">{row.kind === 'team' ? `${t('Whole-team total')} · ${t('{n} team members', { n: row.team_size })}` : roleLabel(row.role)}</div>
         </div>
         {canEdit && (
           <Button variant="ghost" size="sm" onClick={() => openEdit(row)}>{t('Set target')}</Button>

@@ -423,6 +423,16 @@ const permissionsNavItem: NavItem = {
   ),
 }
 
+const discoveryNavItem: NavItem = {
+  key: "discovery",
+  label: "Discovery",
+  icon: (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14zm0-10v6m-3-3h6" />
+    </svg>
+  ),
+}
+
 /** Pages that need a permission (037). "My earnings" and My profile show the user's own data, so they stay. */
 const PAGE_PERMISSIONS: Record<string, PermissionKey> = {
   users: "users.manage",
@@ -461,7 +471,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
     role === "manager"
       ? [...roleNav, teamNavItem, profileNavItem]
       : role === "admin"
-        ? [...roleNav, teamNavItem, packagesNavItem, whatsappNavItem, permissionsNavItem, profileNavItem]
+        ? [...roleNav, teamNavItem, packagesNavItem, whatsappNavItem, discoveryNavItem, permissionsNavItem, profileNavItem]
         : [...roleNav, earningsNavItem, packagesNavItem, profileNavItem]
 
   // Packages is a read-only list for sales/telesales; only the admin page manages them.

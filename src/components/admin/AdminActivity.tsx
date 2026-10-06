@@ -191,7 +191,7 @@ export default function AdminActivity() {
             </Tr>;
           })}
         </Table>
-        {visible.length === 0 && <div className="p-8 text-center text-[#4a4a4a] text-sm">{t('No worked-client activity found.')}</div>}
+        {visible.length === 0 && <div className="p-8 text-center text-[#4a4a4a] text-sm">{t('No activity yet — calls, comments and handoffs on leads appear here. If you set filters, try clearing them.')}</div>}
         <Pagination page={page} pageSize={PAGE_SIZE} total={pageTotal} onChange={next => loadActivity(next)} />
       </Card>
     </div>

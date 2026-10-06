@@ -88,6 +88,22 @@ export default function InsightsDashboard({ role }: { role: Role }) {
 
   useEffect(() => { load(); }, [load]);
 
+  /** The rows get_payroll already returned for this month, as a CSV file (BOM so Excel reads Arabic names). */
+  const exportPayrollCsv = () => {
+    const cols = ['full_name', 'role', 'deals_count', 'commission_sar', 'commission_egp', 'base_salary', 'base_currency', 'total_sar', 'total_egp'];
+    const cell = (v: unknown) => {
+      const s = v == null ? '' : String(v);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = [cols.join(','), ...payroll.data.map(r => cols.map(c => cell(r[c])).join(','))].join('\r\n');
+    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `payroll-${month}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   /** Last 12 months, no gaps */
   const months = useMemo(() => {
     const byMonth = new Map<string, Row>();
@@ -301,7 +317,13 @@ export default function InsightsDashboard({ role }: { role: Role }) {
       </Panel>
 
       {/* Payroll */}
-      <Panel title={t("Payroll & commissions")} hint={t("Base salary + commissions — selected month")}>
+      <Panel
+        title={t("Payroll & commissions")}
+        hint={t("Base salary + commissions — selected month")}
+        right={ready(payroll) && payroll.data.length > 0 ? (
+          <button onClick={exportPayrollCsv} className="text-xs border border-[#262626] rounded px-2 py-1.5 text-[#e5e5e5] hover:border-[#dfff03] shrink-0">{t("Export CSV")}</button>
+        ) : undefined}
+      >
         <Status s={payroll} />
         {ready(payroll) && (payroll.data.length === 0 ? <Empty text={t("No data (or you don’t have access)")} /> : tableView ? (
           <SimpleTable head={[t("Employee"), t("Role"), t("Deals"), t("Commission (SAR)"), t("Base"), t("Total (SAR)"), t("Total (EGP)")]}

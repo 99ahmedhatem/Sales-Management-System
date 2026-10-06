@@ -235,7 +235,7 @@ export default function AdminMeetings({ userId }: Props) {
           </div>
         ) : meetings.length === 0 ? (
           <div className="p-8 text-center text-sm text-[#6b6b6b]">
-            {t("No meetings found.")}
+            {t(filter ? "No meetings with this outcome. Try another filter." : "No meetings yet — they appear here once a sales rep accepts a meeting request from telesales.")}
           </div>
         ) : (
           <Table

@@ -691,7 +691,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto" dir={dir}>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden" dir={dir}>
           <PageTransition pageKey={page}>{children(page)}</PageTransition>
         </main>
       </div>

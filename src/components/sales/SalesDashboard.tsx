@@ -741,7 +741,7 @@ export default function SalesDashboard({ userId }: Props) {
                     {m.telesalesNotes}
                   </div>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <Avatar name={m.bookedByName} size="sm" />
                     <span className="text-[#6b6b6b] text-xs">

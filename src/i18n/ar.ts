@@ -1061,4 +1061,7 @@ export const ar: Record<string, string> = {
   "diag_errors": "أخطاء",
   "diag_last_error": "آخر خطأ",
   "diag_no run": "مفيش بحث لسه",
+  // Lead discovery: any site (046)
+  "Any regular website (any platform)": "أي موقع عادي (أي منصة)",
+  "\"Any regular website\" shows every site with the same business types and country, on any platform or none.": "\"أي موقع عادي\" بيعرض كل المواقع اللي بنفس الأنشطة والدولة، بأي منصة أو من غير منصة معروفة.",
 };

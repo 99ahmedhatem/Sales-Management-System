@@ -57,6 +57,8 @@ const splitItems = (s: string) => s.split(/[\n,،]/).map(x => x.trim()).filter(B
 
 const PAGE_SIZE = 100;
 const ESTIMATE_WARN = 3000;
+/** Warn above the Start button for searches bigger than this. */
+const SERPER_WARN = 2000;
 const lines = (s: string) => s.split('\n').map(x => x.trim()).filter(Boolean);
 const asList = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
 const uniq = (xs: string[]) => [...new Set(xs)];
@@ -285,15 +287,40 @@ export default function AdminDiscovery() {
 
   const active = progress?.status === 'running' || progress?.status === 'paused';
 
+  // ---------- Diagnostics (044) ----------
+  const [diag, setDiag] = useState<{ item: string; value: string }[]>([]);
+  const [diagError, setDiagError] = useState('');
+
+  const loadDiag = useCallback(async (runId?: string) => {
+    const { data, error } = await supabase.rpc('discovery_diagnose', runId ? { p_run: runId } : {});
+    if (error) { setDiagError(error.message); return; }
+    setDiagError('');
+    setDiag((data ?? []) as { item: string; value: string }[]);
+  }, []);
+
+  /** Full run: saves the settings, then starts with them as they are (044 fills any missing keys). */
   async function startRun() {
-    if (runBusy) return;
+    if (runBusy || !built.config) return;
     setRunBusy(true);
     const saved = await saveConfig(true);
     if (!saved) { setRunBusy(false); return; }
-    const { error } = await supabase.rpc('start_discovery_run', { p_name: 'default' });
+    const { error } = await supabase.rpc('start_discovery_run', { p_name: 'default', p_config: built.config });
     setRunBusy(false);
     if (error) { showToast(false, error.message); return; }
     showToast(true, t('Search started'));
+    await loadProgress();
+  }
+
+  /** Small trial: same settings, first 3 business types, 1 result page. Not saved. */
+  async function startTrial() {
+    if (runBusy || !built.config) return;
+    const sectors = built.config.sectors.slice(0, 3);
+    if (!sectors.length) { showToast(false, t('No search queries — check sectors and countries')); return; }
+    setRunBusy(true);
+    const { error } = await supabase.rpc('start_discovery_run', { p_name: 'default', p_config: { ...built.config, sectors, pages_per_query: 1 } });
+    setRunBusy(false);
+    if (error) { showToast(false, error.message); return; }
+    showToast(true, t('Small trial started'));
     await loadProgress();
   }
 
@@ -367,14 +394,19 @@ export default function AdminDiscovery() {
     void loadResults(0);
   }, [loadKey, loadConfig, loadProgress, loadResults]);
 
+  // Diagnostics for the latest run: once when it changes, then every 5s while it runs
+  const runId = progress?.run_id;
+  useEffect(() => { if (runId) void loadDiag(runId); }, [runId, loadDiag]);
+
   useEffect(() => {
     if (!active) return;
     const timer = window.setInterval(() => {
       void loadProgress();
+      if (runId) void loadDiag(runId);
       if (page === 0 && !selected.length) void loadResults(0);
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [active, loadProgress, loadResults, page, selected.length]);
+  }, [active, loadProgress, loadDiag, runId, loadResults, page, selected.length]);
 
   const pct = progress && progress.total_queries > 0 ? Math.min(100, Math.round((progress.done_queries / progress.total_queries) * 100)) : 0;
   const statusLabel: Record<string, string> = { running: 'Running', paused: 'Paused', done: 'Finished', stopped: 'Stopped' };
@@ -643,14 +675,24 @@ export default function AdminDiscovery() {
             {progress?.status === 'paused' && <Button size="sm" variant="secondary" disabled={runBusy} onClick={() => void setRunState('running')}>{t('Resume')}</Button>}
             {active && <Button size="sm" variant="danger" disabled={runBusy} onClick={() => setStopOpen(true)}>{t('Finish')}</Button>}
             {!active && (
-              <Button size="sm" disabled={runBusy || !hasKey || !built.config} onClick={() => void startRun()}>
-                {runBusy ? t('Starting…') : t('Start search')}
-              </Button>
+              <>
+                <Button size="sm" variant="secondary" disabled={runBusy || !hasKey || !built.config} onClick={() => void startTrial()}>
+                  {t('Small trial')}
+                </Button>
+                <Button size="sm" disabled={runBusy || !hasKey || !built.config} onClick={() => void startRun()}>
+                  {runBusy ? t('Starting…') : t('Start search')}
+                </Button>
+              </>
             )}
           </div>
         </div>
+        {!active && estimate != null && estimate > SERPER_WARN && (
+          <div className="rounded border border-[#ffc832]/30 bg-[#ffc832]/10 p-2 text-xs text-[#ffc832]">
+            ! {t('This is a big search ({n}) and will use Serper credit — try a small trial with one or two business types first.', { n: estimate.toLocaleString('en-US') })}
+          </div>
+        )}
         {!hasKey && hasKey !== null && <p className="text-xs text-[#ffc832]">{t('Save the Serper key first.')}</p>}
-        {!active && <p className="text-xs text-[#6b6b6b]">{t('Starting saves the settings above first.')}</p>}
+        {!active && <p className="text-xs text-[#6b6b6b]">{t('Starting saves the settings above first.')} {t('Small trial = same settings, first 3 business types and 1 result page (not saved).')}</p>}
         {runError && <div role="alert" className="text-sm text-[#ff8888]">{t(runError)}</div>}
         {progress && (
           <>
@@ -680,6 +722,29 @@ export default function AdminDiscovery() {
             {progress.last_error && (
               <div className="rounded border border-[#ffc832]/30 bg-[#ffc832]/10 p-2 text-xs text-[#ffc832]">! {progress.last_error}</div>
             )}
+
+            {/* Diagnostics (044) */}
+            <details className="rounded-lg border border-[#262626]" open={active}>
+              <summary className="cursor-pointer p-3 text-sm text-[#a0a0a0] hover:text-white">{t('Search diagnostics')}</summary>
+              <div className="border-t border-[#262626] p-3">
+                {diagError ? <div role="alert" className="text-xs text-[#ff8888]">{t(diagError)}</div>
+                  : diag.length === 0 ? <div className="text-xs text-[#6b6b6b]">{t('Loading…')}</div>
+                  : (
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {diag.map(d => (
+                          <tr key={d.item} className="border-b border-[#1e1e1e] last:border-0">
+                            <td className="py-1.5 pe-3 text-[#a0a0a0]">{t(`diag_${d.item}`) === `diag_${d.item}` ? d.item : t(`diag_${d.item}`)}</td>
+                            <td className={`py-1.5 text-end font-mono tabular-nums ${d.item === 'last_error' && d.value ? 'text-[#ffc832]' : 'text-white'}`} dir="auto">
+                              {d.item === 'status' ? t(statusLabel[d.value] ?? d.value) : d.value || '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+              </div>
+            </details>
           </>
         )}
       </Card>

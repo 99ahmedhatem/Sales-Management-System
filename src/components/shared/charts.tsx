@@ -75,7 +75,7 @@ export function ColumnChart({
   const bw = Math.min(28, slot * 0.6);
   const ticks = [0, 0.5, 1].map(f => f * max);
   return (
-    <div className="relative">
+    <div className="relative" dir="ltr">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label={`${unit} per month`}>
         {ticks.map(t => {
           const y = padT + plotH - (t / max) * plotH;

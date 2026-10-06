@@ -40,7 +40,7 @@ const monthEnd = (ym: string) => {
  * get_team_performance filters by role itself: admin sees everyone, a manager sees himself and his team, others see themselves.
  */
 export default function TeamPerformance({ mode, userId, role }: { mode: 'team' | 'mine'; userId: string; role: string }) {
-  const { t, dir } = useI18n();
+  const { t } = useI18n();
   const openProfile = useProfileViewer();
   const [month, setMonth] = useState(thisMonth());
   const [allTime, setAllTime] = useState(false);
@@ -74,7 +74,7 @@ export default function TeamPerformance({ mode, userId, role }: { mode: 'team' |
   const me = visible[0];
 
   return (
-    <div className="p-4 md:p-6 space-y-4" dir={dir}>
+    <div className="p-4 md:p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-[#e5e5e5]">{mode === 'mine' ? t('My earnings') : t('Team performance')}</h1>

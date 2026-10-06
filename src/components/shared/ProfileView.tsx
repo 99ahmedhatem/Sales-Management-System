@@ -30,7 +30,7 @@ const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${pad
 
 /** My profile (no userId) or an employee's profile opened by admin / manager. */
 export default function ProfileView({ userId }: { userId?: string }) {
-  const { t, dir } = useI18n();
+  const { t } = useI18n();
   const [month, setMonth] = useState(thisMonth());
   const [data, setData] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,7 +52,7 @@ export default function ProfileView({ userId }: { userId?: string }) {
   const hasTarget = Boolean(tgt && (Number(tgt.calls_target) || Number(tgt.meetings_target) || Number(tgt.deals_target) || Number(tgt.revenue_target_sar)));
 
   return (
-    <div className="p-4 md:p-6 space-y-4" dir={dir}>
+    <div className="p-4 md:p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-[#e5e5e5]">{userId ? t('Employee profile') : t('My profile')}</h1>

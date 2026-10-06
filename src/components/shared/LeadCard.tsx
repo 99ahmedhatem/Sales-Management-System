@@ -90,7 +90,7 @@ function fieldValue(value: unknown): string {
 }
 
 export default function LeadCard({ leadId, role, onClose }: { leadId: string; role: Role; onClose: () => void }) {
-  const { t, lang, dir } = useI18n();
+  const { t, lang } = useI18n();
   const { can } = usePermissions();
   const [data, setData] = useState<LeadCardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -220,7 +220,7 @@ export default function LeadCard({ leadId, role, onClose }: { leadId: string; ro
   const setField = (key: EditableField, value: string) => setDraft(prev => (prev ? { ...prev, [key]: value } : prev));
 
   return (
-    <div className="fixed inset-0 z-50 flex" dir={dir}>
+    <div className="fixed inset-0 z-50 flex">
       <div className="absolute inset-0 bg-black/70 anim-backdrop" onClick={onClose} />
       <aside
         role="dialog"

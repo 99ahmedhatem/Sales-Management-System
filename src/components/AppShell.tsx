@@ -454,7 +454,7 @@ interface Props {
 }
 
 export default function AppShell({ role, userId, onLogout, children }: Props) {
-  const { t, dir, lang } = useI18n()
+  const { t, lang } = useI18n()
 
   const roleNav =
     role === "admin"
@@ -570,8 +570,8 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-30 w-56 bg-[#0e0e0e] border-r border-[#1e1e1e] flex flex-col transition-transform ${
-          sidebarOpen ? "translate-x-0 anim-drawer lg:animate-none" : "-translate-x-full"
+        className={`fixed lg:static inset-y-0 start-0 z-30 w-56 bg-[#0e0e0e] border-e border-[#1e1e1e] flex flex-col transition-transform ${
+          sidebarOpen ? "translate-x-0 anim-drawer lg:animate-none" : "-translate-x-full rtl:translate-x-full"
         } lg:translate-x-0`}
       >
         {/* Brand */}
@@ -674,7 +674,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
               day: "numeric",
             })}
           </div>
-          <div className="flex items-center gap-3 ml-auto">
+          <div className="flex items-center gap-3 ms-auto">
             <LanguageSwitch />
             {/* Notifications */}
             <div className="relative">
@@ -696,7 +696,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
                   />
                 </svg>
                 {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 w-4 h-4 bg-[#dfff03] text-black text-[10px] font-bold rounded-full flex items-center justify-center anim-pulse-dot">
+                  <span className="absolute top-1 end-1 w-4 h-4 bg-[#dfff03] text-black text-[10px] font-bold rounded-full flex items-center justify-center anim-pulse-dot">
                     {unreadCount}
                   </span>
                 )}
@@ -708,7 +708,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
                     className="fixed inset-0 z-10"
                     onClick={() => setNotifOpen(false)}
                   />
-                  <div className="absolute right-0 top-full mt-1 w-80 bg-[#161616] border border-[#262626] rounded-xl shadow-2xl z-20 overflow-hidden anim-banner">
+                  <div className="absolute end-0 top-full mt-1 w-80 bg-[#161616] border border-[#262626] rounded-xl shadow-2xl z-20 overflow-hidden anim-banner">
                     <div className="px-4 py-3 border-b border-[#262626] flex items-center justify-between">
                       <span className="text-white font-medium text-sm">
                         {t("Notifications")}
@@ -766,7 +766,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden" dir={dir}>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden">
           <PageTransition pageKey={page}>{children(page)}</PageTransition>
         </main>
       </div>

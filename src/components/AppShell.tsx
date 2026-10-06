@@ -572,7 +572,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
       <aside
         className={`fixed lg:static inset-y-0 start-0 z-30 w-56 bg-[#0e0e0e] border-e border-[#1e1e1e] flex flex-col transition-transform ${
           sidebarOpen ? "translate-x-0 anim-drawer lg:animate-none" : "-translate-x-full rtl:translate-x-full"
-        } lg:translate-x-0`}
+        } lg:translate-x-0 lg:rtl:translate-x-0`}
       >
         {/* Brand */}
         <div className="p-4 border-b border-[#1e1e1e]">

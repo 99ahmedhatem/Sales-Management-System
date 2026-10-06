@@ -1066,4 +1066,8 @@ export const ar: Record<string, string> = {
   "\"Any regular website\" shows every site with the same business types and country, on any platform or none.": "\"أي موقع عادي\" بيعرض كل المواقع اللي بنفس الأنشطة والدولة، بأي منصة أو من غير منصة معروفة.",
   // Packages for all roles (047)
   "Minimum price: {price}": "الحد الأدنى: {price}",
+  // Log call
+  "Choose the call outcome": "اختر نتيجة المكالمة",
+  "Pick the call outcome to save.": "اختار نتيجة المكالمة عشان تقدر تحفظ.",
+  "Call saved": "تم حفظ المكالمة",
 };

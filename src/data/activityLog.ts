@@ -11,8 +11,9 @@ interface ActivityInput {
   notes?: string;
 }
 
-export async function recordActivity(activity: ActivityInput): Promise<string | undefined> {
-  const { data, error } = await supabase.from('activity_logs').insert({
+/** Returns the error message, or null when the row was saved. */
+export async function recordActivity(activity: ActivityInput): Promise<string | null> {
+  const { error } = await supabase.from('activity_logs').insert({
     lead_id: activity.leadId,
     actor_id: activity.actorId,
     actor_name: activity.actorName,
@@ -20,9 +21,9 @@ export async function recordActivity(activity: ActivityInput): Promise<string | 
     activity_type: activity.activityType,
     outcome: activity.outcome || null,
     notes: activity.notes || null,
-  }).select('*').single();
+  });
 
-  return error ? error.message : data?.id;
+  return error ? error.message : null;
 }
 
 export function mapActivity(row: any): ActivityLog {

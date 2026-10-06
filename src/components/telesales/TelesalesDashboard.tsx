@@ -349,7 +349,16 @@ export default function TelesalesDashboard({ userId }: Props) {
 
   const [editingPhone, setEditingPhone] = useState("")
 
-  const [callStatus, setCallStatus] = useState<LeadStatus>("Contacted")
+  // "" = no outcome picked yet; the lead's current status is never used as the default.
+  const [callStatus, setCallStatus] = useState<LeadStatus | "">("")
+
+  const [callNotice, setCallNotice] = useState("")
+
+  useEffect(() => {
+    if (!callNotice) return
+    const timer = window.setTimeout(() => setCallNotice(""), 3000)
+    return () => window.clearTimeout(timer)
+  }, [callNotice])
 
   const [callNotes, setCallNotes] = useState("")
 
@@ -656,7 +665,7 @@ export default function TelesalesDashboard({ userId }: Props) {
   }
 
   const logCall = async () => {
-    if (!callModal || savingCall) return
+    if (!callModal || savingCall || !callStatus) return
 
     const lead = callModal
 
@@ -727,11 +736,13 @@ export default function TelesalesDashboard({ userId }: Props) {
 
     setCallNotes("")
 
-    setCallStatus("Contacted")
+    setCallStatus("")
 
     setCallbackDate("")
 
     setFreeTrialEnd("")
+
+    setCallNotice("Call saved")
 
     // Reload the queue and the call counts from the server.
     setRefreshVersion((version) => version + 1)
@@ -885,6 +896,11 @@ export default function TelesalesDashboard({ userId }: Props) {
       {loadError && (
         <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3 anim-banner">
           {t(loadError)}
+        </div>
+      )}
+      {callNotice && (
+        <div className="fixed bottom-4 end-4 z-50 bg-[#dfff03] text-black text-sm font-medium rounded-lg px-4 py-2 shadow-lg anim-banner" role="status">
+          ✓ {t(callNotice)}
         </div>
       )}
       <div>
@@ -1166,7 +1182,7 @@ export default function TelesalesDashboard({ userId }: Props) {
                     size="sm"
                     onClick={() => {
                       setCallModal(lead)
-                      setCallStatus(lead.status as LeadStatus || "Contacted")
+                      setCallStatus("")
                       setCallNotes(lead.notes || "")
                     }}
                   >
@@ -1373,15 +1389,23 @@ export default function TelesalesDashboard({ userId }: Props) {
               </label>
               <select
                 value={callStatus}
-                onChange={(e) => setCallStatus(e.target.value as LeadStatus)}
+                onChange={(e) => setCallStatus(e.target.value as LeadStatus | "")}
                 className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#dfff03]/60"
               >
+                <option value="" disabled>
+                  {t("Choose the call outcome")}
+                </option>
                 {CALL_STATUS_OPTIONS.map((s) => (
                   <option key={s.value} value={s.value}>
                     {t(s.label)}
                   </option>
                 ))}
               </select>
+              {!callStatus && (
+                <p className="mt-1 text-xs text-[#a0a0a0]">
+                  {t("Pick the call outcome to save.")}
+                </p>
+              )}
             </div>
             {callStatus === "Call Back Later" && (
               <div>
@@ -1420,7 +1444,7 @@ export default function TelesalesDashboard({ userId }: Props) {
               />
             </div>
             <div className="flex gap-2">
-              <Button variant="primary" disabled={savingCall} onClick={logCall}>
+              <Button variant="primary" disabled={savingCall || !callStatus} onClick={logCall}>
                 {savingCall ? t("Saving...") : t("Save Call Log")}
               </Button>
               <Button variant="ghost" onClick={() => setCallModal(null)}>

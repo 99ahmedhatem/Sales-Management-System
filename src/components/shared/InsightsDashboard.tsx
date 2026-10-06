@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { InstallmentsOverview } from './Installments';
 import WebsiteChecks from './WebsiteChecks';
+import { usePermissions } from '../../hooks/usePermissions';
 import { useI18n } from '../../i18n/I18nProvider';
 import {
   CHART_COLORS, ColumnChart, Empty, ErrorNote, Funnel, HBars, Kpi, Legend, Panel, ProgressRow, SimpleTable, nf,
@@ -38,6 +39,7 @@ const KIND_LABEL: Record<string, string> = {
 /** Charts dashboard: reads everything from RPCs/views; RLS decides what each role sees. */
 export default function InsightsDashboard({ role }: { role: Role }) {
   const { t, lang, dir } = useI18n();
+  const { can } = usePermissions();
   const kind = (k: string) => (KIND_LABEL[k] ? t(KIND_LABEL[k]) : k);
   // loss_reasons only stores an Arabic label (label_ar); in English show the code, prettified
   const lossLabel = (r: Row) =>
@@ -318,8 +320,8 @@ export default function InsightsDashboard({ role }: { role: Role }) {
         )}
       </Panel>
 
-      {/* Payroll */}
-      <Panel
+      {/* Payroll (salaries.view) */}
+      {can('salaries.view') && <Panel
         title={t("Payroll & commissions")}
         hint={t("Base salary + commissions — selected month")}
         right={ready(payroll) && payroll.data.length > 0 ? (
@@ -334,7 +336,7 @@ export default function InsightsDashboard({ role }: { role: Role }) {
           <HBars color={CHART_COLORS[2]} unit={t("SAR")}
             rows={[...payroll.data].sort((a, b) => Number(b.total_sar) - Number(a.total_sar)).map(r => ({ label: r.full_name, value: Number(r.total_sar), sub: `${t("Commission")} ${nf(r.commission_sar)}` }))} />
         ))}
-      </Panel>
+      </Panel>}
 
       {/* Installments: overdue + due in the next 14 days */}
       <InstallmentsOverview />

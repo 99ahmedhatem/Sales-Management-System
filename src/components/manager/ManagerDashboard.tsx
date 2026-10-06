@@ -13,6 +13,7 @@ import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
 import { useI18n } from '../../i18n/I18nProvider';
 import { ClientLink } from '../shared/AppOverlays';
+import { usePermissions } from '../../hooks/usePermissions';
 
 const ROLE_REGION_OPTIONS = [
   { value: '', label: 'All Countries' },
@@ -29,6 +30,7 @@ interface Props {
 
 export default function ManagerDashboard({ userId }: Props) {
   const { t, lang } = useI18n();
+  const { can } = usePermissions();
   const [users, setUsers] = useState<User[]>([]);
   const [allLeads, setAllLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -336,8 +338,8 @@ export default function ManagerDashboard({ userId }: Props) {
           <p className="text-[#6b6b6b] text-sm mt-0.5">{me?.fullName || t('Manager')} — {t('Manager')}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setDistributeModal(true)}>{t('Distribute evenly')}</Button>
-          {poolLeads.length > 0 && (
+          {can('leads.distribute') && <Button variant="secondary" size="sm" onClick={() => setDistributeModal(true)}>{t('Distribute evenly')}</Button>}
+          {can('leads.distribute') && poolLeads.length > 0 && (
             <Button variant="primary" size="sm" disabled={!selectedPoolLeads.length} onClick={() => { setAssignLeads(selectedPoolLeads); setAssignTo(''); setAssignModal(true); }}>
               {t('Distribute Selected ({n})', { n: selectedPoolLeads.length })}
             </Button>
@@ -428,7 +430,7 @@ export default function ManagerDashboard({ userId }: Props) {
           <Select value={leadQuality} onChange={setLeadQuality} options={ROLE_QUALITY_OPTIONS} className="w-36" />
           <Select value={leadPhone} onChange={setLeadPhone} options={ROLE_PHONE_OPTIONS} className="w-36" />
           <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: 'all', label: 'All' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
-          <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? t('Exporting...') : t('Export Excel')}</Button>
+          {can('leads.export') && <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? t('Exporting...') : t('Export Excel')}</Button>}
         </div>
         {poolLeads.length === 0 ? (
           <p className="text-[#4a4a4a] text-sm py-4">{t('All leads have been distributed to your team members.')}</p>

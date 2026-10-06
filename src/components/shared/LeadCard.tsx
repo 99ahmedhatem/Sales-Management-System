@@ -10,6 +10,7 @@ import { Button, StatusBadge, WebsiteLink } from '../ui';
 import { REGION_OPTIONS } from './DistributeLeadsModal';
 import WhatsAppButton from './WhatsAppButton';
 import { websiteCategoryLabel } from './WebsiteChecks';
+import { usePermissions } from '../../hooks/usePermissions';
 
 type Role = 'admin' | 'manager' | 'sales' | 'telesales';
 
@@ -90,6 +91,7 @@ function fieldValue(value: unknown): string {
 
 export default function LeadCard({ leadId, role, onClose }: { leadId: string; role: Role; onClose: () => void }) {
   const { t, lang, dir } = useI18n();
+  const { can } = usePermissions();
   const [data, setData] = useState<LeadCardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -258,7 +260,7 @@ export default function LeadCard({ leadId, role, onClose }: { leadId: string; ro
               {/* Actions */}
               <div className="flex flex-wrap items-center gap-2">
                 {lead.phone && <WhatsAppButton leadId={lead.id} leadStatus={lead.status} />}
-                {data.can_edit && !editing && <Button size="sm" variant="secondary" onClick={startEdit}>{t('Edit')}</Button>}
+                {data.can_edit && can('leads.edit') && !editing && <Button size="sm" variant="secondary" onClick={startEdit}>{t('Edit')}</Button>}
                 {saveMsg && <span className="text-xs text-[#64dc78]">{saveMsg}</span>}
               </div>
 

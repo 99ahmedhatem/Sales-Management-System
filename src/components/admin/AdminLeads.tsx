@@ -16,6 +16,7 @@ import { normalizeWebsite } from '../../lib/websiteKey';
 import { useLeadCard } from '../shared/AppOverlays';
 import WebsiteChecks, { WEBSITE_REASON_FILTER_OPTIONS, WEBSITE_STATUS_FILTER_OPTIONS, websiteCategoryLabel } from '../shared/WebsiteChecks';
 import WhatsAppButton from '../shared/WhatsAppButton';
+import { usePermissions } from '../../hooks/usePermissions';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -149,6 +150,7 @@ function mapUser(row: any): User {
 export default function AdminLeads() {
   const { t } = useI18n();
   const openLead = useLeadCard();
+  const { can } = usePermissions();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -620,10 +622,12 @@ export default function AdminLeads() {
         </div>
       </div>
 
-      <AutoDistributionCard
-        agents={users.filter(u => u.role === 'telesales' && u.status === 'active')}
-        onDistributed={() => { setSelected([]); void loadData(0); }}
-      />
+      {can('leads.distribute') && (
+        <AutoDistributionCard
+          agents={users.filter(u => u.role === 'telesales' && u.status === 'active')}
+          onDistributed={() => { setSelected([]); void loadData(0); }}
+        />
+      )}
 
       <div>
         <Button variant="secondary" size="sm" onClick={() => setShowWebsiteChecks(v => !v)}>
@@ -643,12 +647,12 @@ export default function AdminLeads() {
         <Select value={websiteFilter} onChange={setWebsiteFilter} options={WEBSITE_STATUS_FILTER_OPTIONS} className="w-44" />
         <Select value={websiteReasonFilter} onChange={setWebsiteReasonFilter} options={WEBSITE_REASON_FILTER_OPTIONS} className="w-52" />
         <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: '', label: 'All Assignments' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
-        <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? t('Exporting...') : t('Export Excel')}</Button>
-        <Button variant="secondary" size="sm" onClick={() => setDistributeModal(true)}>{t('Distribute evenly')}</Button>
+        {can('leads.export') && <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? t('Exporting...') : t('Export Excel')}</Button>}
+        {can('leads.distribute') && <Button variant="secondary" size="sm" onClick={() => setDistributeModal(true)}>{t('Distribute evenly')}</Button>}
         {selected.length > 0 && (
           <div className="flex gap-2">
             <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>{t('Assign {n} Selected', { n: selected.length })}</Button>
-            <Button variant="danger" size="sm" disabled={busy === 'delete'} onClick={() => runBusy('delete', handleDeleteSelected)}>{t('Delete {n}', { n: selected.length })}</Button>
+            {can('leads.delete') && <Button variant="danger" size="sm" disabled={busy === 'delete'} onClick={() => runBusy('delete', handleDeleteSelected)}>{t('Delete {n}', { n: selected.length })}</Button>}
           </div>
         )}
       </div>

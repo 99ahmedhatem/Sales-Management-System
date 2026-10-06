@@ -18,6 +18,7 @@ import { useI18n } from "../../i18n/I18nProvider"
 import { ClientLink } from "./AppOverlays"
 import { DealInstallments } from "./Installments"
 import { onOpenDeal, takePendingDealId } from "../../lib/navigation"
+import { usePermissions } from "../../hooks/usePermissions"
 
 interface Props {
   userId: string
@@ -41,6 +42,7 @@ const STATUS_LABELS: Record<Deal["status"], string> = {
 
 export default function ContractsModule({ userId, role }: Props) {
   const { t } = useI18n()
+  const { can } = usePermissions()
   const [deals, setDeals] = useState<Deal[]>([])
   const [page, setPage] = useState(0)
   const [total, setTotal] = useState(0)
@@ -170,10 +172,10 @@ export default function ContractsModule({ userId, role }: Props) {
       deal.packageName.toLowerCase().includes(query)
     )
   })
-  const canCreateDeal = role === "sales" || role === "telesales" || role === "manager"
+  const canCreateDeal = (role === "sales" || role === "telesales" || role === "manager") && can("deals.create")
   const canUploadContract =
     canCreateDeal && selectedDeal?.closedByUserId === userId
-  const canApprove = role === "admin" || role === "manager"
+  const canApprove = (role === "admin" || role === "manager") && can("deals.approve")
   const canRequestReview =
     role === "admin" ||
     role === "manager" ||

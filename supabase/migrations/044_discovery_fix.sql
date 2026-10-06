@@ -1,5 +1,5 @@
 -- 044: إصلاح البحث (دمج الإعدادات الافتراضية) + عدّادات تشخيص
--- قبله شغّل supabase/DISCOVERY_STOP_FIRST.sql وبعده supabase/DISCOVERY_RESTART_CRON.sql
+-- قبله شغّل بالترتيب (كل ملف لوحده): supabase/DISCOVERY_STOP_1_kill_sessions.sql ← DISCOVERY_STOP_2_pause_cron.sql ← DISCOVERY_STOP_3_stop_runs.sql — وبعده supabase/DISCOVERY_RESTART_CRON.sql
 set lock_timeout = 0; set statement_timeout = 0;
 alter table public.discovery_runs
   add column if not exists st_links int not null default 0,

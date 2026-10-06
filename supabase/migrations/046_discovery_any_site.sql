@@ -116,10 +116,12 @@ begin
   for run in select * from public.discovery_runs where status = 'running' loop
     if not exists (select 1 from public.discovery_queries where run_id = run.id and state <> 'done') and not exists (select 1 from public.discovery_pages where run_id = run.id) then
       update public.discovery_runs set status = 'done', finished_at = now() where id = run.id;
-      insert into public.notifications(user_id, type, title, message)
-        select u.id, 'comment', 'انتهى البحث عن عملاء جدد',
-               format('تم العثور على %s موقع جديد بانتظار مراجعتك (تم استبعاد %s مكرر).', (select count(*) from public.discovery_results where run_id = run.id), run.duplicates)
-        from public.users u where u.role = 'admin' and u.status = 'active';
+      begin
+        insert into public.notifications(user_id, type, title, message)
+          select u.id, 'system', 'انتهى البحث عن عملاء جدد',
+                 format('تم العثور على %s موقع جديد بانتظار مراجعتك (تم استبعاد %s مكرر).', (select count(*) from public.discovery_results where run_id = run.id), run.duplicates)
+          from public.users u where u.role = 'admin' and u.status = 'active';
+      exception when others then null; end;
     end if;
   end loop;
   return cnt;

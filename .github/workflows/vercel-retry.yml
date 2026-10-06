@@ -1,0 +1,71 @@
+# Vercel does not retry a deployment that was blocked by "Deployment rate limited".
+# Every 3 hours this checks the latest commit on main: if the intillaq deployment failed
+# because of the limit (and 24 hours have passed), it starts a new production deployment
+# through a Vercel Deploy Hook. Each commit is retried once.
+#
+# One-time setup:
+#   1) Vercel → project "intillaq" → Settings → Git → Deploy Hooks → name "retry", branch "main" → Create, copy the URL
+#   2) GitHub → repo → Settings → Secrets and variables → Actions → New repository secret
+#      Name: VERCEL_DEPLOY_HOOK_INTILLAQ   Value: the URL from step 1
+name: Retry Vercel deploy after rate limit
+
+on:
+  schedule:
+    - cron: "15 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: vercel-retry
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Redeploy if the latest main deploy was rate limited
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_INTILLAQ }}
+          REPO: ${{ github.repository }}
+          VERCEL_CONTEXT: "Vercel – intillaq"
+          MARKER: "vercel-retry/intillaq"
+        run: |
+          set -euo pipefail
+          if [ -z "${HOOK:-}" ]; then
+            echo "::warning::Secret VERCEL_DEPLOY_HOOK_INTILLAQ is not set — nothing to do."
+            exit 0
+          fi
+          SHA=$(gh api "repos/$REPO/commits/main" --jq .sha)
+          STATUSES=$(gh api "repos/$REPO/commits/$SHA/status")
+
+          # Already retried this commit? (marker status written below)
+          if echo "$STATUSES" | jq -e --arg m "$MARKER" '.statuses[] | select(.context == $m)' > /dev/null; then
+            echo "Already retried $SHA — skipping."
+            exit 0
+          fi
+
+          STATE=$(echo "$STATUSES" | jq -r --arg c "$VERCEL_CONTEXT" '[.statuses[] | select(.context == $c)][0] | "\(.state)|\(.description)"')
+          SINCE=$(echo "$STATUSES" | jq -r --arg c "$VERCEL_CONTEXT" '[.statuses[] | select(.context == $c)][0].updated_at // empty')
+          echo "Latest $VERCEL_CONTEXT on $SHA: $STATE (at $SINCE)"
+
+          # The limit lasts 24 hours: retrying earlier would just fail again.
+          if [ -n "$SINCE" ] && [ $(( $(date -u +%s) - $(date -u -d "$SINCE" +%s) )) -lt 86400 ]; then
+            echo "Less than 24h since the failure — will check again later."
+            exit 0
+          fi
+
+          case "$STATE" in
+            failure\|*[Rr]ate\ limited*|error\|*[Rr]ate\ limited*)
+              curl -fsS -X POST "$HOOK" > /dev/null
+              gh api "repos/$REPO/statuses/$SHA" -f state=success -f context="$MARKER" \
+                -f description="Redeploy triggered after the Vercel rate limit" > /dev/null
+              echo "Redeploy triggered for $SHA."
+              ;;
+            *)
+              echo "No rate-limited deploy to retry."
+              ;;
+          esac

@@ -60,6 +60,8 @@ const WhatsAppTemplates = lazy(() => import("./components/admin/WhatsAppTemplate
 
 const AdminPermissions = lazy(() => import("./components/admin/AdminPermissions"))
 
+const AdminDiscovery = lazy(() => import("./components/admin/AdminDiscovery"))
+
 const MeetingRequestsManagement = lazy(
   () => import("./components/shared/MeetingRequestsManagement"),
 )
@@ -228,6 +230,7 @@ export default function App() {
           {page === "profile" && <ProfileView />}
           {session.role === "admin" && page === "whatsapp" && <WhatsAppTemplates />}
           {session.role === "admin" && page === "permissions" && <AdminPermissions />}
+          {session.role === "admin" && page === "discovery" && <AdminDiscovery />}
         </Suspense>
         </ErrorBoundary>
       )}

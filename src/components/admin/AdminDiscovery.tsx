@@ -2,32 +2,42 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useI18n } from '../../i18n/I18nProvider';
 import { dateLocale } from '../../i18n/locale';
-import { Button, Card, Modal, Pagination, Select, WebsiteLink } from '../ui';
+import { Button, Card, Modal, Pagination, Select, Toggle, WebsiteLink } from '../ui';
 import { TableSkeleton } from '../shared/motion';
 
-/** Text areas: one item per line. */
-const LIST_FIELDS = [
-  'sectors', 'cities', 'extra_queries', 'sector_templates', 'city_templates',
-  'allowed_tlds', 'skip_domains', 'contact_paths',
-  'saudi_signals', 'app_signals', 'dashboard_signals', 'wordpress_signals',
-] as const;
-const NUMBER_FIELDS = ['pages_per_query', 'serper_per_min', 'fetch_per_min'] as const;
-const REQUIRE_OPTIONS = [
+// ---------- Config shape (043) ----------
+interface CountryDef { name_ar: string; name_en: string; gl: string; tld: string; query_word: string; cc: string; signals: string[]; extra_queries: string[]; cities: string[] }
+interface CustomFeature { label: string; keywords: string[] }
+interface Config {
+  countries: string[];
+  country_defs: Record<string, CountryDef>;
+  features: { app: boolean; dashboard: boolean; wordpress: boolean };
+  custom_features: CustomFeature[];
+  sectors: string[];
+  include_cities: boolean;
+  pages_per_query: number; serper_per_min: number; fetch_per_min: number;
+  skip_domains: string[]; contact_paths: string[];
+  app_signals: string[]; dashboard_signals: string[]; wordpress_signals: string[];
+  [key: string]: unknown;
+}
+
+const FEATURES = [
+  { key: 'wordpress', label: 'WordPress' },
   { key: 'app', label: 'Mobile app' },
   { key: 'dashboard', label: 'Dashboard / client portal' },
-  { key: 'wordpress', label: 'WordPress' },
 ] as const;
+const ADV_LISTS = ['skip_domains', 'contact_paths', 'app_signals', 'dashboard_signals', 'wordpress_signals'] as const;
+const ADV_NUMBERS = ['pages_per_query', 'serper_per_min', 'fetch_per_min'] as const;
+type AdvList = (typeof ADV_LISTS)[number];
+type AdvNumber = (typeof ADV_NUMBERS)[number];
+type Advanced = Record<AdvList | AdvNumber, string> & { country_defs: string };
 
 const FIELD_LABELS: Record<string, string> = {
-  sectors: 'Sectors', cities: 'Cities', extra_queries: 'Extra queries',
-  sector_templates: 'Sector query templates', city_templates: 'City query templates',
-  allowed_tlds: 'Allowed domain endings', skip_domains: 'Skipped domains', contact_paths: 'Contact page paths',
-  saudi_signals: 'Saudi signals', app_signals: 'App signals', dashboard_signals: 'Dashboard signals', wordpress_signals: 'WordPress signals',
+  skip_domains: 'Skipped domains', contact_paths: 'Contact page paths',
+  app_signals: 'App signals', dashboard_signals: 'Dashboard signals', wordpress_signals: 'WordPress signals',
   pages_per_query: 'Pages per query (1–5)', serper_per_min: 'Searches per minute', fetch_per_min: 'Site fetches per minute',
+  country_defs: 'Country definitions (JSON)',
 };
-
-type Config = Record<string, unknown>;
-type Form = Record<(typeof LIST_FIELDS)[number] | (typeof NUMBER_FIELDS)[number], string> & { require_any: string[] };
 
 interface Progress {
   run_id: string; status: 'running' | 'paused' | 'done' | 'stopped'; total_queries: number; done_queries: number;
@@ -36,27 +46,20 @@ interface Progress {
 }
 interface Result {
   id: string; name: string | null; url: string; domain: string; phone: string | null; phones: string[] | null;
-  features: string[] | null; notes: string | null; status: string; found_at: string;
+  features: string[] | null; notes: string | null; status: string; found_at: string; country: string | null; country_code: string | null;
 }
 
 const PAGE_SIZE = 100;
-const asList = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
+const ESTIMATE_WARN = 3000;
 const lines = (s: string) => s.split('\n').map(x => x.trim()).filter(Boolean);
+const asList = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
+const uniq = (xs: string[]) => [...new Set(xs)];
 
-function toForm(cfg: Config): Form {
-  const f = { require_any: asList(cfg.require_any) } as Form;
-  for (const k of LIST_FIELDS) f[k] = asList(cfg[k]).join('\n');
-  for (const k of NUMBER_FIELDS) f[k] = cfg[k] == null ? '' : String(cfg[k]);
-  return f;
-}
-
-/** Keeps any keys the form does not know about. */
-function toConfig(base: Config, f: Form): Config {
-  const out: Config = { ...base, require_any: f.require_any };
-  for (const k of LIST_FIELDS) out[k] = lines(f[k]);
-  for (const k of NUMBER_FIELDS) out[k] = Number(f[k]) || 0;
-  out.pages_per_query = Math.min(5, Math.max(1, Number(f.pages_per_query) || 1));
-  return out;
+function toAdvanced(cfg: Config): Advanced {
+  const a = { country_defs: JSON.stringify(cfg.country_defs ?? {}, null, 2) } as Advanced;
+  for (const k of ADV_LISTS) a[k] = asList(cfg[k]).join('\n');
+  for (const k of ADV_NUMBERS) a[k] = cfg[k] == null ? '' : String(cfg[k]);
+  return a;
 }
 
 /** Admin only: find new client websites (Serper search + site checks run by the database cron). */
@@ -95,49 +98,143 @@ export default function AdminDiscovery() {
   }
 
   // ---------- Settings ----------
-  const [baseConfig, setBaseConfig] = useState<Config>({});
-  const [form, setForm] = useState<Form | null>(null);
+  const [cfg, setCfg] = useState<Config | null>(null);
+  const [sectorCatalog, setSectorCatalog] = useState<string[]>([]);
+  const [allSectors, setAllSectors] = useState(true);
+  const [sectorSearch, setSectorSearch] = useState('');
+  const [newSector, setNewSector] = useState('');
+  const [customLabel, setCustomLabel] = useState('');
+  const [customKeywords, setCustomKeywords] = useState('');
+  const [advOpen, setAdvOpen] = useState(false);
+  const [adv, setAdv] = useState<Advanced | null>(null);
   const [instructions, setInstructions] = useState('');
-  const [configOpen, setConfigOpen] = useState(false);
   const [configLoading, setConfigLoading] = useState(true);
   const [configError, setConfigError] = useState('');
   const [configBusy, setConfigBusy] = useState<'' | 'save' | 'reset'>('');
   const [resetOpen, setResetOpen] = useState(false);
+  const [estimate, setEstimate] = useState<number | null>(null);
+  const [estimating, setEstimating] = useState(false);
+
+  const applyConfig = useCallback((next: Config, defaults: Config | null) => {
+    const catalog = uniq([...asList(defaults?.sectors), ...asList(next.sectors)]);
+    setCfg({ ...next, custom_features: Array.isArray(next.custom_features) ? next.custom_features : [] });
+    setSectorCatalog(catalog);
+    setAllSectors(catalog.every(s => next.sectors?.includes(s)));
+    setAdv(toAdvanced(next));
+  }, []);
 
   const loadConfig = useCallback(async () => {
     setConfigLoading(true);
-    const [cfgRes, rowRes] = await Promise.all([
+    const [cfgRes, defRes, rowRes] = await Promise.all([
       supabase.rpc('get_discovery_config', { p_name: 'default' }),
+      supabase.rpc('discovery_default_config'),
       supabase.from('discovery_configs').select('instructions').eq('name', 'default').maybeSingle(),
     ]);
-    if (cfgRes.error) setConfigError(cfgRes.error.message);
-    else {
-      setConfigError(rowRes.error?.message ?? '');
-      const cfg = (cfgRes.data ?? {}) as Config;
-      setBaseConfig(cfg);
-      setForm(toForm(cfg));
+    const err = cfgRes.error?.message || defRes.error?.message || rowRes.error?.message || '';
+    setConfigError(err);
+    if (!cfgRes.error) {
+      applyConfig(cfgRes.data as Config, defRes.error ? null : (defRes.data as Config));
       setInstructions((rowRes.data as { instructions?: string | null } | null)?.instructions ?? '');
     }
     setConfigLoading(false);
-  }, []);
+  }, [applyConfig]);
 
-  const expectedQueries = useMemo(() => {
-    if (!form) return 0;
-    const n = (k: (typeof LIST_FIELDS)[number]) => lines(form[k]).length;
-    const pages = Math.min(5, Math.max(1, Number(form.pages_per_query) || 1));
-    return (n('sectors') * n('sector_templates') + n('sectors') * n('cities') * n('city_templates') + n('extra_queries')) * pages;
-  }, [form]);
+  /** The config to save / estimate: simple choices + advanced fields. null = advanced JSON is invalid. */
+  const built = useMemo<{ config: Config | null; error: string }>(() => {
+    if (!cfg || !adv) return { config: null, error: '' };
+    let countryDefs: Record<string, CountryDef>;
+    try {
+      countryDefs = JSON.parse(adv.country_defs || '{}');
+      if (!countryDefs || typeof countryDefs !== 'object' || Array.isArray(countryDefs)) throw new Error();
+    } catch {
+      return { config: null, error: 'Country definitions are not valid JSON.' };
+    }
+    const out: Config = { ...cfg, country_defs: countryDefs, sectors: allSectors ? sectorCatalog : cfg.sectors };
+    for (const k of ADV_LISTS) out[k] = lines(adv[k]);
+    for (const k of ADV_NUMBERS) out[k] = Number(adv[k]) || 0;
+    out.pages_per_query = Math.min(5, Math.max(1, Number(adv.pages_per_query) || 1));
+    out.countries = cfg.countries.filter(c => countryDefs[c]);
+    return { config: out, error: '' };
+  }, [cfg, adv, allSectors, sectorCatalog]);
+
+  const builtKey = built.config ? JSON.stringify(built.config) : '';
+
+  // Estimate the Serper requests 400ms after the last change
+  useEffect(() => {
+    if (!built.config) { setEstimate(null); return; }
+    const snapshot = built.config;
+    setEstimating(true);
+    const timer = window.setTimeout(async () => {
+      const { data, error } = await supabase.rpc('discovery_estimate', { p_config: snapshot });
+      setEstimating(false);
+      setEstimate(error ? null : Number(data ?? 0));
+    }, 400);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [builtKey]);
+
+  const hasCustom = (cfg?.custom_features.length ?? 0) > 0;
+  const onFeatures = cfg ? FEATURES.filter(f => cfg.features?.[f.key]).length : 0;
+
+  function toggleCountry(code: string) {
+    if (!cfg) return;
+    const on = cfg.countries.includes(code);
+    if (on && cfg.countries.length === 1) { showToast(false, t('Choose at least one country')); return; }
+    setCfg({ ...cfg, countries: on ? cfg.countries.filter(c => c !== code) : [...cfg.countries, code] });
+  }
+
+  function toggleFeature(key: (typeof FEATURES)[number]['key']) {
+    if (!cfg) return;
+    const on = Boolean(cfg.features?.[key]);
+    if (on && onFeatures === 1 && !hasCustom) { showToast(false, t('Choose at least one thing to look for')); return; }
+    setCfg({ ...cfg, features: { ...cfg.features, [key]: !on } });
+  }
+
+  function addCustom() {
+    if (!cfg) return;
+    const label = customLabel.trim();
+    const keywords = uniq(customKeywords.split(/[,،\n]/).map(x => x.trim()).filter(Boolean));
+    if (!label || !keywords.length) { showToast(false, t('Write a name and at least one keyword.')); return; }
+    setCfg({ ...cfg, custom_features: [...cfg.custom_features.filter(f => f.label !== label), { label, keywords }] });
+    setCustomLabel('');
+    setCustomKeywords('');
+  }
+
+  function removeCustom(label: string) {
+    if (!cfg) return;
+    if (onFeatures === 0 && cfg.custom_features.length === 1) { showToast(false, t('Choose at least one thing to look for')); return; }
+    setCfg({ ...cfg, custom_features: cfg.custom_features.filter(f => f.label !== label) });
+  }
+
+  function setAllSectorsOn(on: boolean) {
+    if (!cfg) return;
+    setAllSectors(on);
+    if (!on) setCfg({ ...cfg, sectors: cfg.sectors.length ? cfg.sectors.filter(s => sectorCatalog.includes(s)) : [] });
+  }
+
+  function toggleSector(s: string) {
+    if (!cfg) return;
+    setCfg({ ...cfg, sectors: cfg.sectors.includes(s) ? cfg.sectors.filter(x => x !== s) : [...cfg.sectors, s] });
+  }
+
+  function addSector() {
+    if (!cfg) return;
+    const s = newSector.trim();
+    if (!s) return;
+    setSectorCatalog(c => uniq([...c, s]));
+    setCfg({ ...cfg, sectors: uniq([...cfg.sectors, s]) });
+    setNewSector('');
+  }
 
   async function saveConfig(silent = false): Promise<boolean> {
-    if (!form) return false;
+    if (!built.config) { showToast(false, t(built.error || 'Settings are not ready yet.')); return false; }
     setConfigBusy('save');
     const { error } = await supabase.rpc('save_discovery_config', {
-      p_config: toConfig(baseConfig, form), p_name: 'default', p_instructions: instructions.trim() || null,
+      p_config: built.config, p_name: 'default', p_instructions: instructions.trim() || null,
     });
     setConfigBusy('');
     if (error) { showToast(false, error.message); return false; }
     if (!silent) showToast(true, t('Settings saved'));
-    await loadConfig();
     return true;
   }
 
@@ -147,7 +244,7 @@ export default function AdminDiscovery() {
     setConfigBusy('');
     setResetOpen(false);
     if (error) { showToast(false, error.message); return; }
-    setForm(toForm((data ?? {}) as Config));
+    applyConfig(data as Config, data as Config);
     showToast(true, t('Default settings loaded — press Save to keep them'));
   }
 
@@ -203,7 +300,7 @@ export default function AdminDiscovery() {
     setResultsLoading(true);
     const { data, error, count } = await supabase
       .from('discovery_results')
-      .select('id,name,url,domain,phone,phones,features,notes,status,found_at', { count: 'exact' })
+      .select('id,name,url,domain,phone,phones,features,notes,status,found_at,country,country_code', { count: 'exact' })
       .eq('status', 'new')
       .order('found_at', { ascending: false })
       .order('id', { ascending: false })
@@ -262,13 +359,19 @@ export default function AdminDiscovery() {
   const statusLabel: Record<string, string> = { running: 'Running', paused: 'Paused', done: 'Finished', stopped: 'Stopped' };
   const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString(dateLocale(lang), { dateStyle: 'medium', timeStyle: 'short' }) : '—');
   const input = 'w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60';
+  const chip = (on: boolean) => `inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${on ? 'border-[#dfff03]/60 bg-[#dfff03]/10 text-[#dfff03]' : 'border-[#2a2a2a] text-[#a0a0a0] hover:border-[#4a4a4a] hover:text-white'}`;
   const allOnPage = results.length > 0 && results.every(r => selected.includes(r.id));
+  const countryName = (code: string | null, fallback: string | null) => {
+    const d = code ? cfg?.country_defs?.[code] : undefined;
+    return d ? (lang === 'ar' ? d.name_ar : d.name_en) : fallback || '—';
+  };
+  const visibleSectors = sectorCatalog.filter(s => !sectorSearch.trim() || s.toLowerCase().includes(sectorSearch.trim().toLowerCase()));
 
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div>
         <h1 className="text-white text-2xl font-bold">{t('Lead discovery')}</h1>
-        <p className="text-[#6b6b6b] text-sm mt-0.5">{t('Find Saudi websites with a mobile app, a client dashboard or WordPress, review them, then add them as clients.')}</p>
+        <p className="text-[#6b6b6b] text-sm mt-0.5">{t('Find Gulf websites with a mobile app, a client dashboard or WordPress, review them, then add them as clients.')}</p>
       </div>
 
       {/* 1) Serper key */}
@@ -288,15 +391,8 @@ export default function AdminDiscovery() {
         {hasKey === null && !keyError && <div className="h-9 animate-pulse rounded bg-[#1a1a1a]" />}
         {(hasKey === false || keyEditing) && (
           <div className="flex flex-col gap-2 sm:flex-row">
-            <input
-              type="password"
-              autoComplete="off"
-              value={keyDraft}
-              onChange={e => setKeyDraft(e.target.value)}
-              placeholder={t('Paste the key from serper.dev')}
-              className={input}
-              dir="ltr"
-            />
+            <input type="password" autoComplete="off" value={keyDraft} onChange={e => setKeyDraft(e.target.value)}
+              placeholder={t('Paste the key from serper.dev')} className={input} dir="ltr" />
             <div className="flex gap-2">
               <Button onClick={() => void saveKey()} disabled={keyBusy || !keyDraft.trim()}>{keyBusy ? t('Saving…') : t('Save')}</Button>
               {keyEditing && <Button variant="ghost" onClick={() => { setKeyEditing(false); setKeyDraft(''); }}>{t('Cancel')}</Button>}
@@ -306,87 +402,140 @@ export default function AdminDiscovery() {
         {keyError && <div role="alert" className="text-sm text-[#ff8888]">{t(keyError)}</div>}
       </Card>
 
-      {/* 2) Settings */}
-      <Card className="anim-card">
-        <button onClick={() => setConfigOpen(o => !o)} className="flex w-full items-center justify-between gap-2 p-4 text-start" aria-expanded={configOpen}>
-          <div>
-            <h3 className="text-white font-semibold">{t('Search settings')}</h3>
-            <p className="text-xs text-[#6b6b6b]">{t('Expected searches: {n}', { n: expectedQueries.toLocaleString('en-US') })}</p>
-          </div>
-          <span className={`text-[#6b6b6b] transition-transform ${configOpen ? 'rotate-180' : ''}`} aria-hidden="true">▾</span>
-        </button>
-        {configOpen && (
-          <div className="space-y-4 border-t border-[#262626] p-4">
-            {configError && <div role="alert" className="text-sm text-[#ff8888]">{t(configError)}</div>}
-            {configLoading && !form ? <TableSkeleton rows={4} cols={1} /> : form && (
-              <>
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-                  {(['sectors', 'cities', 'extra_queries'] as const).map(k => (
-                    <label key={k} className="text-xs text-[#a0a0a0]">{t(FIELD_LABELS[k])} <span className="text-[#4a4a4a]">({lines(form[k]).length})</span>
-                      <textarea rows={7} dir="auto" className={`mt-1 ${input}`} value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })} />
-                    </label>
-                  ))}
-                </div>
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                  {(['sector_templates', 'city_templates'] as const).map(k => (
-                    <label key={k} className="text-xs text-[#a0a0a0]">{t(FIELD_LABELS[k])}
-                      <textarea rows={5} dir="auto" className={`mt-1 ${input}`} value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })} />
-                    </label>
-                  ))}
-                </div>
-                <p className="text-xs text-[#6b6b6b]">{t('In the templates, {sector} and {city} are replaced by each sector and city.')}</p>
+      {/* 2) Simple settings */}
+      <Card className="p-4 space-y-5 anim-card">
+        <h3 className="text-white font-semibold">{t('Search settings')}</h3>
+        {configError && <div role="alert" className="text-sm text-[#ff8888]">{t(configError)}</div>}
+        {configLoading && !cfg ? <TableSkeleton rows={4} cols={1} /> : cfg && adv && (
+          <>
+            {/* Countries */}
+            <section className="space-y-2">
+              <div className="text-sm text-white">{t('Countries')}</div>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(cfg.country_defs ?? {}).map(([code, d]) => {
+                  const on = cfg.countries.includes(code);
+                  return (
+                    <button key={code} type="button" aria-pressed={on} onClick={() => toggleCountry(code)} className={chip(on)}>
+                      {on && <span aria-hidden="true">✓</span>}{lang === 'ar' ? d.name_ar : d.name_en}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-[#6b6b6b]">{t('Searches the whole country — no need to pick cities.')}</p>
+            </section>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  {NUMBER_FIELDS.map(k => (
-                    <label key={k} className="text-xs text-[#a0a0a0]">{t(FIELD_LABELS[k])}
-                      <input type="number" min={1} max={k === 'pages_per_query' ? 5 : undefined} className={`mt-1 ${input}`} value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })} />
-                    </label>
-                  ))}
-                </div>
+            {/* What to look for */}
+            <section className="space-y-2">
+              <div className="text-sm text-white">{t('What are you looking for?')}</div>
+              <div className="flex flex-wrap gap-2">
+                {FEATURES.map(f => {
+                  const on = Boolean(cfg.features?.[f.key]);
+                  return (
+                    <button key={f.key} type="button" aria-pressed={on} onClick={() => toggleFeature(f.key)} className={chip(on)}>
+                      {on && <span aria-hidden="true">✓</span>}{t(f.label)}
+                    </button>
+                  );
+                })}
+                {cfg.custom_features.map(f => (
+                  <span key={f.label} className={chip(true)} title={f.keywords.join(', ')}>
+                    ✓ {f.label}
+                    <button type="button" onClick={() => removeCustom(f.label)} aria-label={t('Remove {name}', { name: f.label })} className="ms-1 text-[#dfff03]/70 hover:text-white">×</button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input value={customLabel} onChange={e => setCustomLabel(e.target.value)} placeholder={t('Add something else to look for (e.g. Shopify)')} className={`${input} sm:w-64`} dir="auto" />
+                <input value={customKeywords} onChange={e => setCustomKeywords(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addCustom(); }}
+                  placeholder={t('e.g. cdn.shopify.com, myshopify')} className={input} dir="auto" />
+                <Button variant="secondary" onClick={addCustom} disabled={!customLabel.trim() || !customKeywords.trim()}>{t('Add')}</Button>
+              </div>
+            </section>
 
-                <fieldset className="space-y-2">
-                  <legend className="text-xs text-[#a0a0a0]">{t('Keep sites that have at least one of')}</legend>
-                  <div className="flex flex-wrap gap-4">
-                    {REQUIRE_OPTIONS.map(o => (
-                      <label key={o.key} className="flex items-center gap-2 text-sm text-[#d0d0d0]">
-                        <input
-                          type="checkbox"
-                          className="accent-[#dfff03]"
-                          checked={form.require_any.includes(o.key)}
-                          onChange={e => setForm({ ...form, require_any: e.target.checked ? [...form.require_any, o.key] : form.require_any.filter(x => x !== o.key) })}
-                        />
-                        {t(o.label)}
+            {/* Sectors */}
+            <section className="space-y-2">
+              <label className="flex items-center justify-between gap-3">
+                <span className="text-sm text-white">{t('All business types ({n})', { n: sectorCatalog.length })}</span>
+                <Toggle checked={allSectors} onChange={setAllSectorsOn} />
+              </label>
+              {!allSectors && (
+                <div className="space-y-2 rounded-lg border border-[#262626] p-3 anim-card">
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input value={sectorSearch} onChange={e => setSectorSearch(e.target.value)} placeholder={t('Search business types…')} className={input} dir="auto" />
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => setCfg({ ...cfg, sectors: uniq([...cfg.sectors, ...visibleSectors]) })}>{t('Select all')}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setCfg({ ...cfg, sectors: cfg.sectors.filter(s => !visibleSectors.includes(s)) })}>{t('Clear')}</Button>
+                    </div>
+                  </div>
+                  <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto">
+                    {visibleSectors.map(s => {
+                      const on = cfg.sectors.includes(s);
+                      return <button key={s} type="button" aria-pressed={on} onClick={() => toggleSector(s)} className={`${chip(on)} py-1 text-xs`}>{s}</button>;
+                    })}
+                  </div>
+                  <div className="text-xs text-[#6b6b6b]">{t('{n} selected', { n: cfg.sectors.length })}</div>
+                  <div className="flex gap-2">
+                    <input value={newSector} onChange={e => setNewSector(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addSector(); }}
+                      placeholder={t('Add a new business type')} className={input} dir="auto" />
+                    <Button variant="secondary" onClick={addSector} disabled={!newSector.trim()}>{t('Add')}</Button>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* Cities */}
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-sm text-white">{t('Search in cities too (more results, higher cost)')}</span>
+              <Toggle checked={Boolean(cfg.include_cities)} onChange={v => setCfg({ ...cfg, include_cities: v })} />
+            </label>
+
+            {/* Estimate */}
+            <div className={`rounded-lg p-3 text-sm ${estimate != null && estimate > ESTIMATE_WARN ? 'border border-[#ffc832]/30 bg-[#ffc832]/10 text-[#ffc832]' : 'bg-[#1a1a1a] text-[#d0d0d0]'}`} aria-live="polite">
+              {built.error ? <span className="text-[#ff8888]">{t(built.error)}</span>
+                : estimate == null ? (estimating ? t('Calculating…') : '—')
+                : <>
+                    {t('≈ {n} searches (uses {n} of your Serper credit)', { n: estimate.toLocaleString('en-US') })}
+                    {estimating && <span className="ms-2 text-xs text-[#6b6b6b]">…</span>}
+                    {estimate > ESTIMATE_WARN && <div className="mt-1 text-xs">{t('That is a lot. Try fewer countries or business types, or turn off cities.')}</div>}
+                  </>}
+            </div>
+
+            {/* Advanced */}
+            <div className="rounded-lg border border-[#262626]">
+              <button type="button" onClick={() => setAdvOpen(o => !o)} className="flex w-full items-center justify-between p-3 text-start text-sm text-[#a0a0a0] hover:text-white" aria-expanded={advOpen}>
+                {t('Advanced settings')}
+                <span className={`transition-transform ${advOpen ? 'rotate-180' : ''}`} aria-hidden="true">▾</span>
+              </button>
+              {advOpen && (
+                <div className="space-y-3 border-t border-[#262626] p-3 anim-card">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    {ADV_NUMBERS.map(k => (
+                      <label key={k} className="text-xs text-[#a0a0a0]">{t(FIELD_LABELS[k])}
+                        <input type="number" min={1} max={k === 'pages_per_query' ? 5 : undefined} className={`mt-1 ${input}`} value={adv[k]} onChange={e => setAdv({ ...adv, [k]: e.target.value })} />
                       </label>
                     ))}
                   </div>
-                </fieldset>
-
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-                  {(['allowed_tlds', 'skip_domains', 'contact_paths'] as const).map(k => (
-                    <label key={k} className="text-xs text-[#a0a0a0]">{t(FIELD_LABELS[k])}
-                      <textarea rows={5} dir="ltr" className={`mt-1 ${input} font-mono text-xs`} value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })} />
-                    </label>
-                  ))}
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                    {ADV_LISTS.map(k => (
+                      <label key={k} className="text-xs text-[#a0a0a0]">{t(FIELD_LABELS[k])} <span className="text-[#4a4a4a]">({lines(adv[k]).length})</span>
+                        <textarea rows={5} dir="auto" className={`mt-1 ${input} text-xs`} value={adv[k]} onChange={e => setAdv({ ...adv, [k]: e.target.value })} />
+                      </label>
+                    ))}
+                  </div>
+                  <label className="block text-xs text-[#a0a0a0]">{t(FIELD_LABELS.country_defs)}
+                    <textarea rows={10} dir="ltr" spellCheck={false} className={`mt-1 ${input} font-mono text-xs`} value={adv.country_defs} onChange={e => setAdv({ ...adv, country_defs: e.target.value })} />
+                  </label>
+                  <p className="text-xs text-[#6b6b6b]">{t('Each country has its query word, domain ending, phone code, signals and cities.')}</p>
+                  <label className="block text-xs text-[#a0a0a0]">{t('Notes / instructions for these settings')}
+                    <textarea rows={3} dir="auto" className={`mt-1 ${input}`} value={instructions} onChange={e => setInstructions(e.target.value)} />
+                  </label>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button size="sm" variant="secondary" disabled={!!configBusy} onClick={() => setResetOpen(true)}>{t('Back to defaults')}</Button>
+                    <Button size="sm" disabled={!!configBusy} onClick={() => void saveConfig()}>{configBusy === 'save' ? t('Saving…') : t('Save')}</Button>
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                  {(['saudi_signals', 'app_signals', 'dashboard_signals', 'wordpress_signals'] as const).map(k => (
-                    <label key={k} className="text-xs text-[#a0a0a0]">{t(FIELD_LABELS[k])}
-                      <textarea rows={5} dir="auto" className={`mt-1 ${input} text-xs`} value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })} />
-                    </label>
-                  ))}
-                </div>
-
-                <label className="block text-xs text-[#a0a0a0]">{t('Notes / instructions for these settings')}
-                  <textarea rows={3} dir="auto" className={`mt-1 ${input}`} value={instructions} onChange={e => setInstructions(e.target.value)} />
-                </label>
-
-                <div className="flex flex-wrap justify-end gap-2">
-                  <Button variant="secondary" disabled={!!configBusy} onClick={() => setResetOpen(true)}>{t('Back to defaults')}</Button>
-                  <Button disabled={!!configBusy} onClick={() => void saveConfig()}>{configBusy === 'save' ? t('Saving…') : t('Save')}</Button>
-                </div>
-              </>
-            )}
-          </div>
+              )}
+            </div>
+          </>
         )}
       </Card>
 
@@ -404,13 +553,14 @@ export default function AdminDiscovery() {
             {progress?.status === 'paused' && <Button size="sm" variant="secondary" disabled={runBusy} onClick={() => void setRunState('running')}>{t('Resume')}</Button>}
             {active && <Button size="sm" variant="danger" disabled={runBusy} onClick={() => setStopOpen(true)}>{t('Finish')}</Button>}
             {!active && (
-              <Button size="sm" disabled={runBusy || !hasKey || !form} onClick={() => void startRun()}>
+              <Button size="sm" disabled={runBusy || !hasKey || !built.config} onClick={() => void startRun()}>
                 {runBusy ? t('Starting…') : t('Start search')}
               </Button>
             )}
           </div>
         </div>
         {!hasKey && hasKey !== null && <p className="text-xs text-[#ffc832]">{t('Save the Serper key first.')}</p>}
+        {!active && <p className="text-xs text-[#6b6b6b]">{t('Starting saves the settings above first.')}</p>}
         {runError && <div role="alert" className="text-sm text-[#ff8888]">{t(runError)}</div>}
         {progress && (
           <>
@@ -476,9 +626,10 @@ export default function AdminDiscovery() {
                 <tr className="border-b border-[#262626] text-xs uppercase tracking-wider text-[#6b6b6b]">
                   <th className="px-4 py-3 text-start">
                     <input type="checkbox" className="accent-[#dfff03]" aria-label={t('Select all')} checked={allOnPage}
-                      onChange={() => setSelected(allOnPage ? selected.filter(id => !results.some(r => r.id === id)) : [...new Set([...selected, ...results.map(r => r.id)])])} />
+                      onChange={() => setSelected(allOnPage ? selected.filter(id => !results.some(r => r.id === id)) : uniq([...selected, ...results.map(r => r.id)]))} />
                   </th>
                   <th className="px-4 py-3 text-start font-medium">{t('Name')}</th>
+                  <th className="px-4 py-3 text-start font-medium">{t('Country')}</th>
                   <th className="px-4 py-3 text-start font-medium">{t('Website')}</th>
                   <th className="px-4 py-3 text-start font-medium">{t('Phone')}</th>
                   <th className="px-4 py-3 text-start font-medium">{t('Features')}</th>
@@ -493,6 +644,7 @@ export default function AdminDiscovery() {
                         onChange={() => setSelected(s => (s.includes(r.id) ? s.filter(x => x !== r.id) : [...s, r.id]))} />
                     </td>
                     <td className="px-4 py-3 text-white" dir="auto">{r.name || r.domain}</td>
+                    <td className="px-4 py-3 text-xs text-[#a0a0a0] whitespace-nowrap">{countryName(r.country_code, r.country)}</td>
                     <td className="px-4 py-3"><WebsiteLink url={r.url} className="text-xs text-[#a0a0a0] break-all" /></td>
                     <td className="px-4 py-3 font-mono text-xs text-[#d0d0d0]" dir="ltr">{r.phone || '—'}</td>
                     <td className="px-4 py-3">
@@ -512,7 +664,7 @@ export default function AdminDiscovery() {
 
       <Modal open={resetOpen} onClose={() => setResetOpen(false)} title="Back to default settings?">
         <div className="space-y-4">
-          <p className="text-sm text-[#d0d0d0]">{t('The form will be filled with the default sectors, cities and signals. Nothing is saved until you press Save.')}</p>
+          <p className="text-sm text-[#d0d0d0]">{t('The settings will be filled with the defaults. Nothing is saved until you press Save or start a search.')}</p>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setResetOpen(false)}>{t('Cancel')}</Button>
             <Button disabled={configBusy === 'reset'} onClick={() => void resetConfig()}>{t('Load defaults')}</Button>

@@ -11,6 +11,9 @@ export const REGION_OPTIONS = [
   { value: 'Iraq', label: 'Iraq (العراق)' },
   { value: 'UAE', label: 'UAE (الإمارات)' },
   { value: 'Egypt', label: 'Egypt (مصر)' },
+  { value: 'Kuwait', label: 'Kuwait (الكويت)' },
+  { value: 'Qatar', label: 'Qatar (قطر)' },
+  { value: 'Bahrain', label: 'Bahrain (البحرين)' },
 ];
 
 export const QUALITY_FILTER_OPTIONS = [

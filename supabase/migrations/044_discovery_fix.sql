@@ -1,4 +1,6 @@
 -- 044: إصلاح البحث (دمج الإعدادات الافتراضية) + عدّادات تشخيص
+-- قبله شغّل supabase/DISCOVERY_STOP_FIRST.sql وبعده supabase/DISCOVERY_RESTART_CRON.sql
+set lock_timeout = 0; set statement_timeout = 0;
 alter table public.discovery_runs
   add column if not exists st_links int not null default 0,
   add column if not exists st_bad_tld int not null default 0,
@@ -85,7 +87,7 @@ declare run record; cfg jsonb; r record; it jsonb; link text; title text; dom te
         skip jsonb; req jsonb; cc text; ccnum text; ccs text[]; cf jsonb; allowed boolean; t text; cname text;
 begin
   -- 1) نتائج Serper
-  for r in select q.run_id, q.idx, q.country_code, p.status_code, p.content, p.error_msg from public.discovery_queries q join net._http_response p on p.id = q.request_id where q.state = 'sent' limit 300 loop
+  for r in select q.run_id, q.idx, q.country_code, p.status_code, p.content, p.error_msg from public.discovery_queries q join net._http_response p on p.id = q.request_id where q.state = 'sent' order by q.idx limit 40 loop
     select * into run from public.discovery_runs where id = r.run_id; cfg := run.config; skip := coalesce(cfg->'skip_domains','[]'::jsonb);
     if r.status_code = 200 and r.content is not null then
       begin
@@ -117,8 +119,8 @@ begin
   end loop;
 
   -- 2) صفحات المواقع
-  for r in select g.id, g.run_id, g.domain, g.name, g.url, g.kind, g.country_code, p.status_code, p.content from public.discovery_pages g join net._http_response p on p.id = g.request_id where g.state = 'sent' limit 600 loop
-    select config into cfg from public.discovery_runs where id = r.run_id; html := case when r.status_code between 200 and 399 then left(coalesce(r.content,''), 400000) end;
+  for r in select g.id, g.run_id, g.domain, g.name, g.url, g.kind, g.country_code, p.status_code, p.content from public.discovery_pages g join net._http_response p on p.id = g.request_id where g.state = 'sent' limit 60 loop
+    select config into cfg from public.discovery_runs where id = r.run_id; html := case when r.status_code between 200 and 399 then left(coalesce(r.content,''), 200000) end;
     ccs := array(select cfg->'country_defs'->c->>'cc' from jsonb_array_elements_text(coalesce(cfg->'countries','[]'::jsonb)) c);
     if html is null and r.kind = 'home' then update public.discovery_runs set st_fetch_failed = st_fetch_failed + 1 where id = r.run_id; end if;
     if html is not null then

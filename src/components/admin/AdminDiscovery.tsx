@@ -4,6 +4,7 @@ import { useI18n } from '../../i18n/I18nProvider';
 import { dateLocale } from '../../i18n/locale';
 import { Button, Card, Modal, Pagination, Select, Toggle, WebsiteLink } from '../ui';
 import { TableSkeleton } from '../shared/motion';
+import { PLATFORM_GROUPS_EN, PLATFORM_PRESETS, PlatformPreset } from './discoveryPlatforms';
 
 // ---------- Config shape (043) ----------
 interface CountryDef { name_ar: string; name_en: string; gl: string; tld: string; query_word: string; cc: string; signals: string[]; extra_queries: string[]; cities: string[] }
@@ -35,7 +36,7 @@ type Advanced = Record<AdvList | AdvNumber, string> & { country_defs: string };
 const FIELD_LABELS: Record<string, string> = {
   skip_domains: 'Skipped domains', contact_paths: 'Contact page paths',
   app_signals: 'App signals', dashboard_signals: 'Dashboard signals', wordpress_signals: 'WordPress signals',
-  pages_per_query: 'Pages per query (1–5)', serper_per_min: 'Searches per minute', fetch_per_min: 'Site fetches per minute',
+  pages_per_query: 'Search depth (result pages per search)', serper_per_min: 'Searches per minute', fetch_per_min: 'Site fetches per minute',
   country_defs: 'Country definitions (JSON)',
 };
 
@@ -48,6 +49,11 @@ interface Result {
   id: string; name: string | null; url: string; domain: string; phone: string | null; phones: string[] | null;
   features: string[] | null; notes: string | null; status: string; found_at: string; country: string | null; country_code: string | null;
 }
+
+/** Quick choices for pages_per_query; 50 = "until the last result". */
+const DEPTH_CHOICES = [1, 2, 5, 10, 50] as const;
+const PRESET_LABELS = new Set(PLATFORM_PRESETS.map(p => p.label));
+const splitItems = (s: string) => s.split(/[\n,،]/).map(x => x.trim()).filter(Boolean);
 
 const PAGE_SIZE = 100;
 const ESTIMATE_WARN = 3000;
@@ -103,6 +109,7 @@ export default function AdminDiscovery() {
   const [allSectors, setAllSectors] = useState(true);
   const [sectorSearch, setSectorSearch] = useState('');
   const [newSector, setNewSector] = useState('');
+  const [platformSearch, setPlatformSearch] = useState('');
   const [customLabel, setCustomLabel] = useState('');
   const [customKeywords, setCustomKeywords] = useState('');
   const [advOpen, setAdvOpen] = useState(false);
@@ -152,7 +159,7 @@ export default function AdminDiscovery() {
     const out: Config = { ...cfg, country_defs: countryDefs, sectors: allSectors ? sectorCatalog : cfg.sectors };
     for (const k of ADV_LISTS) out[k] = lines(adv[k]);
     for (const k of ADV_NUMBERS) out[k] = Number(adv[k]) || 0;
-    out.pages_per_query = Math.min(5, Math.max(1, Number(adv.pages_per_query) || 1));
+    out.pages_per_query = Math.max(1, Math.floor(Number(adv.pages_per_query) || 1));
     out.countries = cfg.countries.filter(c => countryDefs[c]);
     return { config: out, error: '' };
   }, [cfg, adv, allSectors, sectorCatalog]);
@@ -217,13 +224,27 @@ export default function AdminDiscovery() {
     setCfg({ ...cfg, sectors: cfg.sectors.includes(s) ? cfg.sectors.filter(x => x !== s) : [...cfg.sectors, s] });
   }
 
+  /** Adds one or many business types (one per line or comma), no limit. */
   function addSector() {
     if (!cfg) return;
-    const s = newSector.trim();
-    if (!s) return;
-    setSectorCatalog(c => uniq([...c, s]));
-    setCfg({ ...cfg, sectors: uniq([...cfg.sectors, s]) });
+    const items = uniq(splitItems(newSector));
+    if (!items.length) return;
+    setSectorCatalog(c => uniq([...c, ...items]));
+    setCfg({ ...cfg, sectors: uniq([...cfg.sectors, ...items]) });
     setNewSector('');
+  }
+
+  function platformOn(p: PlatformPreset) {
+    return Boolean(cfg?.custom_features.some(f => f.label === p.label));
+  }
+
+  function setPlatforms(list: PlatformPreset[], on: boolean) {
+    if (!cfg) return;
+    const labels = new Set(list.map(p => p.label));
+    const rest = cfg.custom_features.filter(f => !labels.has(f.label));
+    const next = on ? [...rest, ...list.map(p => ({ label: p.label, keywords: p.keywords }))] : rest;
+    if (!on && onFeatures === 0 && next.length === 0) { showToast(false, t('Choose at least one thing to look for')); return; }
+    setCfg({ ...cfg, custom_features: next });
   }
 
   async function saveConfig(silent = false): Promise<boolean> {
@@ -436,7 +457,7 @@ export default function AdminDiscovery() {
                     </button>
                   );
                 })}
-                {cfg.custom_features.map(f => (
+                {cfg.custom_features.filter(f => !PRESET_LABELS.has(f.label)).map(f => (
                   <span key={f.label} className={chip(true)} title={f.keywords.join(', ')}>
                     ✓ {f.label}
                     <button type="button" onClick={() => removeCustom(f.label)} aria-label={t('Remove {name}', { name: f.label })} className="ms-1 text-[#dfff03]/70 hover:text-white">×</button>
@@ -449,6 +470,44 @@ export default function AdminDiscovery() {
                   placeholder={t('e.g. cdn.shopify.com, myshopify')} className={input} dir="auto" />
                 <Button variant="secondary" onClick={addCustom} disabled={!customLabel.trim() || !customKeywords.trim()}>{t('Add')}</Button>
               </div>
+            </section>
+
+            {/* Platforms (saved as custom features) */}
+            <section className="space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm text-white">
+                  {t('Platforms & technologies')}
+                  <span className="ms-2 text-xs text-[#6b6b6b]">{t('{n} selected', { n: PLATFORM_PRESETS.filter(platformOn).length })}</span>
+                </div>
+                <input value={platformSearch} onChange={e => setPlatformSearch(e.target.value)} placeholder={t('Search platforms…')} className={`${input} sm:w-56`} dir="auto" />
+              </div>
+              {Object.keys(PLATFORM_GROUPS_EN).map(group => {
+                const q = platformSearch.trim().toLowerCase();
+                const items = PLATFORM_PRESETS.filter(p => p.group === group && (!q || p.label.toLowerCase().includes(q)));
+                if (!items.length) return null;
+                const allOn = items.every(platformOn);
+                return (
+                  <div key={group} className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs uppercase tracking-wider text-[#6b6b6b]">{lang === 'ar' ? group : PLATFORM_GROUPS_EN[group]}</span>
+                      <button type="button" onClick={() => setPlatforms(items, !allOn)} className="text-xs text-[#dfff03] hover:underline">
+                        {allOn ? t('Clear all') : t('Select all')}
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {items.map(p => {
+                        const on = platformOn(p);
+                        return (
+                          <button key={p.label} type="button" aria-pressed={on} title={p.keywords.join(', ')} onClick={() => setPlatforms([p], !on)} className={`${chip(on)} py-1 text-xs`}>
+                            {on && <span aria-hidden="true">✓</span>}{p.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+              <p className="text-xs text-[#6b6b6b]">{t('The check reads the page code, so results are most accurate for platforms that leave a clear trace in it (Salla, Zid, Shopify, Wix…).')}</p>
             </section>
 
             {/* Sectors */}
@@ -473,13 +532,24 @@ export default function AdminDiscovery() {
                     })}
                   </div>
                   <div className="text-xs text-[#6b6b6b]">{t('{n} selected', { n: cfg.sectors.length })}</div>
-                  <div className="flex gap-2">
-                    <input value={newSector} onChange={e => setNewSector(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addSector(); }}
-                      placeholder={t('Add a new business type')} className={input} dir="auto" />
-                    <Button variant="secondary" onClick={addSector} disabled={!newSector.trim()}>{t('Add')}</Button>
-                  </div>
                 </div>
               )}
+              {/* Any business type, any number: one per line or comma (paste a whole list) */}
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <textarea
+                  rows={1}
+                  value={newSector}
+                  onChange={e => setNewSector(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addSector(); } }}
+                  placeholder={t('Add business types (e.g. law firms, salons, dental clinics) — paste a list, one per line or comma')}
+                  className={`${input} min-h-[38px] resize-y`}
+                  dir="auto"
+                />
+                <Button variant="secondary" onClick={addSector} disabled={!newSector.trim()}>
+                  {splitItems(newSector).length > 1 ? t('Add {n}', { n: splitItems(newSector).length }) : t('Add')}
+                </Button>
+              </div>
+              <p className="text-xs text-[#6b6b6b]">{t('The list is only suggestions — choose any number or add your own.')}</p>
             </section>
 
             {/* Cities */}
@@ -488,6 +558,26 @@ export default function AdminDiscovery() {
               <Toggle checked={Boolean(cfg.include_cities)} onChange={v => setCfg({ ...cfg, include_cities: v })} />
             </label>
 
+            {/* Search depth: no upper limit */}
+            <section className="space-y-2">
+              <div className="text-sm text-white">{t(FIELD_LABELS.pages_per_query)}</div>
+              <div className="flex flex-wrap items-center gap-2">
+                {DEPTH_CHOICES.map(n => {
+                  const on = Number(adv.pages_per_query) === n;
+                  return (
+                    <button key={n} type="button" aria-pressed={on} onClick={() => setAdv({ ...adv, pages_per_query: String(n) })} className={`${chip(on)} py-1 text-xs`}>
+                      {n === 50 ? t('Until the last result') : n}
+                    </button>
+                  );
+                })}
+                <input
+                  type="number" min={1} step={1} aria-label={t(FIELD_LABELS.pages_per_query)}
+                  value={adv.pages_per_query} onChange={e => setAdv({ ...adv, pages_per_query: e.target.value })}
+                  className={`${input} w-24`}
+                />
+              </div>
+            </section>
+
             {/* Estimate */}
             <div className={`rounded-lg p-3 text-sm ${estimate != null && estimate > ESTIMATE_WARN ? 'border border-[#ffc832]/30 bg-[#ffc832]/10 text-[#ffc832]' : 'bg-[#1a1a1a] text-[#d0d0d0]'}`} aria-live="polite">
               {built.error ? <span className="text-[#ff8888]">{t(built.error)}</span>
@@ -495,7 +585,7 @@ export default function AdminDiscovery() {
                 : <>
                     {t('≈ {n} searches (uses {n} of your Serper credit)', { n: estimate.toLocaleString('en-US') })}
                     {estimating && <span className="ms-2 text-xs text-[#6b6b6b]">…</span>}
-                    {estimate > ESTIMATE_WARN && <div className="mt-1 text-xs">{t('That is a lot. Try fewer countries or business types, or turn off cities.')}</div>}
+                    {estimate > ESTIMATE_WARN && <div className="mt-1 text-xs">{t('That is a lot of searches — make sure your Serper credit covers it. You can still start.')}</div>}
                   </>}
             </div>
 
@@ -507,10 +597,10 @@ export default function AdminDiscovery() {
               </button>
               {advOpen && (
                 <div className="space-y-3 border-t border-[#262626] p-3 anim-card">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    {ADV_NUMBERS.map(k => (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {(['serper_per_min', 'fetch_per_min'] as const).map(k => (
                       <label key={k} className="text-xs text-[#a0a0a0]">{t(FIELD_LABELS[k])}
-                        <input type="number" min={1} max={k === 'pages_per_query' ? 5 : undefined} className={`mt-1 ${input}`} value={adv[k]} onChange={e => setAdv({ ...adv, [k]: e.target.value })} />
+                        <input type="number" min={1} step={1} className={`mt-1 ${input}`} value={adv[k]} onChange={e => setAdv({ ...adv, [k]: e.target.value })} />
                       </label>
                     ))}
                   </div>

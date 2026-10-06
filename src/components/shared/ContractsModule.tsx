@@ -279,7 +279,7 @@ export default function ContractsModule({ userId, role }: Props) {
         {loading ? (
           <div className="p-8 text-center text-sm text-[#6b6b6b]"><TableSkeleton /></div>
         ) : visibleDeals.length === 0 ? (
-          <div className="p-8 text-center text-sm text-[#6b6b6b]">{t("No deals found.")}</div>
+          <div className="p-8 text-center text-sm text-[#6b6b6b]">{t("No deals yet — request a meeting from a lead, then create the deal after the meeting.")}</div>
         ) : (
           <Table headers={["Client", "Package", "Closing price", "Dates", "Owner", "Status", ""]}>
             {visibleDeals.map((deal) => (

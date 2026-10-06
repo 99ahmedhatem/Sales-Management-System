@@ -313,7 +313,7 @@ export default function AdminUsers() {
           {t(errorMsg)}
         </div>
       )}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-white text-2xl font-bold">{t('Users')}</h1>
           <p className="text-[#6b6b6b] text-sm mt-0.5">{t('{a} active · {b} total', { a: users.filter(u => u.status === 'active').length, b: users.length })}</p>

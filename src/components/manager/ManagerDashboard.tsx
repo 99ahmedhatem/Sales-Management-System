@@ -329,7 +329,7 @@ export default function ManagerDashboard({ userId }: Props) {
   return (
     <div className="p-6 space-y-6">
       {errorMsg && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3 anim-banner">{t(errorMsg)}</div>}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-white text-2xl font-bold">{t('Team Overview')}</h1>
           <p className="text-[#6b6b6b] text-sm mt-0.5">{me?.fullName || t('Manager')} — {t('Manager')}</p>
@@ -530,6 +530,7 @@ export default function ManagerDashboard({ userId }: Props) {
         open={distributeModal}
         onClose={() => setDistributeModal(false)}
         agents={assignableTelesales}
+        managerPool
         onDone={() => setRefreshVersion(version => version + 1)}
       />
 

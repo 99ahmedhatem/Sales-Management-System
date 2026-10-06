@@ -10,6 +10,7 @@ import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, P
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
 import { exportRowsToExcel } from '../shared/exportExcel';
 import DistributeLeadsModal, { QUALITY_FILTER_OPTIONS, REGION_OPTIONS } from '../shared/DistributeLeadsModal';
+import AutoDistributionCard from './AutoDistributionCard';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { useI18n } from '../../i18n/I18nProvider';
 
@@ -645,7 +646,7 @@ export default function AdminLeads() {
           {t(errorMsg)}
         </div>
       )}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-white text-2xl font-bold">{t('Leads')}</h1>
           <p className="text-[#6b6b6b] text-sm mt-0.5">
@@ -664,6 +665,11 @@ export default function AdminLeads() {
           </Button>
         </div>
       </div>
+
+      <AutoDistributionCard
+        agents={users.filter(u => u.role === 'telesales' && u.status === 'active')}
+        onDistributed={() => { setSelected([]); void loadData(0); }}
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">

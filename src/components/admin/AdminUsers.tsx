@@ -2,7 +2,8 @@ import { AnimatedNumber, TableSkeleton } from '../shared/motion';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
 import { User, Role } from '../../data/mockData';
-import { Avatar, Badge, Button, Card, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Toggle, Tr } from '../ui';
+import { ActionMenu, Avatar, Badge, Button, Card, EmptyState, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Toggle, Tr, useConfirm } from '../ui';
+import { toast } from '../shared/toast';
 import { EditablePhoneCell } from '../shared/LeadRowControls';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -34,7 +35,7 @@ export default function AdminUsers() {
   const [addModal, setAddModal] = useState(false);
   const [createdCredentials, setCreatedCredentials] = useState<{ username: string; email: string; password: string } | null>(null);
   const [detailUser, setDetailUser] = useState<User | null>(null);
-  const [resetMessage, setResetMessage] = useState('');
+  const { confirm, confirmUi } = useConfirm();
   const [tab, setTab] = useState<'all' | 'manager' | 'telesales' | 'sales'>('all');
   const [pageView, setPageView] = useState<'users' | 'clients'>('users');
   const [assignedLeads, setAssignedLeads] = useState<AssignedLead[]>([]);
@@ -249,20 +250,30 @@ export default function AdminUsers() {
 
   const sendPasswordReset = async (u: User) => {
     if (!u.email) return;
-    setResetMessage('');
     const { error } = await supabase.auth.resetPasswordForEmail(u.email, {
       redirectTo: window.location.origin,
     });
-    setResetMessage(error ? error.message : t('A password reset link was sent to {email}.', { email: u.email }));
+    if (error) toast(error.message, false);
+    else toast(t('A password reset link was sent to {email}.', { email: u.email }));
   };
 
   const toggleStatus = async (u: User) => {
     const newStatus = u.status === 'active' ? 'inactive' : 'active';
+    if (newStatus === 'inactive') {
+      const ok = await confirm({
+        title: 'Deactivate',
+        message: t('Deactivate {name}? They will not be able to sign in until activated again.', { name: u.fullName }),
+        confirmLabel: 'Deactivate', danger: true,
+      });
+      if (!ok) return;
+    }
     const { error } = await supabase.rpc('admin_update_user', { p_user_id: u.id, p_status: newStatus });
     if (error) {
       setErrorMsg(error.message);
       return;
     }
+    setUsers(prev => prev.map(x => (x.id === u.id ? { ...x, status: newStatus } : x)));
+    toast(newStatus === 'active' ? t('{name} is active', { name: u.fullName }) : t('{name} was deactivated', { name: u.fullName }));
     await loadUsers();
   };
 
@@ -291,13 +302,20 @@ export default function AdminUsers() {
   };
 
   const deleteUser = async (u: User) => {
-    if (!window.confirm(t('Delete {name}? This also removes their login account and cannot be undone.', { name: u.fullName }))) return;
+    const ok = await confirm({
+      title: 'Delete user',
+      message: t('Delete {name}? This also removes their login account and cannot be undone.', { name: u.fullName }),
+      confirmLabel: 'Delete', danger: true,
+    });
+    if (!ok) return;
     setErrorMsg('');
     const { error } = await supabase.rpc('delete_user_account', { target_user_id: u.id });
     if (error) {
       setErrorMsg(t('{msg}. Run supabase-setup.sql in Supabase SQL Editor, then refresh the page.', { msg: error.message }));
       return;
     }
+    setUsers(prev => prev.filter(x => x.id !== u.id));
+    toast(t('{name} was deleted', { name: u.fullName }));
     await loadUsers();
   };
 
@@ -390,19 +408,20 @@ export default function AdminUsers() {
               </Td>
               <Td><span className="font-mono text-xs text-[#6b6b6b]">{u.lastLogin ? u.lastLogin.slice(0, 10) : t('Never')}</span></Td>
               <Td>
-                <div className="flex gap-2 flex-wrap" onClick={event => event.stopPropagation()}>
-                  <Button variant="ghost" size="sm" onClick={() => toggleStatus(u)}>
-                    {u.status === 'active' ? t('Deactivate') : t('Activate')}
-                  </Button>
-                  {u.role !== 'admin' && <Button variant="ghost" size="sm" onClick={() => openProfile(u.id)}>{t('Profile')}</Button>}
+                <div className="flex items-center gap-1" onClick={event => event.stopPropagation()}>
                   <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>{t('Edit')}</Button>
-                  <Button variant="ghost" size="sm" onClick={() => sendPasswordReset(u)}>{t('Change Password')}</Button>
-                  <Button variant="ghost" size="sm" onClick={() => deleteUser(u)}>{t('Delete')}</Button>
+                  <ActionMenu items={[
+                    { label: 'Profile', onClick: () => openProfile(u.id), hidden: u.role === 'admin' },
+                    { label: 'Change Password', onClick: () => void sendPasswordReset(u), disabled: !u.email },
+                    { label: u.status === 'active' ? 'Deactivate' : 'Activate', onClick: () => void toggleStatus(u) },
+                    { label: 'Delete', onClick: () => void deleteUser(u), danger: true, hidden: u.id === myId },
+                  ]} />
                 </div>
               </Td>
             </Tr>
           ))}
         </Table>
+        {filtered.length === 0 && <EmptyState message="No users here yet." actionLabel="+ Add User" onAction={() => setAddModal(true)} />}
       </Card>
       </>}
 
@@ -624,11 +643,7 @@ export default function AdminUsers() {
         )}
       </Modal>
 
-      {resetMessage && (
-        <div className="fixed bottom-5 end-5 z-50 max-w-sm bg-[#161616] border border-[#2a2a2a] rounded-lg px-4 py-3 text-sm text-[#dfff03] shadow-xl">
-          {resetMessage}
-        </div>
-      )}
+      {confirmUi}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useI18n } from '../../i18n/I18nProvider';
-import { Button, Input, Modal, Select, Table, Td, Tr } from '../ui';
+import { Button, Input, Modal, Select, Table, Td, Tr, useConfirm } from '../ui';
 
 // Stored in the database as the English name in "value"
 export const REGION_OPTIONS = [
@@ -52,6 +52,7 @@ export default function DistributeLeadsModal({ open, onClose, agents, onDone, ma
   onDone: () => void;
 }) {
   const { t } = useI18n();
+  const { confirm, confirmUi } = useConfirm();
   const [picked, setPicked] = useState<string[]>([]);
   const [maxPer, setMaxPer] = useState('');
   const [limit, setLimit] = useState('');
@@ -106,7 +107,7 @@ export default function DistributeLeadsModal({ open, onClose, agents, onDone, ma
 
   const distribute = async () => {
     if (!picked.length || running) return;
-    if (!window.confirm(t('Distribute {n} leads to {k} agents?', { n: plannedCount.toLocaleString('en-US'), k: picked.length }))) return;
+    if (!(await confirm({ message: t('Distribute {n} leads to {k} agents?', { n: plannedCount.toLocaleString('en-US'), k: picked.length }), confirmLabel: 'Distribute' }))) return;
     setRunning(true);
     setError('');
     const { data, error: rpcError } = await supabase.rpc('distribute_unassigned_leads', {
@@ -218,6 +219,7 @@ export default function DistributeLeadsModal({ open, onClose, agents, onDone, ma
           </>
         )}
       </div>
+      {confirmUi}
     </Modal>
   );
 }

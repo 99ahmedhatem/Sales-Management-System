@@ -7,6 +7,7 @@ import {
 import { supabase } from "../../supabaseClient"
 import { Button, Modal } from "../ui"
 import { useI18n } from "../../i18n/I18nProvider"
+import { usePermissions } from "../../hooks/usePermissions"
 import ClientCodeLookup, { ClientLookupResult } from "./ClientCodeLookup"
 
 interface Props {
@@ -46,6 +47,8 @@ export default function DealCreateModal({
   role,
 }: Props) {
   const { t } = useI18n()
+  const { can } = usePermissions()
+  const seeMinPrice = can("packages.view_min_price")
   const reviewLabel = (status: string | null | undefined) => t((status ?? "submitted").replace("_", " "))
   const [leads, setLeads] = useState<LeadOption[]>([])
   const [leadSearch, setLeadSearch] = useState("")
@@ -84,6 +87,7 @@ export default function DealCreateModal({
     [packages, packageId],
   )
   const isBelowMinimum =
+    seeMinPrice &&
     selectedPackage !== undefined &&
     priceSar.trim() !== "" &&
     Number.isFinite(Number(priceSar)) &&
@@ -442,11 +446,16 @@ export default function DealCreateModal({
             </label>
             {selectedPackage && (
               <div className="rounded bg-[#1a1a1a] p-3 text-xs text-[#a0a0a0]">
-                {t("List price: {price} · Minimum: {min} · {n} months", {
-                  price: formatSar.format(selectedPackage.priceSar),
-                  min: formatSar.format(selectedPackage.minPriceSar),
-                  n: selectedPackage.durationMonths,
-                })}
+                {seeMinPrice
+                  ? t("List price: {price} · Minimum: {min} · {n} months", {
+                      price: formatSar.format(selectedPackage.priceSar),
+                      min: formatSar.format(selectedPackage.minPriceSar),
+                      n: selectedPackage.durationMonths,
+                    })
+                  : t("List price: {price} · {n} months", {
+                      price: formatSar.format(selectedPackage.priceSar),
+                      n: selectedPackage.durationMonths,
+                    })}
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">

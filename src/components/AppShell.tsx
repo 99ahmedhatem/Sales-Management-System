@@ -10,6 +10,7 @@ import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh"
 
 import { LanguageSwitch, useI18n } from "../i18n/I18nProvider"
 import { PageTransition } from "./shared/motion"
+import { Toaster } from "./shared/toast"
 import { onNavigate } from "../lib/navigation"
 import { PermissionKey, usePermissions } from "../hooks/usePermissions"
 
@@ -499,6 +500,11 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
     [nav],
   )
 
+  // The page scrolls on the window now: start each page at the top
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [page])
+
   const [notifOpen, setNotifOpen] = useState(false)
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -559,23 +565,25 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
   }[role]
 
   return (
-    <div className="min-h-screen bg-[#0c0c0c] flex">
+    // The page scrolls on <body>; the sidebar is fixed (desktop) or a drawer (mobile).
+    // No overflow / transform on this wrapper: it would break `fixed` and `sticky` below.
+    <div className="min-h-screen bg-[#0c0c0c]">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/60 z-20 lg:hidden anim-backdrop"
+          className="fixed inset-0 bg-black/60 z-30 lg:hidden anim-backdrop"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar: fixed full height; only the nav list scrolls when it is taller than the screen */}
       <aside
-        className={`fixed lg:static inset-y-0 start-0 z-30 w-56 bg-[#0e0e0e] border-e border-[#1e1e1e] flex flex-col transition-transform ${
+        className={`fixed inset-y-0 start-0 z-40 h-screen w-64 bg-[#0e0e0e] border-e border-[#1e1e1e] flex flex-col transition-transform ${
           sidebarOpen ? "translate-x-0 anim-drawer lg:animate-none" : "-translate-x-full rtl:translate-x-full"
         } lg:translate-x-0 lg:rtl:translate-x-0`}
       >
         {/* Brand */}
-        <div className="p-4 border-b border-[#1e1e1e]">
+        <div className="sticky top-0 shrink-0 p-4 border-b border-[#1e1e1e] bg-[#0e0e0e]">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 bg-[#dfff03] rounded-md flex items-center justify-center flex-shrink-0 overflow-hidden">
               <span className="text-black font-black text-lg leading-none tracking-[-0.15em]">
@@ -600,7 +608,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
         </div> */}
 
         {/* Nav */}
-        <nav className="flex-1 p-3 space-y-0.5">
+        <nav className="flex-1 min-h-0 overflow-y-auto p-3 space-y-0.5">
           {nav.map((item) => (
             <button
               key={item.key}
@@ -621,7 +629,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
         </nav>
 
         {/* Logout */}
-        <div className="p-3 border-t border-[#1e1e1e]">
+        <div className="shrink-0 p-3 border-t border-[#1e1e1e]">
           <button
             onClick={onLogout}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#6b6b6b] hover:text-white hover:bg-[#1a1a1a] transition-all"
@@ -645,11 +653,12 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
-        <header className="h-14 bg-[#0e0e0e] border-b border-[#1e1e1e] flex items-center justify-between px-4">
+      <div className="lg:ms-64 flex min-h-screen min-w-0 flex-col">
+        {/* Top bar: stays on top while the page scrolls */}
+        <header className="sticky top-0 z-20 h-14 bg-[#0e0e0e] border-b border-[#1e1e1e] flex items-center justify-between px-4">
           <button
             onClick={() => setSidebarOpen(true)}
+            aria-label={t("Menu")}
             className="lg:hidden text-[#6b6b6b] hover:text-white p-1"
           >
             <svg
@@ -766,9 +775,11 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden">
+        {/* overflow-x-clip (not hidden) so <main> is not a scroll box and sticky elements follow the page */}
+        <main className="flex-1 min-w-0 overflow-x-clip">
           <PageTransition pageKey={page}>{children(page)}</PageTransition>
         </main>
+        <Toaster />
       </div>
     </div>
   )

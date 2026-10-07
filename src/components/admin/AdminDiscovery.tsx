@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useI18n } from '../../i18n/I18nProvider';
 import { dateLocale } from '../../i18n/locale';
-import { Button, Card, Modal, Pagination, Select, Toggle, WebsiteLink } from '../ui';
+import { Button, Card, Modal, Pagination, Select, Toggle, WebsiteLink, stickyHead, tableScroll } from '../ui';
+import { toast } from '../shared/toast';
 import { TableSkeleton } from '../shared/motion';
 import { PLATFORM_GROUPS_EN, PLATFORM_PRESETS, PlatformPreset } from './discoveryPlatforms';
 
@@ -93,11 +94,7 @@ function toAdvanced(cfg: Config): Advanced {
 /** Admin only: find new client websites (Serper search + site checks run by the database cron). */
 export default function AdminDiscovery() {
   const { t, lang } = useI18n();
-  const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
-  const showToast = (ok: boolean, text: string) => {
-    setToast({ ok, text });
-    window.setTimeout(() => setToast(cur => (cur?.text === text ? null : cur)), 4500);
-  };
+  const showToast = (ok: boolean, text: string) => toast(t(text), ok);
 
   // ---------- Serper key ----------
   const [hasKey, setHasKey] = useState<boolean | null>(null);
@@ -403,7 +400,12 @@ export default function AdminDiscovery() {
   const [resultBusy, setResultBusy] = useState<'' | 'selected' | 'all' | 'reject'>('');
   const [lastAdd, setLastAdd] = useState<{ received: number; added: number; duplicates: number } | null>(null);
 
+  // Each load gets a number; a load that finishes after a newer load (or after an add / reject) is ignored,
+  // so a slow poll can't bring back rows that were just added.
+  const resultsReq = useRef(0);
+  const resultBusyRef = useRef(false);
   const loadResults = useCallback(async (nextPage: number) => {
+    const req = ++resultsReq.current;
     setResultsLoading(true);
     const { data, error, count } = await supabase
       .from('discovery_results')
@@ -412,6 +414,7 @@ export default function AdminDiscovery() {
       .order('found_at', { ascending: false })
       .order('id', { ascending: false })
       .range(nextPage * PAGE_SIZE, (nextPage + 1) * PAGE_SIZE - 1);
+    if (req !== resultsReq.current) return;
     if (error) setResultsError(error.message);
     else {
       setResultsError('');
@@ -424,17 +427,35 @@ export default function AdminDiscovery() {
 
   async function approve(ids: string[] | null, kind: 'selected' | 'all') {
     if (resultBusy) return;
+    const usedType = typeChoice;
+    const usedQuality = quality;
+    resultBusyRef.current = true;
     setResultBusy(kind);
     const { data, error } = await supabase.rpc('approve_discovery_results', {
-      p_ids: ids, p_data_quality: quality, p_is_salla: TYPE_VALUE[typeChoice],
+      p_ids: ids, p_data_quality: usedQuality, p_is_salla: TYPE_VALUE[usedType],
     });
+    resultBusyRef.current = false;
     setResultBusy('');
     if (error) { showToast(false, error.message); return; }
+    // The rows are now 'added' / 'duplicate' in the database: drop them from the list right away,
+    // and ignore any load that started before the add finished.
+    resultsReq.current++;
+    if (ids) {
+      const gone = new Set(ids);
+      setResults(rs => rs.filter(r => !gone.has(r.id)));
+      setResultsTotal(n => Math.max(0, n - ids.length));
+    } else {
+      setResults([]);
+      setResultsTotal(0);
+    }
+    setSelected([]);
     const row = (Array.isArray(data) ? data[0] : data) as { received: number; added: number; duplicates: number } | undefined;
     const res = { received: Number(row?.received ?? 0), added: Number(row?.added ?? 0), duplicates: Number(row?.duplicates ?? 0) };
     setLastAdd(res);
-    showToast(true, t('Added {a}, skipped {b} duplicates', { a: res.added, b: res.duplicates }));
-    setSelected([]);
+    showToast(true, t('Added {a} clients ({type} · {q} quality) · {b} duplicates', {
+      a: res.added, b: res.duplicates, type: t(TYPE_LABEL[usedType]), q: t(usedQuality),
+    }));
+    // Clients page needs nothing here: it loads fresh when opened and listens to realtime on `leads`.
     await Promise.all([loadResults(0), loadProgress()]);
   }
 
@@ -471,7 +492,7 @@ export default function AdminDiscovery() {
       if (cancelled) return;
       if (runId) await loadDiag(runId);
       if (cancelled) return;
-      if (page === 0 && !selected.length) await loadResults(0);
+      if (page === 0 && !selected.length && !resultBusyRef.current) await loadResults(0);
       if (!cancelled) timer = window.setTimeout(() => void tick(), POLL_MS);
     };
     timer = window.setTimeout(() => void tick(), POLL_MS);
@@ -836,7 +857,8 @@ export default function AdminDiscovery() {
 
       {/* 4) Results */}
       <Card className="anim-card">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#262626] p-4">
+        {/* Header + add / reject buttons stay under the top bar while scrolling the results */}
+        <div className="sticky top-14 z-10 flex flex-wrap items-center justify-between gap-2 rounded-t-lg border-b border-[#262626] bg-[#161616] p-4">
           <div>
             <h3 className="text-white font-semibold">{t('Results to review')}</h3>
             <p className="text-xs text-[#6b6b6b]">
@@ -880,9 +902,9 @@ export default function AdminDiscovery() {
         {resultsLoading && !results.length ? <div className="p-4"><TableSkeleton /></div> : results.length === 0 ? (
           !resultsError && <p className="p-8 text-center text-sm text-[#4a4a4a]">{t('No new results. Start a search to find websites.')}</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className={tableScroll}>
             <table className="w-full text-sm anim-rows">
-              <thead>
+              <thead className={stickyHead}>
                 <tr className="border-b border-[#262626] text-xs uppercase tracking-wider text-[#6b6b6b]">
                   <th className="px-4 py-3 text-start">
                     <input type="checkbox" className="accent-[#dfff03]" aria-label={t('Select all')} checked={allOnPage}
@@ -942,11 +964,6 @@ export default function AdminDiscovery() {
         </div>
       </Modal>
 
-      {toast && (
-        <div role="status" className={`fixed bottom-4 start-1/2 z-50 -translate-x-1/2 rtl:translate-x-1/2 w-max max-w-[calc(100vw-2rem)] rounded-lg border px-4 py-2.5 text-sm shadow-lg anim-banner ${toast.ok ? 'border-[#64dc78]/30 bg-[#0f1a12] text-[#64dc78]' : 'border-[#ff6464]/30 bg-[#1a0f0f] text-[#ff8888]'}`}>
-          {toast.ok ? '✓ ' : '✕ '}{t(toast.text)}
-        </div>
-      )}
     </div>
   );
 }

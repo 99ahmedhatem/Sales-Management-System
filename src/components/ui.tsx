@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useI18n } from '../i18n/I18nProvider';
 import { AnimatedNumber } from './shared/motion';
 export function normalizeWebsiteUrl(url: string): string {
@@ -156,7 +157,8 @@ export function Select({
 export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
   const { t } = useI18n();
   if (!open) return null;
-  return (
+  // Rendered on <body> so a transform / filter on any parent can't move it off screen
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70 anim-backdrop" onClick={onClose} />
       <div className="relative bg-[#161616] border border-[#262626] rounded-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto anim-modal">
@@ -166,7 +168,8 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
         </div>
         <div className="p-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

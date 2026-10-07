@@ -17,6 +17,7 @@ import DealCreateModal from "./DealCreateModal"
 import { useI18n } from "../../i18n/I18nProvider"
 import { ClientLink } from "./AppOverlays"
 import { DealInstallments } from "./Installments"
+import { DealCommissions } from "./DealCommissions"
 import { onOpenDeal, takePendingDealId } from "../../lib/navigation"
 import { usePermissions } from "../../hooks/usePermissions"
 
@@ -383,6 +384,7 @@ export default function ContractsModule({ userId, role }: Props) {
               dealStatus={selectedDeal.status}
               canManage={role === "admin" || role === "manager"}
             />
+            {role === "admin" && <DealCommissions dealId={selectedDeal.id} dealStatus={selectedDeal.status} />}
             <div className="space-y-2 rounded bg-[#1a1a1a] p-3">
               <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t("Private files")}</div>
               {signingUrls ? (

@@ -55,6 +55,7 @@ export default function AdminUsers() {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
   const [myId, setMyId] = useState('');
+  const [rates, setRates] = useState<Record<string, Rates>>({});
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setMyId(data.user?.id ?? ''));
@@ -76,17 +77,20 @@ export default function AdminUsers() {
     const [usersRes, emailRes, ratesRes] = await Promise.all([
       supabase.from('users').select('*').neq('role', 'admin').order('full_name'),
       supabase.rpc('list_email_confirmations'),
-      // Same source as Edit User (admin_get_user_pay): the closer % lives in user_commission_rates.
-      supabase.from('user_commission_rates').select('user_id, closer_percent'),
+      // Same source as Edit User (admin_get_user_pay): the three percentages live in user_commission_rates.
+      supabase.from('user_commission_rates').select('user_id, closer_percent, lead_percent, manager_percent'),
     ]);
     if (usersRes.error) setErrorMsg(usersRes.error.message);
     else if (ratesRes.error) setErrorMsg(ratesRes.error.message);
     else {
-      const closer = new Map(((ratesRes.data ?? []) as { user_id: string; closer_percent: number | string }[]).map(r => [r.user_id, Number(r.closer_percent)]));
+      const rateRows = (ratesRes.data ?? []) as { user_id: string; closer_percent: number | string | null; lead_percent: number | string | null; manager_percent: number | string | null }[];
+      const nextRates: Record<string, Rates> = {};
+      for (const r of rateRows) nextRates[r.user_id] = { closer: Number(r.closer_percent ?? 0), lead: Number(r.lead_percent ?? 0), manager: Number(r.manager_percent ?? 0) };
       const loadedUsers = (usersRes.data ?? []).map(row => {
         const user = mapUser(row);
-        return closer.has(user.id) ? { ...user, commissionPercent: closer.get(user.id) } : user;
+        return nextRates[user.id] ? { ...user, commissionPercent: nextRates[user.id].closer } : user;
       });
+      setRates(nextRates);
       setUsers(loadedUsers);
       setSelectedUserId(current => current || loadedUsers[0]?.id || '');
     }
@@ -164,8 +168,8 @@ export default function AdminUsers() {
         manager_id: ['sales', 'telesales'].includes(newUser.role) && newUser.managerId ? newUser.managerId : null,
         base_salary: Number(newUser.baseSalary) || 0,
         base_currency: newUser.baseCurrency,
-        commission_percent: newUser.role === 'manager' ? 0 : Number(newUser.commissionPercent) || 0,
-        lead_percent: newUser.role === 'telesales' ? Number(newUser.leadPercent) || 0 : 0,
+        commission_percent: Number(newUser.commissionPercent) || 0,
+        lead_percent: ['telesales', 'manager'].includes(newUser.role) ? Number(newUser.leadPercent) || 0 : 0,
         manager_percent: newUser.role === 'manager' ? 0 : Number(newUser.managerPercent) || 0,
       },
     });
@@ -225,7 +229,7 @@ export default function AdminUsers() {
     if (numberChanged('baseSalary')) params.p_base_salary = Number(f.baseSalary) || 0;
     if (changed('baseCurrency')) params.p_base_currency = f.baseCurrency;
     if (numberChanged('commissionPercent')) params.p_closer_percent = Number(f.commissionPercent) || 0;
-    if (f.role === 'telesales' && numberChanged('leadPercent')) params.p_lead_percent = Number(f.leadPercent) || 0;
+    if (['telesales', 'manager'].includes(f.role) && numberChanged('leadPercent')) params.p_lead_percent = Number(f.leadPercent) || 0;
     if (['sales', 'telesales'].includes(f.role) && numberChanged('managerPercent')) params.p_manager_percent = Number(f.managerPercent) || 0;
     if (Object.keys(params).length === 1) {
       setEditUser(null);
@@ -262,10 +266,11 @@ export default function AdminUsers() {
     await loadUsers();
   };
 
-  const saveCommission = async (u: User, value: string) => {
+  /** Saves one percentage. Through admin_update_user (admin only) so user_commission_rates and users.commission_percent stay in sync. */
+  const saveRate = async (u: User, kind: keyof Rates, value: string) => {
     const percent = Math.min(100, Math.max(0, Number(value) || 0));
-    // Through admin_update_user so user_commission_rates.closer_percent stays in sync.
-    const { error } = await supabase.rpc('admin_update_user', { p_user_id: u.id, p_closer_percent: percent });
+    const param = kind === 'closer' ? 'p_closer_percent' : kind === 'lead' ? 'p_lead_percent' : 'p_manager_percent';
+    const { error } = await supabase.rpc('admin_update_user', { p_user_id: u.id, [param]: percent });
     if (error) {
       setErrorMsg(error.message);
       return;
@@ -348,7 +353,7 @@ export default function AdminUsers() {
       </div>
 
       <Card>
-        <Table headers={['User', 'Username', 'Role', 'Password', 'Commission %', 'Team / Manager', 'Status', 'Email Confirmed', 'Last Login', 'Actions']}>
+        <Table headers={['User', 'Username', 'Role', 'Password', 'Closing %', 'Client entry %', 'Manager share %', 'Team / Manager', 'Status', 'Email Confirmed', 'Last Login', 'Actions']}>
           {filtered.map(u => (
             <Tr key={u.id} onClick={() => setDetailUser(u)}>
               <Td>
@@ -367,24 +372,9 @@ export default function AdminUsers() {
               <Td>
                 <span className="text-[#6b6b6b] text-xs">{t('Hidden for security')}</span>
               </Td>
-              <Td>
-                <div onClick={event => event.stopPropagation()}>
-                  <input
-                    key={`${u.id}-${u.commissionPercent ?? 0}`}
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.1"
-                    defaultValue={u.commissionPercent ?? 0}
-                    onBlur={event => {
-                      const value = event.target.value;
-                      if (Number(value) !== (u.commissionPercent ?? 0)) saveCommission(u, value);
-                    }}
-                    className="w-16 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-[#dfff03]/60"
-                  />
-                  <span className="text-[#6b6b6b] text-xs ms-1">%</span>
-                </div>
-              </Td>
+              <Td><RateCell show={RATE_RULES.closer(u)} value={rates[u.id]?.closer ?? 0} onSave={v => saveRate(u, 'closer', v)} /></Td>
+              <Td><RateCell show={RATE_RULES.lead(u)} value={rates[u.id]?.lead ?? 0} onSave={v => saveRate(u, 'lead', v)} /></Td>
+              <Td><RateCell show={RATE_RULES.manager(u)} value={rates[u.id]?.manager ?? 0} onSave={v => saveRate(u, 'manager', v)} /></Td>
               <Td>
                 {u.role === 'manager' ? (
                   <span className="text-[#6b6b6b] text-xs">{t('{n} team members', { n: users.filter(x => x.managerId === u.id).length })}</span>
@@ -594,7 +584,7 @@ export default function AdminUsers() {
                 {editInitial.role === 'manager' && (
                   <div className="bg-[#1a1a1a] rounded p-2 text-xs text-[#a0a0a0]">{t('{n} team members', { n: editTeamMembers })}</div>
                 )}
-                <PayFields role={editForm.role} value={editForm} onChange={patch => setEditForm(prev => ({ ...prev, ...patch }))} managerCommission />
+                <PayFields role={editForm.role} value={editForm} onChange={patch => setEditForm(prev => ({ ...prev, ...patch }))} />
                 <p className="text-[#6b6b6b] text-[11px] leading-relaxed">{t('Changing the role or rates only affects new deals; approved deals keep the rates they were approved with.')}</p>
               </>
             )}
@@ -664,10 +654,10 @@ const INPUT_CLASS = 'w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py
 const EMPTY_NEW_USER = { fullName: '', email: '', password: '', role: 'telesales' as Role, managerId: '', ...EMPTY_PAY };
 
 /**
- * Salary + percentages for one employee (stored in user_commission_rates).
- * manager → salary only (+ commission % when managerCommission) · sales → + commission, manager % · telesales → + lead %.
+ * Salary + percentages for one employee (stored in user_commission_rates):
+ * closing % → sales, telesales, manager · client entry % → telesales, manager · manager share % → sales, telesales.
  */
-function PayFields({ role, value, onChange, managerCommission = false }: { role: Role; value: PayForm; onChange: (patch: Partial<PayForm>) => void; managerCommission?: boolean }) {
+function PayFields({ role, value, onChange }: { role: Role; value: PayForm; onChange: (patch: Partial<PayForm>) => void }) {
   const { t } = useI18n();
   const inputClass = INPUT_CLASS;
   const percent = (key: 'commissionPercent' | 'leadPercent' | 'managerPercent', label: string, hint: string) => (
@@ -694,14 +684,51 @@ function PayFields({ role, value, onChange, managerCommission = false }: { role:
           </select>
         </div>
       </div>
-      {(role === 'sales' || role === 'telesales' || (managerCommission && role === 'manager')) && percent('commissionPercent', 'Commission %', 'Of each deal this employee closes')}
-      {role === 'telesales' && percent('leadPercent', 'Lead %', 'When a sales rep closes a deal on this employee’s lead')}
-      {role !== 'manager' && role !== 'admin' && percent('managerPercent', 'Manager %', 'What this employee’s manager earns from each of their deals')}
+      {(role === 'sales' || role === 'telesales' || role === 'manager') && percent('commissionPercent', 'Closing %', 'Of each deal this employee closes himself')}
+      {(role === 'telesales' || role === 'manager') && percent('leadPercent', 'Client entry %', 'When someone else closes a deal on a client this employee entered')}
+      {(role === 'sales' || role === 'telesales') && percent('managerPercent', 'Manager share %', 'What this employee’s manager earns from each deal this employee closes or entered')}
     </div>
   );
 }
 
 const CLIENT_PAGE_SIZE = 50;
+
+/** The three percentages in user_commission_rates. */
+interface Rates { closer: number; lead: number; manager: number }
+
+/** Which percentage applies to which user (the others show —). */
+const RATE_RULES: Record<keyof Rates, (u: User) => boolean> = {
+  closer: u => ['sales', 'telesales', 'manager'].includes(u.role),
+  lead: u => ['telesales', 'manager'].includes(u.role),
+  manager: u => ['sales', 'telesales'].includes(u.role) && Boolean(u.managerId),
+};
+
+/** Inline % input; saves on blur when the value changed. */
+function RateCell({ show, value, onSave }: { show: boolean; value: number; onSave: (value: string) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  if (!show) return <span className="text-[#4a4a4a] text-xs">—</span>;
+  return (
+    <div onClick={event => event.stopPropagation()} className="whitespace-nowrap">
+      <input
+        key={value}
+        type="number"
+        min={0}
+        max={100}
+        step="0.1"
+        defaultValue={value}
+        disabled={saving}
+        onBlur={async event => {
+          if (Number(event.target.value) === value) return;
+          setSaving(true);
+          await onSave(event.target.value);
+          setSaving(false);
+        }}
+        className="w-16 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-[#dfff03]/60 disabled:opacity-50"
+      />
+      <span className="text-[#6b6b6b] text-xs ms-1">%</span>
+    </div>
+  );
+}
 const CLOSED_STATUSES = ['Converted', 'Subscribed', 'Did Not Subscribe'];
 const CONVERTED_STATUSES = ['Converted', 'Subscribed'];
 

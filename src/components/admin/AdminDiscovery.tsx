@@ -63,6 +63,16 @@ const DEPTH_CHOICES = [1, 2, 5, 10, 50] as const;
 const PRESET_LABELS = new Set(PLATFORM_PRESETS.map(p => p.label));
 const splitItems = (s: string) => s.split(/[\n,،]/).map(x => x.trim()).filter(Boolean);
 
+type Quality = 'normal' | 'medium' | 'high';
+/** Client type when adding results: auto = Salla if the result was matched on Salla, else software (054). */
+type TypeChoice = 'auto' | 'salla' | 'software';
+const TYPE_VALUE: Record<TypeChoice, boolean | null> = { auto: null, salla: true, software: false };
+const TYPE_LABEL: Record<TypeChoice, string> = { auto: 'Auto (as detected)', salla: 'Salla Store', software: 'Software' };
+const QUALITY_KEY = 'discovery.addQuality';
+const TYPE_KEY = 'discovery.addType';
+const readSession = (k: string) => { try { return window.sessionStorage.getItem(k); } catch { return null; } };
+const writeSession = (k: string, v: string) => { try { window.sessionStorage.setItem(k, v); } catch { /* storage blocked: keep in state only */ } };
+
 const PAGE_SIZE = 100;
 const POLL_MS = 5000;
 const RUN_STATE_TIMEOUT_MS = 15_000;
@@ -379,8 +389,19 @@ export default function AdminDiscovery() {
   const [resultsLoading, setResultsLoading] = useState(true);
   const [resultsError, setResultsError] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
-  const [quality, setQuality] = useState('normal');
+  // Last quality + type choice is kept for the browser session (054)
+  const [quality, setQuality] = useState<Quality>(() => {
+    const v = readSession(QUALITY_KEY);
+    return v === 'high' || v === 'medium' ? v : 'normal';
+  });
+  const [typeChoice, setTypeChoice] = useState<TypeChoice>(() => {
+    const v = readSession(TYPE_KEY);
+    return v === 'salla' || v === 'software' ? v : 'auto';
+  });
+  useEffect(() => { writeSession(QUALITY_KEY, quality); }, [quality]);
+  useEffect(() => { writeSession(TYPE_KEY, typeChoice); }, [typeChoice]);
   const [resultBusy, setResultBusy] = useState<'' | 'selected' | 'all' | 'reject'>('');
+  const [lastAdd, setLastAdd] = useState<{ received: number; added: number; duplicates: number } | null>(null);
 
   const loadResults = useCallback(async (nextPage: number) => {
     setResultsLoading(true);
@@ -404,11 +425,15 @@ export default function AdminDiscovery() {
   async function approve(ids: string[] | null, kind: 'selected' | 'all') {
     if (resultBusy) return;
     setResultBusy(kind);
-    const { data, error } = await supabase.rpc('approve_discovery_results', { p_ids: ids, p_data_quality: quality });
+    const { data, error } = await supabase.rpc('approve_discovery_results', {
+      p_ids: ids, p_data_quality: quality, p_is_salla: TYPE_VALUE[typeChoice],
+    });
     setResultBusy('');
     if (error) { showToast(false, error.message); return; }
-    const row = (Array.isArray(data) ? data[0] : data) as { added: number; duplicates: number } | undefined;
-    showToast(true, t('Added {a}, skipped {b} duplicates', { a: row?.added ?? 0, b: row?.duplicates ?? 0 }));
+    const row = (Array.isArray(data) ? data[0] : data) as { received: number; added: number; duplicates: number } | undefined;
+    const res = { received: Number(row?.received ?? 0), added: Number(row?.added ?? 0), duplicates: Number(row?.duplicates ?? 0) };
+    setLastAdd(res);
+    showToast(true, t('Added {a}, skipped {b} duplicates', { a: res.added, b: res.duplicates }));
     setSelected([]);
     await Promise.all([loadResults(0), loadProgress()]);
   }
@@ -819,7 +844,14 @@ export default function AdminDiscovery() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={quality} onChange={setQuality} className="w-32" options={[{ value: 'high', label: 'high' }, { value: 'medium', label: 'medium' }, { value: 'normal', label: 'normal' }]} />
+            <label className="flex items-center gap-1.5 text-xs text-[#6b6b6b]">{t('Client type')}
+              <Select value={typeChoice} onChange={v => setTypeChoice(v as TypeChoice)} className="w-44"
+                options={(Object.keys(TYPE_LABEL) as TypeChoice[]).map(k => ({ value: k, label: TYPE_LABEL[k] }))} />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-[#6b6b6b]">{t('Data quality')}
+              <Select value={quality} onChange={v => setQuality(v as Quality)} className="w-32"
+                options={[{ value: 'high', label: 'high' }, { value: 'medium', label: 'medium' }, { value: 'normal', label: 'normal' }]} />
+            </label>
             <Button size="sm" disabled={!selected.length || !!resultBusy} onClick={() => void approve(selected, 'selected')}>
               {resultBusy === 'selected' ? t('Adding…') : t('Add selected as clients')}
             </Button>
@@ -831,6 +863,19 @@ export default function AdminDiscovery() {
             </Button>
           </div>
         </div>
+        {resultsTotal > 0 && (
+          <div className="border-b border-[#262626] px-4 py-2 text-xs text-[#d0d0d0]" aria-live="polite">
+            {t('You will add {n} clients → {type} · {q} quality', {
+              n: (selected.length || resultsTotal).toLocaleString('en-US'), type: t(TYPE_LABEL[typeChoice]), q: t(quality),
+            })}
+            <span className="ms-1 text-[#6b6b6b]">({selected.length ? t('selected') : t('all new')})</span>
+          </div>
+        )}
+        {lastAdd && (
+          <div role="status" className="border-b border-[#262626] bg-[#0f1a12] px-4 py-2 text-xs text-[#64dc78]">
+            ✓ {t('Last add: received {r} · added {a} · duplicates {d}', { r: lastAdd.received, a: lastAdd.added, d: lastAdd.duplicates })}
+          </div>
+        )}
         {resultsError && <div role="alert" className="m-4 text-sm text-[#ff8888]">{t(resultsError)}</div>}
         {resultsLoading && !results.length ? <div className="p-4"><TableSkeleton /></div> : results.length === 0 ? (
           !resultsError && <p className="p-8 text-center text-sm text-[#4a4a4a]">{t('No new results. Start a search to find websites.')}</p>

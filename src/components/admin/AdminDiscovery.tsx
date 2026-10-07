@@ -29,7 +29,13 @@ const FEATURES = [
   { key: 'dashboard', label: 'Dashboard / client portal' },
   { key: 'any_site', label: 'Any regular website (any platform)' },
 ] as const;
-const ADV_LISTS = ['skip_domains', 'contact_paths', 'app_signals', 'dashboard_signals', 'wordpress_signals'] as const;
+type Features = Config['features'];
+const NO_FEATURES = { app: false, dashboard: false, wordpress: false, any_site: false };
+/** Always send all four keys as explicit true/false (053). */
+const explicitFeatures = (f: Partial<Features> | null | undefined): Required<Features> => ({
+  app: Boolean(f?.app), dashboard: Boolean(f?.dashboard), wordpress: Boolean(f?.wordpress), any_site: Boolean(f?.any_site),
+});
+const ADV_LISTS =['skip_domains', 'contact_paths', 'app_signals', 'dashboard_signals', 'wordpress_signals'] as const;
 const ADV_NUMBERS = ['pages_per_query', 'serper_per_min', 'fetch_per_min'] as const;
 type AdvList = (typeof ADV_LISTS)[number];
 type AdvNumber = (typeof ADV_NUMBERS)[number];
@@ -58,6 +64,8 @@ const PRESET_LABELS = new Set(PLATFORM_PRESETS.map(p => p.label));
 const splitItems = (s: string) => s.split(/[\n,،]/).map(x => x.trim()).filter(Boolean);
 
 const PAGE_SIZE = 100;
+const POLL_MS = 5000;
+const RUN_STATE_TIMEOUT_MS = 15_000;
 const ESTIMATE_WARN = 3000;
 /** Warn above the Start button for searches bigger than this. */
 const SERPER_WARN = 2000;
@@ -126,9 +134,14 @@ export default function AdminDiscovery() {
   const [estimate, setEstimate] = useState<number | null>(null);
   const [estimating, setEstimating] = useState(false);
 
-  const applyConfig = useCallback((next: Config, defaults: Config | null) => {
+  /** fresh = loading the defaults: every "what to look for" chip starts off (053: nothing selected = any site). */
+  const applyConfig = useCallback((next: Config, defaults: Config | null, fresh = false) => {
     const catalog = uniq([...asList(defaults?.sectors), ...asList(next.sectors)]);
-    setCfg({ ...next, custom_features: Array.isArray(next.custom_features) ? next.custom_features : [] });
+    setCfg({
+      ...next,
+      features: fresh ? { ...NO_FEATURES } : explicitFeatures(next.features),
+      custom_features: !fresh && Array.isArray(next.custom_features) ? next.custom_features : [],
+    });
     setSectorCatalog(catalog);
     setAllSectors(catalog.every(s => next.sectors?.includes(s)));
     setAdv(toAdvanced(next));
@@ -160,7 +173,7 @@ export default function AdminDiscovery() {
     } catch {
       return { config: null, error: 'Country definitions are not valid JSON.' };
     }
-    const out: Config = { ...cfg, country_defs: countryDefs, sectors: allSectors ? sectorCatalog : cfg.sectors };
+    const out: Config = { ...cfg, features: explicitFeatures(cfg.features), country_defs: countryDefs, sectors: allSectors ? sectorCatalog : cfg.sectors };
     for (const k of ADV_LISTS) out[k] = lines(adv[k]);
     for (const k of ADV_NUMBERS) out[k] = Number(adv[k]) || 0;
     out.pages_per_query = Math.max(1, Math.floor(Number(adv.pages_per_query) || 1));
@@ -186,6 +199,10 @@ export default function AdminDiscovery() {
 
   const hasCustom = (cfg?.custom_features.length ?? 0) > 0;
   const onFeatures = cfg ? FEATURES.filter(f => cfg.features?.[f.key]).length : 0;
+  const anySiteOn = Boolean(cfg?.features?.any_site);
+  const nothingSelected = onFeatures === 0 && !hasCustom;
+  /** "Any site" together with a platform/feature returns every site, not only that platform. */
+  const anySiteMixed = anySiteOn && (hasCustom || onFeatures > 1);
 
   function toggleCountry(code: string) {
     if (!cfg) return;
@@ -197,8 +214,18 @@ export default function AdminDiscovery() {
   function toggleFeature(key: (typeof FEATURES)[number]['key']) {
     if (!cfg) return;
     const on = Boolean(cfg.features?.[key]);
-    if (on && onFeatures === 1 && !hasCustom) { showToast(false, t('Choose at least one thing to look for')); return; }
-    setCfg({ ...cfg, features: { ...cfg.features, [key]: !on } });
+    if (key === 'any_site' && !on) {
+      // "Any site" and a specific platform contradict each other: turning it on clears the rest
+      setCfg({ ...cfg, features: { ...NO_FEATURES, any_site: true }, custom_features: [] });
+      return;
+    }
+    setCfg({ ...cfg, features: { ...explicitFeatures(cfg.features), [key]: !on, ...(key !== 'any_site' && !on ? { any_site: false } : {}) } });
+  }
+
+  /** Turns every "what to look for" chip and platform off (= any site, no filter). */
+  function clearLookFor() {
+    if (!cfg) return;
+    setCfg({ ...cfg, features: { ...NO_FEATURES }, custom_features: [] });
   }
 
   function addCustom() {
@@ -206,14 +233,13 @@ export default function AdminDiscovery() {
     const label = customLabel.trim();
     const keywords = uniq(customKeywords.split(/[,،\n]/).map(x => x.trim()).filter(Boolean));
     if (!label || !keywords.length) { showToast(false, t('Write a name and at least one keyword.')); return; }
-    setCfg({ ...cfg, custom_features: [...cfg.custom_features.filter(f => f.label !== label), { label, keywords }] });
+    setCfg({ ...cfg, features: { ...explicitFeatures(cfg.features), any_site: false }, custom_features: [...cfg.custom_features.filter(f => f.label !== label), { label, keywords }] });
     setCustomLabel('');
     setCustomKeywords('');
   }
 
   function removeCustom(label: string) {
     if (!cfg) return;
-    if (onFeatures === 0 && cfg.custom_features.length === 1) { showToast(false, t('Choose at least one thing to look for')); return; }
     setCfg({ ...cfg, custom_features: cfg.custom_features.filter(f => f.label !== label) });
   }
 
@@ -247,8 +273,8 @@ export default function AdminDiscovery() {
     const labels = new Set(list.map(p => p.label));
     const rest = cfg.custom_features.filter(f => !labels.has(f.label));
     const next = on ? [...rest, ...list.map(p => ({ label: p.label, keywords: p.keywords }))] : rest;
-    if (!on && onFeatures === 0 && next.length === 0) { showToast(false, t('Choose at least one thing to look for')); return; }
-    setCfg({ ...cfg, custom_features: next });
+    // Picking a platform only adds it to custom_features; it never turns on app / any_site
+    setCfg({ ...cfg, features: on ? { ...explicitFeatures(cfg.features), any_site: false } : explicitFeatures(cfg.features), custom_features: next });
   }
 
   async function saveConfig(silent = false): Promise<boolean> {
@@ -269,7 +295,7 @@ export default function AdminDiscovery() {
     setConfigBusy('');
     setResetOpen(false);
     if (error) { showToast(false, error.message); return; }
-    applyConfig(data as Config, data as Config);
+    applyConfig(data as Config, data as Config, true);
     showToast(true, t('Default settings loaded — press Save to keep them'));
   }
 
@@ -278,6 +304,7 @@ export default function AdminDiscovery() {
   const [runError, setRunError] = useState('');
   const [runBusy, setRunBusy] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   const loadProgress = useCallback(async () => {
     const { data, error } = await supabase.rpc('discovery_progress');
@@ -329,10 +356,19 @@ export default function AdminDiscovery() {
   async function setRunState(state: 'running' | 'paused' | 'stopped') {
     if (!progress || runBusy) return;
     setRunBusy(true);
-    const { error } = await supabase.rpc('set_discovery_run_state', { p_run: progress.run_id, p_state: state });
-    setRunBusy(false);
     setStopOpen(false);
-    if (error) { showToast(false, error.message); return; }
+    if (state === 'stopped') setStopping(true); // show "Finishing…" right away, don't wait for the polling
+    const { error } = await supabase
+      .rpc('set_discovery_run_state', { p_run: progress.run_id, p_state: state })
+      .abortSignal(AbortSignal.timeout(RUN_STATE_TIMEOUT_MS));
+    setRunBusy(false);
+    setStopping(false);
+    if (error) {
+      const timedOut = /abort|timeout/i.test(`${error.name ?? ''} ${error.message}`);
+      showToast(false, timedOut ? t('The server did not answer in 15 seconds — try again.') : error.message);
+      return;
+    }
+    setProgress(p => (p && p.run_id === progress.run_id ? { ...p, status: state } : p));
     await loadProgress();
   }
 
@@ -400,15 +436,22 @@ export default function AdminDiscovery() {
   const runId = progress?.run_id;
   useEffect(() => { if (runId) void loadDiag(runId); }, [runId, loadDiag]);
 
+  // Poll every 5s while the run is active (stops on done / stopped); calls run one after the other, never overlapping
   useEffect(() => {
-    if (!active) return;
-    const timer = window.setInterval(() => {
-      void loadProgress();
-      if (runId) void loadDiag(runId);
-      if (page === 0 && !selected.length) void loadResults(0);
-    }, 5000);
-    return () => window.clearInterval(timer);
-  }, [active, loadProgress, loadDiag, runId, loadResults, page, selected.length]);
+    if (!active || stopping) return;
+    let cancelled = false;
+    let timer = 0;
+    const tick = async () => {
+      await loadProgress();
+      if (cancelled) return;
+      if (runId) await loadDiag(runId);
+      if (cancelled) return;
+      if (page === 0 && !selected.length) await loadResults(0);
+      if (!cancelled) timer = window.setTimeout(() => void tick(), POLL_MS);
+    };
+    timer = window.setTimeout(() => void tick(), POLL_MS);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [active, stopping, loadProgress, loadDiag, runId, loadResults, page, selected.length]);
 
   const pct = progress && progress.total_queries > 0 ? Math.min(100, Math.round((progress.done_queries / progress.total_queries) * 100)) : 0;
   const statusLabel: Record<string, string> = { running: 'Running', paused: 'Paused', done: 'Finished', stopped: 'Stopped' };
@@ -481,7 +524,12 @@ export default function AdminDiscovery() {
 
             {/* What to look for */}
             <section className="space-y-2">
-              <div className="text-sm text-white">{t('What are you looking for?')}</div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm text-white">{t('What are you looking for?')}</div>
+                <button type="button" onClick={clearLookFor} disabled={nothingSelected} className="text-xs text-[#dfff03] hover:underline disabled:opacity-40 disabled:no-underline">
+                  {t('Unselect all')}
+                </button>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {FEATURES.map(f => {
                   const on = Boolean(cfg.features?.[f.key]);
@@ -499,6 +547,14 @@ export default function AdminDiscovery() {
                 ))}
               </div>
               <p className="text-xs text-[#6b6b6b]">{t('"Any regular website" shows every site with the same business types and country, on any platform or none.')}</p>
+              {nothingSelected && (
+                <p className="text-xs text-[#dfff03]/80">{t('No options selected: the search brings every website, without filtering.')}</p>
+              )}
+              {anySiteMixed && (
+                <div className="rounded border border-[#ffc832]/30 bg-[#ffc832]/10 p-2 text-xs text-[#ffc832]">
+                  ! {t('"Any regular website" is on: the search brings every site, not only the selected platforms.')}
+                </div>
+              )}
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input value={customLabel} onChange={e => setCustomLabel(e.target.value)} placeholder={t('Add something else to look for (e.g. Shopify)')} className={`${input} sm:w-64`} dir="auto" />
                 <input value={customKeywords} onChange={e => setCustomKeywords(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addCustom(); }}
@@ -514,6 +570,7 @@ export default function AdminDiscovery() {
                   {t('Platforms & technologies')}
                   <span className="ms-2 text-xs text-[#6b6b6b]">{t('{n} selected', { n: PLATFORM_PRESETS.filter(platformOn).length })}</span>
                 </div>
+                {anySiteMixed && <span className="text-xs text-[#ffc832]">! {t('Brings every site, not only the platform')}</span>}
                 <input value={platformSearch} onChange={e => setPlatformSearch(e.target.value)} placeholder={t('Search platforms…')} className={`${input} sm:w-56`} dir="auto" />
               </div>
               {Object.keys(PLATFORM_GROUPS_EN).map(group => {
@@ -676,7 +733,7 @@ export default function AdminDiscovery() {
           <div className="flex flex-wrap gap-2">
             {progress?.status === 'running' && <Button size="sm" variant="secondary" disabled={runBusy} onClick={() => void setRunState('paused')}>{t('Pause')}</Button>}
             {progress?.status === 'paused' && <Button size="sm" variant="secondary" disabled={runBusy} onClick={() => void setRunState('running')}>{t('Resume')}</Button>}
-            {active && <Button size="sm" variant="danger" disabled={runBusy} onClick={() => setStopOpen(true)}>{t('Finish')}</Button>}
+            {active && <Button size="sm" variant="danger" disabled={runBusy || stopping} onClick={() => setStopOpen(true)}>{stopping ? t('Finishing…') : t('Finish')}</Button>}
             {!active && (
               <>
                 <Button size="sm" variant="secondary" disabled={runBusy || !hasKey || !built.config} onClick={() => void startTrial()}>

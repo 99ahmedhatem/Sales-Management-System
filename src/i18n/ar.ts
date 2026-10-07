@@ -1077,4 +1077,12 @@ export const ar: Record<string, string> = {
   "Brings every site, not only the platform": "هيجيب كل المواقع مش المنصة بس",
   "Finishing…": "جاري الإنهاء…",
   "The server did not answer in 15 seconds — try again.": "السيرفر ما ردّش خلال 15 ثانية — جرّب تاني.",
+  // Lead discovery: add as clients (054)
+  "Client type": "نوع العملاء",
+  "Data quality": "الجودة",
+  "Auto (as detected)": "تلقائي (حسب المكتشف)",
+  "You will add {n} clients → {type} · {q} quality": "هتضيف {n} عميل ← {type} · جودة {q}",
+  "selected": "المحدد",
+  "all new": "كل الجديد",
+  "Last add: received {r} · added {a} · duplicates {d}": "آخر إضافة: المستلم {r} · المضاف {a} · المكرر {d}",
 };

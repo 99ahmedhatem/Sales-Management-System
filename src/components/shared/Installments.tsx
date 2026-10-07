@@ -4,7 +4,7 @@ import { useI18n } from '../../i18n/I18nProvider';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { formatSar } from '../../lib/format';
 import { openDealInContracts } from '../../lib/navigation';
-import { Button, Card, Table, Td, Tr } from '../ui';
+import { Button, Card, Table, Td, Tr, useConfirm } from '../ui';
 import WhatsAppButton from './WhatsAppButton';
 
 type InstallmentStatus = 'paid' | 'partial' | 'pending' | 'overdue';
@@ -48,6 +48,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 /** "Installments" section in the deal details. Plans are created/cancelled by admin or manager. */
 export function DealInstallments({ dealId, priceSar, dealStatus, canManage }: { dealId: string; priceSar: number; dealStatus: string; canManage: boolean }) {
   const { t } = useI18n();
+  const { confirm, confirmUi } = useConfirm();
   const [rows, setRows] = useState<Installment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -102,7 +103,7 @@ export function DealInstallments({ dealId, priceSar, dealStatus, canManage }: { 
   }
 
   async function cancelPlan() {
-    if (busy || !window.confirm(t('Cancel the installment plan for this deal? Payments are not affected.'))) return;
+    if (busy || !(await confirm({ message: t('Cancel the installment plan for this deal? Payments are not affected.'), confirmLabel: 'Cancel plan', danger: true }))) return;
     setBusy('cancel');
     const { error: rpcError } = await supabase.rpc('cancel_installment_plan', { p_deal_id: dealId });
     setBusy('');
@@ -191,6 +192,7 @@ export function DealInstallments({ dealId, priceSar, dealStatus, canManage }: { 
           </div>
         </div>
       )}
+      {confirmUi}
     </div>
   );
 }

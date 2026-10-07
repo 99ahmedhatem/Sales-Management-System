@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../i18n/I18nProvider';
 import { AnimatedNumber } from './shared/motion';
@@ -154,12 +154,41 @@ export function Select({
   );
 }
 
+// Open modals, newest last: Esc closes only the top one, and the page doesn't scroll behind any of them.
+const modalStack: number[] = [];
+let modalSeq = 0;
+
+/** Esc closes the top-most open modal; the page behind is locked while at least one is open. */
+function useModalLayer(open: boolean, onClose: () => void) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    if (!open) return;
+    const id = ++modalSeq;
+    modalStack.push(id);
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && modalStack[modalStack.length - 1] === id) {
+        e.stopPropagation();
+        closeRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      modalStack.splice(modalStack.indexOf(id), 1);
+      if (!modalStack.length) document.body.style.overflow = '';
+    };
+  }, [open]);
+}
+
 export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
   const { t } = useI18n();
+  useModalLayer(open, onClose);
   if (!open) return null;
   // Rendered on <body> so a transform / filter on any parent can't move it off screen
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label={t(title)}>
       <div className="absolute inset-0 bg-black/70 anim-backdrop" onClick={onClose} />
       <div className="relative bg-[#161616] border border-[#262626] rounded-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto anim-modal">
         <div className="flex items-center justify-between p-5 border-b border-[#262626]">
@@ -173,12 +202,100 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
   );
 }
 
+interface ConfirmOptions { title?: string; message: string; confirmLabel?: string; danger?: boolean }
+
+/**
+ * In-page replacement for window.confirm:
+ *   const { confirm, confirmUi } = useConfirm();
+ *   if (!(await confirm({ message: t('Delete?'), danger: true }))) return;
+ *   ... and render {confirmUi} once in the component.
+ * Messages are passed already translated.
+ */
+export function useConfirm() {
+  const { t } = useI18n();
+  const [req, setReq] = useState<(ConfirmOptions & { resolve: (ok: boolean) => void }) | null>(null);
+  const confirm = useCallback((opts: ConfirmOptions) => new Promise<boolean>(resolve => setReq({ ...opts, resolve })), []);
+  const finish = (ok: boolean) => { req?.resolve(ok); setReq(null); };
+  const confirmUi = (
+    <Modal open={!!req} onClose={() => finish(false)} title={req?.title ?? 'Confirm'}>
+      <p className="text-sm text-[#d0d0d0] whitespace-pre-line">{req?.message}</p>
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="secondary" onClick={() => finish(false)}>{t('Cancel')}</Button>
+        <Button variant={req?.danger ? 'danger' : 'primary'} onClick={() => finish(true)}>{t(req?.confirmLabel ?? 'Confirm')}</Button>
+      </div>
+    </Modal>
+  );
+  return { confirm, confirmUi };
+}
+
+export interface MenuItem { label: string; onClick: () => void; danger?: boolean; disabled?: boolean; hidden?: boolean }
+
+/** "⋯" button with a small menu (rendered on <body>, so a table's scroll box can't cut it). */
+export function ActionMenu({ items, label = 'More actions' }: { items: MenuItem[]; label?: string }) {
+  const { t } = useI18n();
+  const btn = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
+  const visible = items.filter(i => !i.hidden);
+  useEffect(() => {
+    if (!pos) return;
+    const close = () => setPos(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [pos]);
+  if (!visible.length) return null;
+  const open = () => {
+    const r = btn.current?.getBoundingClientRect();
+    if (!r) return;
+    const width = 192; // w-48
+    const rtl = document.documentElement.dir === 'rtl';
+    const left = Math.min(Math.max(8, rtl ? r.left : r.right - width), window.innerWidth - width - 8);
+    const up = r.bottom + 40 * visible.length + 16 > window.innerHeight;
+    setPos(up ? { bottom: window.innerHeight - r.top + 4, left } : { top: r.bottom + 4, left });
+  };
+  return (
+    <>
+      <button ref={btn} type="button" aria-label={t(label)} aria-haspopup="menu" aria-expanded={!!pos}
+        onClick={e => { e.stopPropagation(); if (pos) setPos(null); else open(); }}
+        className="rounded px-2 py-1 text-lg leading-none text-[#a0a0a0] hover:bg-[#1e1e1e] hover:text-white">⋯</button>
+      {pos && createPortal(
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setPos(null)} />
+          <div role="menu" style={pos}
+            className="fixed z-[61] w-48 overflow-hidden rounded-lg border border-[#262626] bg-[#161616] py-1 shadow-2xl anim-banner">
+            {visible.map(item => (
+              <button key={item.label} role="menuitem" type="button" disabled={item.disabled}
+                onClick={() => { setPos(null); item.onClick(); }}
+                className={`block w-full px-3 py-2 text-start text-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                  item.danger ? 'text-[#ff6464] hover:bg-[#ff4444]/10' : 'text-[#d0d0d0] hover:bg-[#1e1e1e] hover:text-white'}`}>
+                {t(item.label)}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body,
+      )}
+    </>
+  );
+}
+
+/** Shared table header style: sticks to the top of the table's own scroll box. */
+export const stickyHead = 'sticky top-0 z-[1] bg-[#161616] shadow-[inset_0_-1px_0_#262626]';
+/** Long lists scroll inside their card so the header row (and the page's action bar) stay in view. */
+export const tableScroll = 'overflow-auto max-h-[calc(100vh-12rem)]';
+
 export function Table({ headers, children }: { headers: string[]; children: ReactNode }) {
   const { t } = useI18n();
   return (
-    <div className="overflow-x-auto">
+    <div className={tableScroll}>
       <table className="w-full text-sm anim-rows">
-        <thead>
+        <thead className={stickyHead}>
           <tr className="border-b border-[#262626]">
             {headers.map((h, i) => (
               <th key={i} className="text-start text-[#6b6b6b] font-medium text-xs uppercase tracking-wider py-3 px-4">{t(h)}</th>
@@ -267,7 +384,7 @@ export function Tabs({ tabs, active, onChange }: { tabs: string[]; active: strin
   );
 }
 
-export function EmptyState({ message }: { message: string }) {
+export function EmptyState({ message, actionLabel, onAction }: { message: string; actionLabel?: string; onAction?: () => void }) {
   const { t } = useI18n();
   return (
     <div className="flex flex-col items-center justify-center py-16 text-[#4a4a4a]">
@@ -275,6 +392,7 @@ export function EmptyState({ message }: { message: string }) {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
       </svg>
       <p className="text-sm">{t(message)}</p>
+      {actionLabel && onAction && <Button size="sm" className="mt-4" onClick={onAction}>{t(actionLabel)}</Button>}
     </div>
   );
 }

@@ -5,7 +5,9 @@ import { supabase } from '../../supabaseClient';
 import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
 import { generateCode, Lead, LeadDataQuality, LeadStatus, User } from '../../data/mockData';
-import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Pagination, WebsiteLink } from '../ui';
+import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Pagination, WebsiteLink, EmptyState, useConfirm } from '../ui';
+import { toast } from '../shared/toast';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
 import { exportRowsToExcel } from '../shared/exportExcel';
 import DistributeLeadsModal, { QUALITY_FILTER_OPTIONS, REGION_OPTIONS } from '../shared/DistributeLeadsModal';
@@ -156,16 +158,23 @@ export default function AdminLeads() {
   const [loading, setLoading] = useState(true);
   const [firstLoad, setFirstLoad] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [regionFilter, setRegionFilter] = useState('');
-  const [phoneFilter, setPhoneFilter] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
-  const [qualityFilter, setQualityFilter] = useState('');
-  const [assignmentFilter, setAssignmentFilter] = useState('');
-  const [websiteFilter, setWebsiteFilter] = useState('');
-  const [websiteReasonFilter, setWebsiteReasonFilter] = useState('');
+  // Search + filters are remembered for this browser tab, so coming back to the page keeps them
+  const [search, setSearch] = usePersistentState('leads.search', '');
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  const [statusFilter, setStatusFilter] = usePersistentState('leads.status', '');
+  const [regionFilter, setRegionFilter] = usePersistentState('leads.region', '');
+  const [phoneFilter, setPhoneFilter] = usePersistentState('leads.phone', '');
+  const [typeFilter, setTypeFilter] = usePersistentState('leads.type', '');
+  const [qualityFilter, setQualityFilter] = usePersistentState('leads.quality', '');
+  const [assignmentFilter, setAssignmentFilter] = usePersistentState('leads.assignment', '');
+  const [websiteFilter, setWebsiteFilter] = usePersistentState('leads.website', '');
+  const [websiteReasonFilter, setWebsiteReasonFilter] = usePersistentState('leads.websiteReason', '');
+  const hasFilters = !!(search.trim() || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || assignmentFilter || websiteFilter || websiteReasonFilter);
+  const clearFilters = () => {
+    setSearch(''); setStatusFilter(''); setRegionFilter(''); setPhoneFilter(''); setTypeFilter('');
+    setQualityFilter(''); setAssignmentFilter(''); setWebsiteFilter(''); setWebsiteReasonFilter('');
+  };
+  const { confirm, confirmUi } = useConfirm();
   const [showWebsiteChecks, setShowWebsiteChecks] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [assignModal, setAssignModal] = useState(false);
@@ -320,6 +329,10 @@ export default function AdminLeads() {
       return;
     }
     const assignee = users.find(user => user.id === assignTo);
+    // Show the new owner right away; the reload below brings the final data
+    const moved = new Set(selected);
+    setLeads(prev => prev.map(l => (moved.has(l.id) ? { ...l, assignedTo: assignTo, status: 'Assigned' as LeadStatus } : l)));
+    toast(t('Assigned {n} clients to {name}', { n: selected.length, name: assignee?.fullName ?? '' }));
     const authUserId = (await supabase.auth.getUser()).data.user?.id || '';
     const admin = (await supabase.from('users').select('full_name').eq('id', authUserId).maybeSingle()).data;
     await Promise.all(selected.map(leadId => recordActivity({
@@ -339,7 +352,9 @@ export default function AdminLeads() {
   };
 
   const handleDeleteSelected = async () => {
-    if (!selected.length || !window.confirm(t('Delete {n} selected customer(s)?', { n: selected.length }))) return;
+    if (!selected.length) return;
+    const ok = await confirm({ title: 'Delete clients', message: t('Delete {n} selected customer(s)?', { n: selected.length }), confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     setErrorMsg('');
     const batchSize = 500;
     for (let start = 0; start < selected.length; start += batchSize) {
@@ -349,8 +364,10 @@ export default function AdminLeads() {
         return;
       }
     }
+    const deleted = selected.length;
     setLeads(prev => prev.filter(lead => !selected.includes(lead.id)));
     setSelected([]);
+    toast(t('Deleted {n} clients', { n: deleted }));
     await loadData(page);
   };
 
@@ -649,13 +666,18 @@ export default function AdminLeads() {
         <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: '', label: 'All Assignments' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
         {can('leads.export') && <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? t('Exporting...') : t('Export Excel')}</Button>}
         {can('leads.distribute') && <Button variant="secondary" size="sm" onClick={() => setDistributeModal(true)}>{t('Distribute evenly')}</Button>}
-        {selected.length > 0 && (
-          <div className="flex gap-2">
-            <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>{t('Assign {n} Selected', { n: selected.length })}</Button>
-            {can('leads.delete') && <Button variant="danger" size="sm" disabled={busy === 'delete'} onClick={() => runBusy('delete', handleDeleteSelected)}>{t('Delete {n}', { n: selected.length })}</Button>}
-          </div>
-        )}
+        {hasFilters && <Button variant="ghost" size="sm" onClick={clearFilters}>{t('Clear filters')}</Button>}
       </div>
+
+      {/* Bulk actions: stay under the top bar while scrolling */}
+      {selected.length > 0 && (
+        <div className="sticky top-14 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-[#dfff03]/30 bg-[#161616]/95 px-3 py-2 shadow-lg backdrop-blur anim-banner">
+          <span className="text-sm text-[#dfff03]">{t('{n} selected', { n: selected.length })}</span>
+          <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>{t('Assign {n} Selected', { n: selected.length })}</Button>
+          {can('leads.delete') && <Button variant="danger" size="sm" disabled={busy === 'delete'} onClick={() => runBusy('delete', handleDeleteSelected)}>{t('Delete {n}', { n: selected.length })}</Button>}
+          <Button variant="ghost" size="sm" className="ms-auto" onClick={() => setSelected([])}>{t('Clear selection')}</Button>
+        </div>
+      )}
 
       {/* Table */}
       <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : 'transition-opacity'}>
@@ -735,6 +757,11 @@ export default function AdminLeads() {
               );
             })}
           </Table>
+          {!loading && leads.length === 0 && !errorMsg && (
+            hasFilters
+              ? <EmptyState message="No clients match these filters." actionLabel="Clear filters" onAction={clearFilters} />
+              : <EmptyState message="No clients yet." actionLabel="+ Add Lead" onAction={() => setAddModal(true)} />
+          )}
           <Pagination
             page={page}
             pageSize={pageSize}
@@ -948,6 +975,7 @@ export default function AdminLeads() {
           </div>
         </div>
       </Modal>
+      {confirmUi}
     </div>
   );
 }

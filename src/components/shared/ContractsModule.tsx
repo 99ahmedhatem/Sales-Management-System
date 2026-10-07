@@ -177,6 +177,8 @@ export default function ContractsModule({ userId, role }: Props) {
   const canUploadContract =
     canCreateDeal && selectedDeal?.closedByUserId === userId
   const canApprove = (role === "admin" || role === "manager") && can("deals.approve")
+  // "Below minimum" is internal pricing info: only for who may see package minimum prices (admin, manager by default)
+  const seeMinPrice = can("packages.view_min_price")
   const canRequestReview =
     role === "admin" ||
     role === "manager" ||
@@ -270,7 +272,7 @@ export default function ContractsModule({ userId, role }: Props) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-3 ${seeMinPrice ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         <Card className="p-4">
           <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t("Deals on page")}</div>
           <div className="mt-2 text-2xl font-bold text-white">{visibleDeals.length}</div>
@@ -279,10 +281,12 @@ export default function ContractsModule({ userId, role }: Props) {
           <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t("Pending approval")}</div>
           <div className="mt-2 text-2xl font-bold text-[#ffc832]">{deals.filter((deal) => deal.status === "pending_approval").length}</div>
         </Card>
-        <Card className="p-4">
-          <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t("Below minimum")}</div>
-          <div className="mt-2 text-2xl font-bold text-[#ffc832]">{deals.filter((deal) => deal.belowMinPrice).length}</div>
-        </Card>
+        {seeMinPrice && (
+          <Card className="p-4">
+            <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t("Below minimum")}</div>
+            <div className="mt-2 text-2xl font-bold text-[#ffc832]">{deals.filter((deal) => deal.belowMinPrice).length}</div>
+          </Card>
+        )}
         <Card className="p-4">
           <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t("Deal value on page")}</div>
           <div className="mt-2 text-lg font-bold text-[#dfff03]">{formatSar.format(visibleDeals.reduce((sum, deal) => sum + deal.priceSar, 0))}</div>
@@ -307,7 +311,7 @@ export default function ContractsModule({ userId, role }: Props) {
                 <Td>
                   <div className="font-medium text-white"><ClientLink leadId={deal.leadId}>{deal.leadName}</ClientLink></div>
                   <div className="font-mono text-xs text-[#6b6b6b]" dir="ltr">{deal.leadPhone || "—"}</div>
-                  {deal.belowMinPrice && <div className="mt-1 text-xs text-[#ffc832]">{t("Below package minimum")}</div>}
+                  {seeMinPrice && deal.belowMinPrice && <div className="mt-1 text-xs text-[#ffc832]">{t("Below package minimum")}</div>}
                 </Td>
                 <Td>
                   <div className="text-white">{deal.packageName}</div>
@@ -342,7 +346,7 @@ export default function ContractsModule({ userId, role }: Props) {
               <StatusBadge status={STATUS_LABELS[selectedDeal.status]} />
               <span className="font-mono text-xs text-[#6b6b6b]">{selectedDeal.id}</span>
             </div>
-            {selectedDeal.belowMinPrice && (
+            {seeMinPrice && selectedDeal.belowMinPrice && (
               <div className="rounded border border-[#ffc832]/30 bg-[#ffc832]/10 p-3 text-sm text-[#ffc832]">
                 {t("This closing price is below the package minimum ({min}). Reviewer attention is required.", { min: formatSar.format(selectedDeal.minPriceSar) })}
               </div>

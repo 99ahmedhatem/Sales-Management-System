@@ -53,6 +53,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Numbers line up in columns; in Arabic, codes / phones / dates / amounts keep their own order */
+td, .font-mono { font-variant-numeric: tabular-nums; }
+[dir='rtl'] .font-mono { unicode-bidi: isolate; }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

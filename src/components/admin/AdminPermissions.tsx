@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useI18n } from '../../i18n/I18nProvider';
-import { Avatar, Badge, Button, Card, SearchInput, Select, StatusBadge, Toggle } from '../ui';
+import { Avatar, Badge, Button, Card, SearchInput, Select, StatusBadge, Toggle, useConfirm } from '../ui';
 import { TableSkeleton } from '../shared/motion';
+import { toast } from '../shared/toast';
 
 interface UserPermissions {
   user_id: string;
@@ -42,12 +43,8 @@ export default function AdminPermissions() {
   const [selectedId, setSelectedId] = useState('');
   const [draft, setDraft] = useState<Draft>({});
   const [busy, setBusy] = useState<'' | 'save' | 'reset'>('');
-  const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
-
-  const showToast = (ok: boolean, text: string) => {
-    setToast({ ok, text });
-    window.setTimeout(() => setToast(cur => (cur?.text === text ? null : cur)), 3500);
-  };
+  const { confirm, confirmUi } = useConfirm();
+  const showToast = (ok: boolean, text: string) => toast(text, ok);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,9 +86,9 @@ export default function AdminPermissions() {
     return out;
   }, [catalog]);
 
-  function pick(id: string) {
+  async function pick(id: string) {
     if (id === selectedId) return;
-    if (changedCount && !window.confirm(t('Discard unsaved changes?'))) return;
+    if (changedCount && !(await confirm({ message: t('Discard unsaved changes?'), confirmLabel: 'Discard', danger: true }))) return;
     setDraft({});
     setSelectedId(id);
   }
@@ -133,7 +130,7 @@ export default function AdminPermissions() {
 
   async function save() {
     if (!selected || !changedCount || busy) return;
-    if (!window.confirm(t('Save {n} permission changes for {name}?', { n: changedCount, name: selected.full_name }))) return;
+    if (!(await confirm({ message: t('Save {n} permission changes for {name}?', { n: changedCount, name: selected.full_name }), confirmLabel: 'Save' }))) return;
     setBusy('save');
     const { error: rpcError } = await supabase.rpc('set_user_permissions', { p_user: selected.user_id, p_perms: draft });
     setBusy('');
@@ -145,7 +142,7 @@ export default function AdminPermissions() {
 
   async function reset() {
     if (!selected || busy) return;
-    if (!window.confirm(t('Reset all permissions of {name} to the role defaults?', { name: selected.full_name }))) return;
+    if (!(await confirm({ message: t('Reset all permissions of {name} to the role defaults?', { name: selected.full_name }), confirmLabel: 'Reset', danger: true }))) return;
     setBusy('reset');
     const { error: rpcError } = await supabase.rpc('reset_user_permissions', { p_user: selected.user_id });
     setBusy('');
@@ -273,14 +270,7 @@ export default function AdminPermissions() {
         </div>
       </div>
 
-      {toast && (
-        <div
-          role="status"
-          className={`fixed bottom-4 start-1/2 z-50 -translate-x-1/2 rtl:translate-x-1/2 rounded-lg border px-4 py-2.5 text-sm shadow-lg anim-banner ${toast.ok ? 'border-[#64dc78]/30 bg-[#0f1a12] text-[#64dc78]' : 'border-[#ff6464]/30 bg-[#1a0f0f] text-[#ff8888]'}`}
-        >
-          {toast.ok ? '✓ ' : '✕ '}{toast.text}
-        </div>
-      )}
+      {confirmUi}
     </div>
   );
 }

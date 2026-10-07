@@ -1070,4 +1070,11 @@ export const ar: Record<string, string> = {
   "Choose the call outcome": "اختر نتيجة المكالمة",
   "Pick the call outcome to save.": "اختار نتيجة المكالمة عشان تقدر تحفظ.",
   "Call saved": "تم حفظ المكالمة",
+  // Lead discovery (053)
+  "Unselect all": "إلغاء تحديد الكل",
+  "No options selected: the search brings every website, without filtering.": "من غير خيارات: هيجيب كل المواقع بدون فلترة.",
+  "\"Any regular website\" is on: the search brings every site, not only the selected platforms.": "خيار \"أي موقع عادي\" شغّال: هيجيب كل المواقع مش المنصات المختارة بس.",
+  "Brings every site, not only the platform": "هيجيب كل المواقع مش المنصة بس",
+  "Finishing…": "جاري الإنهاء…",
+  "The server did not answer in 15 seconds — try again.": "السيرفر ما ردّش خلال 15 ثانية — جرّب تاني.",
 };

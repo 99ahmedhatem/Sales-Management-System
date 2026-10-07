@@ -1,7 +1,8 @@
 import { TableSkeleton } from '../shared/motion';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
-import { Lead, LeadStatus, User } from '../../data/mockData';
+import { generateCode, Lead, LeadStatus, User } from '../../data/mockData';
+import { normalizeWebsite } from '../../lib/websiteKey';
 import { loadMeetingsPage, Meeting } from '../../data/meetings';
 import { dateLocale } from '../../i18n/locale';
 import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr, WebsiteLink } from '../ui';
@@ -81,6 +82,10 @@ export default function ManagerDashboard({ userId }: Props) {
     const [workedClientCount, setWorkedClientCount] = useState(0);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [addClientOpen, setAddClientOpen] = useState(false);
+  const [newClient, setNewClient] = useState(EMPTY_CLIENT);
+  const [addingClient, setAddingClient] = useState(false);
+  const [addClientError, setAddClientError] = useState('');
   const [assigning, setAssigning] = useState(false);
   const [savingPhone, setSavingPhone] = useState(false);
   const pageSize = 100;
@@ -258,11 +263,14 @@ export default function ManagerDashboard({ userId }: Props) {
     }
   };
 
-  const poolLeads = assignmentFilter === 'all'
-    ? allLeads
-    : assignmentFilter === 'unassigned'
-      ? allLeads.filter(lead => !lead.assignedTo)
-      : allLeads.filter(lead => lead.assignedTo === userId);
+  const teamMemberIds = new Set(myTeam.map(member => member.id));
+  /** all · manager = assigned to me · team = assigned to someone in my team · unassigned */
+  const matchesAssignment = (assignedTo: string | null | undefined) =>
+    assignmentFilter === 'all' ? true
+      : assignmentFilter === 'unassigned' ? !assignedTo
+      : assignmentFilter === 'team' ? Boolean(assignedTo && teamMemberIds.has(assignedTo))
+      : assignedTo === userId;
+  const poolLeads = allLeads.filter(lead => matchesAssignment(lead.assignedTo));
   const filteredPool = poolLeads.filter(lead => {
     const query = leadSearch.toLowerCase();
     return (!query || lead.name.toLowerCase().includes(query) || lead.phone.includes(query) || (lead.company || '').toLowerCase().includes(query))
@@ -279,6 +287,38 @@ export default function ManagerDashboard({ userId }: Props) {
     setSelectedPoolLeads(prev => prev.length === poolLeads.length ? [] : poolLeads.map(lead => lead.id));
   };
 
+  /** Manager adds a client himself: it is assigned to him, so he can work it or distribute it to his team. */
+  const addClient = async () => {
+    if (!newClient.name.trim() || addingClient) return;
+    setAddingClient(true);
+    setAddClientError('');
+    const phone = newClient.phone.replace(/[^\d+]/g, '');
+    const { error } = await supabase.from('leads').insert({
+      client_code: generateCode('CLT'),
+      name: newClient.name.trim(),
+      phone: phone || null,
+      phone_source: phone ? 'manual' : null,
+      company: newClient.company.trim() || null,
+      website: newClient.website.trim() || null,
+      website_key: normalizeWebsite(newClient.website.trim()) || null,
+      region: newClient.region.trim() || null,
+      source: 'Manual',
+      quantity: 0,
+      data_quality: 'normal',
+      status: 'New',
+      assigned_to: userId,
+    });
+    setAddingClient(false);
+    if (error) {
+      setAddClientError(error.code === '23505' ? 'A lead with this website already exists, so nothing was added.' : error.message);
+      return;
+    }
+    setNewClient(EMPTY_CLIENT);
+    setAddClientOpen(false);
+    setAssignmentFilter('manager');
+    setRefreshVersion(version => version + 1);
+  };
+
   const exportLeads = async () => {
     setExporting(true);
     setErrorMsg('');
@@ -293,13 +333,7 @@ export default function ManagerDashboard({ userId }: Props) {
       }
       const searchQuery = leadSearch.toLowerCase();
       const rows = (data ?? []).filter(row => {
-        const assignedTo = row.assigned_to as string | null;
-        const matchesAssignment = assignmentFilter === 'all'
-          ? true
-          : assignmentFilter === 'unassigned'
-            ? !assignedTo
-            : assignedTo === userId;
-        return matchesAssignment
+        return matchesAssignment(row.assigned_to as string | null)
           && (!searchQuery || String(row.name ?? '').toLowerCase().includes(searchQuery) || String(row.phone ?? '').includes(searchQuery) || String(row.company ?? '').toLowerCase().includes(searchQuery))
           && (!leadStatus || row.status === leadStatus)
           && (!leadCountry || row.region === leadCountry)
@@ -429,7 +463,8 @@ export default function ManagerDashboard({ userId }: Props) {
           <Select value={leadType} onChange={setLeadType} options={ROLE_TYPE_OPTIONS} className="w-36" />
           <Select value={leadQuality} onChange={setLeadQuality} options={ROLE_QUALITY_OPTIONS} className="w-36" />
           <Select value={leadPhone} onChange={setLeadPhone} options={ROLE_PHONE_OPTIONS} className="w-36" />
-          <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: 'all', label: 'All' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
+          <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: 'all', label: 'All' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'team', label: 'My team' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
+          <Button variant="primary" size="sm" onClick={() => { setAddClientError(''); setAddClientOpen(true); }}>{t('+ Add Lead')}</Button>
           {can('leads.export') && <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? t('Exporting...') : t('Export Excel')}</Button>}
         </div>
         {poolLeads.length === 0 ? (
@@ -567,6 +602,35 @@ export default function ManagerDashboard({ userId }: Props) {
           </div>
         </div>
       </Modal>
+
+      <Modal open={addClientOpen} onClose={() => setAddClientOpen(false)} title="Add Lead">
+        <div className="space-y-3">
+          {addClientError && <div role="alert" className="rounded border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-400 anim-shake">{t(addClientError)}</div>}
+          {([
+            ['name', 'Name *'],
+            ['phone', 'Phone'],
+            ['company', 'Company'],
+            ['website', 'Website'],
+            ['region', 'Country'],
+          ] as const).map(([key, label]) => (
+            <label key={key} className="block text-xs text-[#a0a0a0]">{t(label)}
+              <input
+                value={newClient[key]}
+                onChange={e => setNewClient(prev => ({ ...prev, [key]: e.target.value }))}
+                dir={key === 'phone' || key === 'website' ? 'ltr' : 'auto'}
+                className="mt-1 w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60"
+              />
+            </label>
+          ))}
+          <p className="text-[11px] text-[#6b6b6b]">{t('The client is assigned to you; you can work it or distribute it to your team.')}</p>
+          <div className="flex gap-2 pt-1">
+            <Button variant="primary" disabled={!newClient.name.trim() || addingClient} onClick={() => void addClient()}>{addingClient ? t('Saving...') : t('Add Lead')}</Button>
+            <Button variant="ghost" onClick={() => setAddClientOpen(false)}>{t('Cancel')}</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
+
+const EMPTY_CLIENT = { name: '', phone: '', company: '', website: '', region: '' };

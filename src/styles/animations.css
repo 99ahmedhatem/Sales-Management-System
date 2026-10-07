@@ -48,18 +48,18 @@
 
 @layer components {
 /* Page transition */
-.anim-page { animation: anim-fade-up 0.28s ease-out both; }
+.anim-page { animation: anim-fade-up 0.28s ease-out backwards; }
 
 /* Modals */
-.anim-backdrop { animation: anim-fade-in 0.2s ease-out both; }
-.anim-modal { animation: anim-pop 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.anim-backdrop { animation: anim-fade-in 0.2s ease-out backwards; }
+.anim-modal { animation: anim-pop 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
 
 /* Banners */
-.anim-banner { animation: anim-slide-down 0.25s ease-out both; }
-.anim-shake { animation: anim-slide-down 0.25s ease-out both, anim-shake-kf 0.4s ease-in-out 0.25s; }
+.anim-banner { animation: anim-slide-down 0.25s ease-out backwards; }
+.anim-shake { animation: anim-slide-down 0.25s ease-out backwards, anim-shake-kf 0.4s ease-in-out 0.25s; }
 
 /* Table rows: first rows stagger in, the rest just fade */
-.anim-rows tbody tr { animation: anim-fade-in 0.3s ease-out both; }
+.anim-rows tbody tr { animation: anim-fade-in 0.3s ease-out backwards; }
 .anim-rows tbody tr:nth-child(1) { animation-delay: 0ms; }
 .anim-rows tbody tr:nth-child(2) { animation-delay: 25ms; }
 .anim-rows tbody tr:nth-child(3) { animation-delay: 50ms; }
@@ -71,7 +71,7 @@
 .anim-rows tbody tr:nth-child(n + 9) { animation-delay: 200ms; }
 
 /* KPI cards */
-.anim-card { animation: anim-fade-up 0.35s ease-out both; }
+.anim-card { animation: anim-fade-up 0.35s ease-out backwards; }
 .anim-stagger > .anim-card:nth-child(1), .anim-stagger > :nth-child(1) .anim-card { animation-delay: 0ms; }
 .anim-stagger > .anim-card:nth-child(2), .anim-stagger > :nth-child(2) .anim-card { animation-delay: 50ms; }
 .anim-stagger > .anim-card:nth-child(3), .anim-stagger > :nth-child(3) .anim-card { animation-delay: 100ms; }
@@ -81,7 +81,7 @@
 .anim-stagger > .anim-card:nth-child(n + 7), .anim-stagger > :nth-child(n + 7) .anim-card { animation-delay: 300ms; }
 
 /* Progress bars (grow from the start edge, RTL aware) */
-.anim-bar { transform-origin: left center; animation: anim-grow-x 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.anim-bar { transform-origin: left center; animation: anim-grow-x 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
 [dir='rtl'] .anim-bar { transform-origin: right center; }
 
 /* Spinner */
@@ -96,7 +96,7 @@
 }
 
 /* Mobile drawer */
-.anim-drawer { animation: anim-drawer-ltr 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.anim-drawer { animation: anim-drawer-ltr 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
 [dir='rtl'] .anim-drawer { animation-name: anim-drawer-rtl; }
 
 /* Unread dot */

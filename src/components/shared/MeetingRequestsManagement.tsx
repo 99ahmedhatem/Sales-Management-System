@@ -11,6 +11,7 @@ import { useI18n } from "../../i18n/I18nProvider"
 import { dateLocale } from "../../i18n/locale"
 import { ClientLink } from "./AppOverlays"
 import ClientContact from "./ClientContact"
+import { useScopeFilter } from "./ScopeFilter"
 
 const PAGE_SIZE = 20
 
@@ -22,10 +23,15 @@ interface SalesUser {
 interface Props {
   role: "admin" | "manager"
   userId: string
+  /** Scope chosen by the parent page (AdminMeetings); without it this card shows its own filter. */
+  participantIds?: string[] | null
 }
 
-export default function MeetingRequestsManagement({ role, userId }: Props) {
+export default function MeetingRequestsManagement({ role, userId, participantIds }: Props) {
   const { t, lang } = useI18n()
+  const ownScope = useScopeFilter(role, userId)
+  const scopeIds = participantIds === undefined ? ownScope.userIds : participantIds
+  const scopeKey = scopeIds ? scopeIds.join(",") : ""
   const [requests, setRequests] = useState<MeetingRequest[]>([])
   const [salesUsers, setSalesUsers] = useState<SalesUser[]>([])
   const [targetSalesByRequest, setTargetSalesByRequest] = useState<
@@ -37,6 +43,8 @@ export default function MeetingRequestsManagement({ role, userId }: Props) {
   const [updatingId, setUpdatingId] = useState("")
   const [error, setError] = useState("")
   const [refreshVersion, setRefreshVersion] = useState(0)
+
+  useEffect(() => setPage(0), [scopeKey])
 
   useEffect(() => {
     let active = true
@@ -54,7 +62,7 @@ export default function MeetingRequestsManagement({ role, userId }: Props) {
         usersQuery = usersQuery.eq("manager_id", userId)
       }
       const [requestsResult, usersResult] = await Promise.all([
-        loadManageableMeetingRequestsPage({ page, pageSize: PAGE_SIZE }),
+        loadManageableMeetingRequestsPage({ page, pageSize: PAGE_SIZE, participantIds: scopeIds }),
         usersQuery,
       ])
       if (!active) return
@@ -84,7 +92,8 @@ export default function MeetingRequestsManagement({ role, userId }: Props) {
     return () => {
       active = false
     }
-  }, [page, refreshVersion, role, userId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, refreshVersion, role, userId, scopeKey])
 
   useRealtimeRefresh(["meeting_requests"], () =>
     setRefreshVersion((version) => version + 1),
@@ -120,9 +129,12 @@ export default function MeetingRequestsManagement({ role, userId }: Props) {
             {role === "admin" ? t("All teams") : t("Your team")}
           </p>
         </div>
-        <span className="rounded bg-[#ffc832]/10 px-2 py-1 text-xs text-[#ffc832]">
-          {t("{n} pending", { n: total })}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {participantIds === undefined && ownScope.element}
+          <span className="rounded bg-[#ffc832]/10 px-2 py-1 text-xs text-[#ffc832]">
+            {t("{n} pending", { n: total })}
+          </span>
+        </div>
       </div>
       {error && (
         <div

@@ -352,6 +352,11 @@ const telesalesNav: NavItem[] = [
   },
 ]
 
+/** Admin and manager also work leads and meetings themselves (061): same pages as telesales / sales. */
+const myQueueNavItem: NavItem = { ...telesalesNav[0], key: "myqueue", label: "My Queue" }
+
+const myMeetingsNavItem: NavItem = { ...salesNav[0], key: "mymeetings", label: "My Meetings" }
+
 const packagesNavItem: NavItem = {
   key: "packages",
 
@@ -470,9 +475,9 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
 
   const allNav =
     role === "manager"
-      ? [...roleNav, teamNavItem, packagesNavItem, profileNavItem]
+      ? [...roleNav, myQueueNavItem, myMeetingsNavItem, teamNavItem, packagesNavItem, profileNavItem]
       : role === "admin"
-        ? [...roleNav, teamNavItem, packagesNavItem, whatsappNavItem, discoveryNavItem, permissionsNavItem, profileNavItem]
+        ? [...roleNav, myQueueNavItem, myMeetingsNavItem, teamNavItem, packagesNavItem, whatsappNavItem, discoveryNavItem, permissionsNavItem, profileNavItem]
         : [...roleNav, earningsNavItem, packagesNavItem, profileNavItem]
 
   // Packages: admin manages them (packages.manage); other roles get a read-only list (packages.view, 047).

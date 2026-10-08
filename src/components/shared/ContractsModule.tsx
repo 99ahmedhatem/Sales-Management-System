@@ -14,6 +14,7 @@ import { supabase } from "../../supabaseClient"
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 import { Button, Card, Modal, Pagination, SearchInput, StatusBadge, Table, Td, Tr } from "../ui"
 import DealCreateModal from "./DealCreateModal"
+import { useScopeFilter } from "./ScopeFilter"
 import { useI18n } from "../../i18n/I18nProvider"
 import { ClientLink } from "./AppOverlays"
 import { DealInstallments } from "./Installments"
@@ -72,10 +73,15 @@ export default function ContractsModule({ userId, role }: Props) {
   const [signingUrls, setSigningUrls] = useState(false)
   const [uploadingContract, setUploadingContract] = useState(false)
 
+  const scope = useScopeFilter(role, userId)
+  const { scopeKey } = scope
+  const scopeIds = scope.userIds
+  useEffect(() => setPage(0), [scopeKey])
+
   const load = useCallback(async () => {
     setLoading(true)
     setError("")
-    const result = await loadDealsPage(page, PAGE_SIZE)
+    const result = await loadDealsPage(page, PAGE_SIZE, undefined, scopeIds)
     if (result.error || result.data === null) {
       setDeals([])
       setTotal(0)
@@ -85,7 +91,8 @@ export default function ContractsModule({ userId, role }: Props) {
       setTotal(result.count)
     }
     setLoading(false)
-  }, [page])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, scopeKey])
 
   useEffect(() => {
     void load()
@@ -182,7 +189,7 @@ export default function ContractsModule({ userId, role }: Props) {
       deal.packageName.toLowerCase().includes(query)
     )
   })
-  const canCreateDeal = (role === "sales" || role === "telesales" || role === "manager") && can("deals.create")
+  const canCreateDeal = can("deals.create")
   const canUploadContract =
     canCreateDeal && selectedDeal?.closedByUserId === userId
   const canApprove = (role === "admin" || role === "manager") && can("deals.approve")
@@ -270,9 +277,12 @@ export default function ContractsModule({ userId, role }: Props) {
           <h1 className="text-2xl font-bold text-white">{t("Deals & Contracts")}</h1>
           <p className="mt-0.5 text-sm text-[#6b6b6b]">{t("{n} deals visible to your account", { n: total })}</p>
         </div>
-        {canCreateDeal && (
-          <Button onClick={() => setCreateOpen(true)}>{t("+ New Deal")}</Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {scope.element}
+          {canCreateDeal && (
+            <Button onClick={() => setCreateOpen(true)}>{t("+ New Deal")}</Button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -339,8 +349,10 @@ export default function ContractsModule({ userId, role }: Props) {
                   <div className="font-mono text-xs text-[#6b6b6b]">{t("to {date}", { date: deal.endDate })}</div>
                 </Td>
                 <Td>
-                  <div className="text-xs text-white">{deal.salesName || deal.telesalesName}</div>
-                  {deal.salesName && <div className="text-xs text-[#6b6b6b]">{t("Telesales: {name}", { name: deal.telesalesName })}</div>}
+                  <div className="text-xs text-white">{deal.closedByName || deal.salesName || deal.telesalesName}</div>
+                  {deal.telesalesUserId !== deal.closedByUserId && (
+                    <div className="text-xs text-[#6b6b6b]">{t("Client owner: {name}", { name: deal.telesalesName || "—" })}</div>
+                  )}
                 </Td>
                 <Td><StatusBadge status={STATUS_LABELS[deal.status]} /></Td>
                 <Td><Button variant="secondary" size="sm" onClick={() => { setError(""); setSelectedDeal(deal) }}>{t("Details")}</Button></Td>
@@ -377,8 +389,8 @@ export default function ContractsModule({ userId, role }: Props) {
                 ["Closing price", formatSar.format(selectedDeal.priceSar)],
                 ["Start date", selectedDeal.startDate],
                 ["End date", selectedDeal.endDate],
-                ["Sales", selectedDeal.salesName || t("Self-closed by telesales")],
-                ["Telesales", selectedDeal.telesalesName],
+                ["Closed by", selectedDeal.closedByName || selectedDeal.salesName || "—"],
+                ["Client owner", selectedDeal.telesalesName || "—"],
               ].map(([label, value]) => (
                 <div key={label} className="rounded bg-[#1a1a1a] p-3">
                   <div className="text-xs text-[#6b6b6b]">{t(label)}</div>
@@ -540,7 +552,7 @@ export default function ContractsModule({ userId, role }: Props) {
           open={createOpen}
           onClose={() => setCreateOpen(false)}
           onCreated={() => void load()}
-          role={role === "manager" ? "manager" : undefined}
+          role={role === "manager" || role === "admin" ? role : undefined}
         />
       )}
     </div>

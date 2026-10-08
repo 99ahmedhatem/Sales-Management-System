@@ -13,6 +13,7 @@ import { useI18n } from "../../i18n/I18nProvider"
 import { dateLocale } from "../../i18n/locale"
 import { ClientLink } from "../shared/AppOverlays"
 import { ClientCodeBadge, PhoneActions } from "../shared/ClientContact"
+import { useScopeFilter } from "../shared/ScopeFilter"
 
 import {
   Avatar,
@@ -71,6 +72,10 @@ export default function AdminMeetings({ userId }: Props) {
 
   const [refreshVersion, setRefreshVersion] = useState(0)
 
+  const scope = useScopeFilter("admin", userId)
+
+  useEffect(() => setPage(0), [scope.scopeKey])
+
   async function loadMeetings() {
     setLoading(true)
 
@@ -82,6 +87,7 @@ export default function AdminMeetings({ userId }: Props) {
           page,
           pageSize: PAGE_SIZE,
           outcome: filter || undefined,
+          participantIds: scope.userIds,
         }),
 
         supabase
@@ -139,7 +145,7 @@ export default function AdminMeetings({ userId }: Props) {
 
   useEffect(() => {
     loadMeetings()
-  }, [page, filter, refreshVersion])
+  }, [page, filter, refreshVersion, scope.scopeKey])
 
   useRealtimeRefresh(["meetings"], () =>
     setRefreshVersion((version) => version + 1),
@@ -178,11 +184,14 @@ export default function AdminMeetings({ userId }: Props) {
 
   return (
     <div className="p-6 space-y-4">
-      <div>
-        <h1 className="text-white text-2xl font-bold">{t("Meetings")}</h1>
-        <p className="text-[#6b6b6b] text-sm mt-0.5">
-          {t("{a} upcoming · {b} won · {c} lost", { a: scheduledCount, b: wonCount, c: lostCount })}
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-white text-2xl font-bold">{t("Meetings")}</h1>
+          <p className="text-[#6b6b6b] text-sm mt-0.5">
+            {t("{a} upcoming · {b} won · {c} lost", { a: scheduledCount, b: wonCount, c: lostCount })}
+          </p>
+        </div>
+        {scope.element}
       </div>
 
       {error && (
@@ -216,7 +225,7 @@ export default function AdminMeetings({ userId }: Props) {
         ))}
       </div>
 
-      <MeetingRequestsManagement role="admin" userId={userId} />
+      <MeetingRequestsManagement role="admin" userId={userId} participantIds={scope.userIds} />
 
       <div className="flex gap-3">
         <Select

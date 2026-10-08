@@ -32,6 +32,8 @@ Lead (owned by TELESALES only; never reassigned to sales)
 
 Telesales may also close a deal himself (`create_deal` as telesales): `closed_by_user_id` = telesales, `sales_user_id` = null.
 
+Admin and manager work too (061 — SQL **not in the repo yet**, save it as the next numbered file when you have it): `request_meeting` host can be sales, manager or admin (even himself); `accept_/decline_meeting_request` by whoever the request is assigned to (admin: any); `create_deal` / `create_custom_deal` for a manager on his + his team's clients, admin on any. Pages: "My Queue" (`myqueue` → `TelesalesDashboard role=…`) and "My Meetings" (`mymeetings` → `SalesDashboard role=…`). Never assume a deal/meeting participant is sales or telesales: show the user's name (`closed_by_user_id` = closer, `telesales_user_id` = client owner). Lists for admin/manager use `useScopeFilter()` (`src/components/shared/ScopeFilter.tsx`).
+
 ## Key tables (see migrations for full columns)
 
 - `deals`: `lead_id, package_id, sales_user_id, telesales_user_id, closed_by_user_id, price_sar (closing price), list_price_sar, min_price_sar, below_min_price, start_date, end_date, recording_path, contract_path, status (draft|contract_uploaded|pending_approval|approved|active|cancelled), approved_by, approved_at, fx_at_approval`

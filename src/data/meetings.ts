@@ -1,4 +1,5 @@
 import { supabase } from "../supabaseClient"
+import { participantFilter } from "../lib/participantFilter"
 
 import { MeetingOutcome } from "./crmTypes"
 
@@ -242,6 +243,9 @@ export async function loadMeetingsPage(options: {
   outcome?: MeetingOutcome
 
   proposedAfter?: string
+
+  /** Meetings this user hosts or booked (admin / manager scope filter). */
+  participantIds?: string[] | null
 }): Promise<LoadResult<Meeting[]>> {
   let query = supabase
 
@@ -261,6 +265,9 @@ export async function loadMeetingsPage(options: {
     query = query.in("assigned_sales_id", options.assignedSalesIds)
 
   if (options.outcome) query = query.eq("outcome", options.outcome)
+
+  if (options.participantIds?.length)
+    query = query.or(participantFilter(["assigned_sales_id", "booked_by"], options.participantIds))
 
   if (options.proposedAfter)
     query = query.gte("proposed_date", options.proposedAfter)
@@ -339,15 +346,20 @@ export async function loadMeetingRequestsPage(options: {
 export async function loadManageableMeetingRequestsPage(options: {
   page: number;
   pageSize: number;
+  /** Requests this user sent or must answer (admin / manager scope filter). */
+  participantIds?: string[] | null;
 }): Promise<LoadResult<MeetingRequest[]>> {
   const from = options.page * options.pageSize;
-  const { data, error, count } = await supabase
+  let query = supabase
     .from("meeting_requests")
     .select(
       REQUEST_COLUMNS,
       { count: "exact" },
     )
-    .eq("status", "pending")
+    .eq("status", "pending");
+  if (options.participantIds?.length)
+    query = query.or(participantFilter(["requested_by", "assigned_sales_id"], options.participantIds));
+  const { data, error, count } = await query
     .order("created_at", { ascending: false })
     .range(from, from + options.pageSize - 1);
 

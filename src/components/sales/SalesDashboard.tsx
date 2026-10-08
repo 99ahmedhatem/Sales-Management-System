@@ -35,6 +35,7 @@ import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 
 import { useI18n } from "../../i18n/I18nProvider"
 import { ClientLink } from "../shared/AppOverlays"
+import ClientContact, { ClientCodeBadge, PhoneActions } from "../shared/ClientContact"
 
 import { dateLocale } from "../../i18n/locale"
 
@@ -289,13 +290,13 @@ export default function SalesDashboard({ userId }: Props) {
           data?.customer_number ? String(data.customer_number) : "",
         )
 
-        setCustomerWebsite(data?.website ?? undefined)
+        setCustomerWebsite(data?.website ?? (detail.leadWebsite || undefined))
 
         setCustomerQuantity(data?.quantity ?? 0)
 
-        setCustomerPhone(data?.phone ?? "")
+        setCustomerPhone(data?.phone ?? detail.leadPhone)
 
-        setCustomerPhoneInput(data?.phone ?? "")
+        setCustomerPhoneInput(data?.phone ?? detail.leadPhone)
       })
   }, [detail?.leadId])
 
@@ -503,12 +504,13 @@ export default function SalesDashboard({ userId }: Props) {
   }
 
   const displayed = meetings.filter((meeting) => {
-    const query = search.toLowerCase()
+    const query = search.trim().toLowerCase()
 
     return (
       !query ||
       meeting.leadName.toLowerCase().includes(query) ||
-      meeting.leadPhone.includes(query)
+      meeting.leadPhone.includes(query) ||
+      meeting.clientCode.toLowerCase().includes(query)
     )
   })
 
@@ -583,7 +585,7 @@ export default function SalesDashboard({ userId }: Props) {
           <SearchInput
             value={search}
             onChange={setSearch}
-            placeholder="Search client or phone on this page..."
+            placeholder="Search client, phone or code on this page..."
           />
           {tab === "all" && (
             <Select
@@ -624,11 +626,15 @@ export default function SalesDashboard({ userId }: Props) {
                 >
                   <div>
                     <div className="font-medium text-white">
-                      {request.leadName}
+                      <ClientLink leadId={request.leadId}>{request.leadName}</ClientLink>
                     </div>
-                    <div className="mt-1 font-mono text-xs text-[#a0a0a0]" dir="ltr">
-                      {request.leadPhone}
-                    </div>
+                    <ClientContact
+                      leadId={request.leadId}
+                      phone={request.leadPhone}
+                      code={request.clientCode}
+                      website={request.leadWebsite}
+                      phoneClassName="text-[#a0a0a0]"
+                    />
                     <div className="mt-2 text-sm text-[#a0a0a0]">
                       {request.notes || t("No additional notes.")}
                     </div>
@@ -712,9 +718,13 @@ export default function SalesDashboard({ userId }: Props) {
                     <h3 className="text-white font-semibold text-base">
                       <ClientLink leadId={m.leadId}>{m.leadName}</ClientLink>
                     </h3>
-                    <p className="text-[#dfff03] font-mono text-sm mt-0.5" dir="ltr">
-                      {m.leadPhone}
-                    </p>
+                    <ClientContact
+                      leadId={m.leadId}
+                      phone={m.leadPhone}
+                      code={m.clientCode}
+                      website={m.leadWebsite}
+                      phoneClassName="text-[#dfff03] text-sm"
+                    />
                   </div>
                   <StatusBadge status={m.outcome} />
                 </div>
@@ -790,9 +800,10 @@ export default function SalesDashboard({ userId }: Props) {
                 <Tr key={m.id} onClick={() => setDetail(m)}>
                   <Td>
                     <ClientLink leadId={m.leadId} className="font-medium text-white">{m.leadName}</ClientLink>
+                    <div className="mt-1"><ClientCodeBadge code={m.clientCode} /></div>
                   </Td>
                   <Td>
-                    <span className="font-mono text-xs" dir="ltr">{m.leadPhone}</span>
+                    <PhoneActions phone={m.leadPhone} leadId={m.leadId} className="text-xs" />
                   </Td>
                   <Td>
                     <span className="font-mono text-xs text-[#dfff03]">
@@ -942,11 +953,16 @@ export default function SalesDashboard({ userId }: Props) {
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
+              <div className="bg-[#1a1a1a] rounded p-3">
+                <div className="text-[#6b6b6b] text-xs mb-1">{t("Client")}</div>
+                <div className="text-white text-sm font-medium">{detail.leadName}</div>
+                <div className="mt-1"><ClientCodeBadge code={detail.clientCode} /></div>
+              </div>
+              <div className="bg-[#1a1a1a] rounded p-3">
+                <div className="text-[#6b6b6b] text-xs mb-1">{t("Phone")}</div>
+                <PhoneActions phone={detail.leadPhone} leadId={detail.leadId} className="text-white text-sm" />
+              </div>
               {[
-                ["Client", detail.leadName],
-
-                ["Phone", detail.leadPhone],
-
                 ["Scheduled", detail.proposedDate],
 
                 ["Created", detail.createdAt],

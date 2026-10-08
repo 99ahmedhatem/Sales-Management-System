@@ -11,6 +11,10 @@ export interface Meeting {
 
   leadPhone: string
 
+  clientCode: string
+
+  leadWebsite: string
+
   telesalesNotes: string
 
   assignedSalesId: string
@@ -44,6 +48,15 @@ export interface MeetingRow {
   outcome: MeetingOutcome
 
   created_at: string
+
+  /** Snapshot of the lead (056) — readable even when RLS hides the lead from sales. */
+  lead_name: string | null
+
+  lead_phone: string | null
+
+  client_code: string | null
+
+  lead_website: string | null
 }
 
 export interface MeetingRequest {
@@ -54,6 +67,10 @@ export interface MeetingRequest {
   leadName: string
 
   leadPhone: string
+
+  clientCode: string
+
+  leadWebsite: string
 
   requestedBy: string
 
@@ -84,14 +101,14 @@ export interface MeetingRequestRow {
   preferred_date: string | null
 
   created_at: string
-}
 
-interface LeadSummaryRow {
-  id: string
+  lead_name: string | null
 
-  name: string
+  lead_phone: string | null
 
-  phone: string | null
+  client_code: string | null
+
+  lead_website: string | null
 }
 
 interface UserSummaryRow {
@@ -101,7 +118,6 @@ interface UserSummaryRow {
 }
 
 type SummaryResult = {
-  leads: Map<string, LeadSummaryRow>
   users: Map<string, string>
   error: null
 } | { error: string }
@@ -112,23 +128,37 @@ export type LoadResult<T> = { data: T; count: number; error: null } | {
   error: string
 }
 
+type LeadSnapshot = Pick<
+  MeetingRow,
+  "lead_name" | "lead_phone" | "client_code" | "lead_website"
+> & { notes?: string | null }
+
+const URL_IN_TEXT = /(?:https?:\/\/|www\.)[^\s]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|sa|store|shop|co|io|me|online|site|app|ae|eg)(?:\/[^\s]*)?(?=[\s,.]|$)/i
+
+/** Name, phone, code and website read from the snapshot on the meeting row, never from a leads join. */
+function snapshotFields(row: LeadSnapshot) {
+  const phone = row.lead_phone?.trim() ?? ""
+  const code = row.client_code?.trim() ?? ""
+  return {
+    leadName: row.lead_name?.trim() || phone || code || "Unknown lead",
+    leadPhone: phone,
+    clientCode: code,
+    leadWebsite:
+      row.lead_website?.trim() || row.notes?.match(URL_IN_TEXT)?.[0] || "",
+  }
+}
+
 export function mapMeeting(
   row: MeetingRow,
 
-  leads: Map<string, LeadSummaryRow>,
-
   users: Map<string, string>,
 ): Meeting {
-  const lead = leads.get(row.lead_id)
-
   return {
     id: row.id,
 
     leadId: row.lead_id,
 
-    leadName: lead?.name ?? "Unknown lead",
-
-    leadPhone: lead?.phone ?? "",
+    ...snapshotFields({ ...row, notes: row.telesales_notes }),
 
     telesalesNotes: row.telesales_notes ?? "",
 
@@ -151,20 +181,14 @@ export function mapMeeting(
 export function mapMeetingRequest(
   row: MeetingRequestRow,
 
-  leads: Map<string, LeadSummaryRow>,
-
   users: Map<string, string>,
 ): MeetingRequest {
-  const lead = leads.get(row.lead_id)
-
   return {
     id: row.id,
 
     leadId: row.lead_id,
 
-    leadName: lead?.name ?? "Unknown lead",
-
-    leadPhone: lead?.phone ?? "",
+    ...snapshotFields(row),
 
     requestedBy: row.requested_by,
 
@@ -182,27 +206,18 @@ export function mapMeetingRequest(
   }
 }
 
-async function loadSummaries(
-  leadIds: string[],
-  userIds: string[],
-): Promise<SummaryResult> {
-  const [leadResult, userResult] = await Promise.all([
-    leadIds.length
-      ? supabase.from("leads").select("id, name, phone").in("id", leadIds)
-      : Promise.resolve({ data: [], error: null }),
+const SNAPSHOT_COLUMNS = "lead_name, lead_phone, client_code, lead_website"
 
-    userIds.length
-      ? supabase.from("users").select("id, full_name").in("id", userIds)
-      : Promise.resolve({ data: [], error: null }),
-  ])
+export const MEETING_COLUMNS = `id, lead_id, booked_by, assigned_sales_id, proposed_date, telesales_notes, outcome, created_at, ${SNAPSHOT_COLUMNS}`
 
-  if (leadResult.error) return { error: leadResult.error.message }
+const REQUEST_COLUMNS = `id, lead_id, requested_by, assigned_sales_id, notes, preferred_date, created_at, ${SNAPSHOT_COLUMNS}`
+
+async function loadSummaries(userIds: string[]): Promise<SummaryResult> {
+  const userResult = userIds.length
+    ? await supabase.from("users").select("id, full_name").in("id", userIds)
+    : { data: [], error: null }
 
   if (userResult.error) return { error: userResult.error.message }
-
-  const leads = new Map(
-    (leadResult.data ?? []).map((row) => [row.id, row as LeadSummaryRow]),
-  )
 
   const users = new Map(
     (userResult.data ?? []).map((row) => [
@@ -211,7 +226,7 @@ async function loadSummaries(
     ]),
   )
 
-  return { leads, users, error: null }
+  return { users, error: null }
 }
 
 export async function loadMeetingsPage(options: {
@@ -233,7 +248,7 @@ export async function loadMeetingsPage(options: {
     .from("meetings")
 
     .select(
-      "id, lead_id, booked_by, assigned_sales_id, proposed_date, telesales_notes, outcome, created_at",
+      MEETING_COLUMNS,
       { count: "exact" },
     )
 
@@ -261,17 +276,15 @@ export async function loadMeetingsPage(options: {
 
   const rows = (data ?? []) as MeetingRow[]
 
-  const summaries = await loadSummaries(
-    [...new Set(rows.map((row) => row.lead_id))],
+  const summaries = await loadSummaries([
+    ...new Set(rows.flatMap((row) => [row.booked_by, row.assigned_sales_id])),
+  ])
 
-    [...new Set(rows.flatMap((row) => [row.booked_by, row.assigned_sales_id]))],
-  )
-
-  if (!("leads" in summaries))
+  if (!("users" in summaries))
     return { data: null, count: 0, error: summaries.error }
 
   return {
-    data: rows.map((row) => mapMeeting(row, summaries.leads, summaries.users)),
+    data: rows.map((row) => mapMeeting(row, summaries.users)),
     count: count ?? 0,
     error: null,
   }
@@ -291,7 +304,7 @@ export async function loadMeetingRequestsPage(options: {
     .from("meeting_requests")
 
     .select(
-      "id, lead_id, requested_by, assigned_sales_id, notes, preferred_date, created_at",
+      REQUEST_COLUMNS,
       { count: "exact" },
     )
 
@@ -307,22 +320,16 @@ export async function loadMeetingRequestsPage(options: {
 
   const rows = (data ?? []) as MeetingRequestRow[]
 
-  const summaries = await loadSummaries(
-    [...new Set(rows.map((row) => row.lead_id))],
+  const summaries = await loadSummaries([
+    ...new Set(rows.flatMap((row) => [row.requested_by, row.assigned_sales_id])),
+  ])
 
-    [
-      ...new Set(
-        rows.flatMap((row) => [row.requested_by, row.assigned_sales_id]),
-      ),
-    ],
-  )
-
-  if (!("leads" in summaries))
+  if (!("users" in summaries))
     return { data: null, count: 0, error: summaries.error }
 
   return {
     data: rows.map((row) =>
-      mapMeetingRequest(row, summaries.leads, summaries.users),
+      mapMeetingRequest(row, summaries.users),
     ),
     count: count ?? 0,
     error: null,
@@ -337,7 +344,7 @@ export async function loadManageableMeetingRequestsPage(options: {
   const { data, error, count } = await supabase
     .from("meeting_requests")
     .select(
-      "id, lead_id, requested_by, assigned_sales_id, notes, preferred_date, created_at",
+      REQUEST_COLUMNS,
       { count: "exact" },
     )
     .eq("status", "pending")
@@ -347,20 +354,15 @@ export async function loadManageableMeetingRequestsPage(options: {
   if (error) return { data: null, count: 0, error: error.message };
 
   const rows = (data ?? []) as MeetingRequestRow[];
-  const summaries = await loadSummaries(
-    [...new Set(rows.map((row) => row.lead_id))],
-    [
-      ...new Set(
-        rows.flatMap((row) => [row.requested_by, row.assigned_sales_id]),
-      ),
-    ],
-  );
-  if (!("leads" in summaries))
+  const summaries = await loadSummaries([
+    ...new Set(rows.flatMap((row) => [row.requested_by, row.assigned_sales_id])),
+  ]);
+  if (!("users" in summaries))
     return { data: null, count: 0, error: summaries.error };
 
   return {
     data: rows.map((row) =>
-      mapMeetingRequest(row, summaries.leads, summaries.users),
+      mapMeetingRequest(row, summaries.users),
     ),
     count: count ?? 0,
     error: null,

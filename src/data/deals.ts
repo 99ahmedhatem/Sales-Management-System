@@ -20,7 +20,9 @@ export interface Deal {
   telesalesUserId: string
   telesalesName: string
   closedByUserId: string
-  packageId: string
+  /** null = custom service (create_custom_deal, 056); packageName holds the service name. */
+  packageId: string | null
+  isCustomService: boolean
   packageName: string
   packageDurationMonths: number
   listPriceSar: number
@@ -45,7 +47,7 @@ export interface DealRow {
   sales_user_id: string | null
   telesales_user_id: string
   closed_by_user_id: string
-  package_id: string
+  package_id: string | null
   package_name: string
   package_duration_months: number
   list_price_sar: number | string
@@ -72,7 +74,7 @@ export function mapDeal(row: DealRow, summaries: DealSummaryMaps): Deal {
   return {
     id: row.id,
     leadId: row.lead_id,
-    leadName: lead?.name ?? "Unknown lead",
+    leadName: lead?.name || "Unknown lead",
     leadPhone: lead?.phone ?? "",
     salesUserId: row.sales_user_id,
     salesName: row.sales_user_id
@@ -82,6 +84,7 @@ export function mapDeal(row: DealRow, summaries: DealSummaryMaps): Deal {
     telesalesName: summaries.users.get(row.telesales_user_id) ?? "",
     closedByUserId: row.closed_by_user_id,
     packageId: row.package_id,
+    isCustomService: row.package_id === null,
     packageName: row.package_name,
     packageDurationMonths: row.package_duration_months,
     listPriceSar: Number(row.list_price_sar),
@@ -138,13 +141,29 @@ export async function loadDealsPage(page: number, pageSize: number, onlyId?: str
   if (leadResult.error) return { data: null, count: 0, error: leadResult.error.message }
   if (userResult.error) return { data: null, count: 0, error: userResult.error.message }
 
+  const leads = new Map<string, { name: string; phone: string | null }>(
+    (leadResult.data ?? []).map((lead) => [lead.id, { name: lead.name, phone: lead.phone }]),
+  )
+  // Sales can't read the telesales lead (RLS): use the copy kept on their meeting (056).
+  const hiddenLeadIds = leadIds.filter((id) => !leads.has(id))
+  if (hiddenLeadIds.length) {
+    const { data: meetingRows, error: meetingError } = await supabase
+      .from("meetings")
+      .select("lead_id, lead_name, lead_phone, client_code")
+      .in("lead_id", hiddenLeadIds)
+      .range(0, hiddenLeadIds.length * 5)
+    if (meetingError) return { data: null, count: 0, error: meetingError.message }
+    for (const row of meetingRows ?? []) {
+      if (leads.has(row.lead_id)) continue
+      leads.set(row.lead_id, {
+        name: row.lead_name || row.lead_phone || row.client_code || "",
+        phone: row.lead_phone,
+      })
+    }
+  }
+
   const summaries: DealSummaryMaps = {
-    leads: new Map(
-      (leadResult.data ?? []).map((lead) => [
-        lead.id,
-        { name: lead.name, phone: lead.phone },
-      ]),
-    ),
+    leads,
     users: new Map(
       (userResult.data ?? []).map((user) => [user.id, user.full_name]),
     ),

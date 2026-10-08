@@ -12,6 +12,7 @@ import MeetingRequestsManagement from "../shared/MeetingRequestsManagement"
 import { useI18n } from "../../i18n/I18nProvider"
 import { dateLocale } from "../../i18n/locale"
 import { ClientLink } from "../shared/AppOverlays"
+import { ClientCodeBadge, PhoneActions } from "../shared/ClientContact"
 
 import {
   Avatar,
@@ -256,9 +257,10 @@ export default function AdminMeetings({ userId }: Props) {
                   <ClientLink leadId={meeting.leadId} className="font-medium text-white">
                     {meeting.leadName}
                   </ClientLink>
+                  <div className="mt-1"><ClientCodeBadge code={meeting.clientCode} /></div>
                 </Td>
                 <Td>
-                  <span className="font-mono text-xs" dir="ltr">{meeting.leadPhone}</span>
+                  <PhoneActions phone={meeting.leadPhone} leadId={meeting.leadId} className="text-xs" />
                 </Td>
                 <Td>
                   <div className="flex items-center gap-2">
@@ -321,7 +323,7 @@ export default function AdminMeetings({ userId }: Props) {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               {[
-                ["Client", detail.leadName],
+                ["Client", detail.clientCode ? `${detail.leadName} · ${detail.clientCode}` : detail.leadName],
 
                 ["Phone", detail.leadPhone],
 

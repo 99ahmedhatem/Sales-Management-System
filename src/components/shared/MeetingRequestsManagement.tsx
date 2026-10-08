@@ -10,6 +10,7 @@ import { Avatar, Button, Card, Pagination, Select } from "../ui"
 import { useI18n } from "../../i18n/I18nProvider"
 import { dateLocale } from "../../i18n/locale"
 import { ClientLink } from "./AppOverlays"
+import ClientContact from "./ClientContact"
 
 const PAGE_SIZE = 20
 
@@ -151,9 +152,13 @@ export default function MeetingRequestsManagement({ role, userId }: Props) {
               >
                 <div className="min-w-0">
                   <div className="font-medium text-white"><ClientLink leadId={request.leadId}>{request.leadName}</ClientLink></div>
-                  <div className="mt-1 font-mono text-xs text-[#a0a0a0]" dir="ltr">
-                    {request.leadPhone}
-                  </div>
+                  <ClientContact
+                    leadId={request.leadId}
+                    phone={request.leadPhone}
+                    code={request.clientCode}
+                    website={request.leadWebsite}
+                    phoneClassName="text-[#a0a0a0]"
+                  />
                   <div className="mt-2 text-sm text-[#a0a0a0]">
                     {request.notes || t("No additional notes.")}
                   </div>

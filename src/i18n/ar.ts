@@ -1146,4 +1146,5 @@ export const ar: Record<string, string> = {
   "Client owner: {name}": "صاحب العميل: {name}",
   "Closed by": "أغلقها",
   "Client owner": "صاحب العميل",
+  "Closer (admin)": "المُغلِق (أدمن)",
 };

@@ -60,6 +60,7 @@ export function StatusBadge({ status }: { status: string }) {
     'Deal Lost': 'meeting-lost',
     'Rescheduled': 'meeting-rescheduled',
     'No-Show': 'meeting-noshow',
+    'Attended': 'status-interested',
     'active': 'status-interested',
     'inactive': 'status-not-interested',
     'Draft': 'status-assigned',

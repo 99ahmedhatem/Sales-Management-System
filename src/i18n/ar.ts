@@ -1148,6 +1148,8 @@ export const ar: Record<string, string> = {
   "Client owner": "صاحب العميل",
   "Closer (admin)": "المُغلِق (أدمن)",
   "Attended — {time}": "حضرت — {time}",
+  "Meeting done": "تم الاجتماع",
+  "Attended": "حضر",
   "Undo": "تراجع",
   "The meeting time has not come yet": "ميعاد الاجتماع لسه ماجاش",
   "I attended the meeting": "حضرت الاجتماع",

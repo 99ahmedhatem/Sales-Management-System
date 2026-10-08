@@ -233,6 +233,9 @@ export function mapMeetingRequest(
   }
 }
 
+/** Outcomes that still count as "upcoming" while the meeting is not attended. */
+export const UPCOMING_OUTCOMES: MeetingOutcome[] = ["Scheduled", "Rescheduled"]
+
 const SNAPSHOT_COLUMNS = "lead_name, lead_phone, client_code, lead_website"
 
 export const MEETING_COLUMNS = `id, lead_id, booked_by, assigned_sales_id, proposed_date, telesales_notes, outcome, created_at, attended_at, attended_by, meeting_link, link_sent_at, ${SNAPSHOT_COLUMNS}`
@@ -272,6 +275,9 @@ export async function loadMeetingsPage(options: {
 
   /** Meetings this user hosts or booked (admin / manager scope filter). */
   participantIds?: string[] | null
+
+  /** "Upcoming": not attended yet and still Scheduled / Rescheduled (soonest first). */
+  upcoming?: boolean
 }): Promise<LoadResult<Meeting[]>> {
   let query = supabase
 
@@ -282,7 +288,7 @@ export async function loadMeetingsPage(options: {
       { count: "exact" },
     )
 
-    .order("proposed_date", { ascending: options.outcome === "Scheduled" })
+    .order("proposed_date", { ascending: options.upcoming || options.outcome === "Scheduled" })
 
   if (options.assignedSalesId)
     query = query.eq("assigned_sales_id", options.assignedSalesId)
@@ -291,6 +297,9 @@ export async function loadMeetingsPage(options: {
     query = query.in("assigned_sales_id", options.assignedSalesIds)
 
   if (options.outcome) query = query.eq("outcome", options.outcome)
+
+  if (options.upcoming)
+    query = query.is("attended_at", null).in("outcome", UPCOMING_OUTCOMES)
 
   if (options.participantIds?.length)
     query = query.or(participantFilter(["assigned_sales_id", "booked_by"], options.participantIds))

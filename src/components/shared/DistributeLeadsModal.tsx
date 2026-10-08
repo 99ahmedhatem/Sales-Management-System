@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useI18n } from '../../i18n/I18nProvider';
-import { Button, Input, Modal, Select, Table, Td, Tr, useConfirm } from '../ui';
+import { Button, Input, Modal, RoleBadge, Select, Table, Td, Tr, useConfirm } from '../ui';
 
 // Stored in the database as the English name in "value"
 export const REGION_OPTIONS = [
@@ -23,7 +23,7 @@ export const QUALITY_FILTER_OPTIONS = [
   { value: 'high', label: 'Strong (قوية)' },
 ];
 
-interface Agent { id: string; fullName: string }
+interface Agent { id: string; fullName: string; role?: string }
 interface ResultRow { user_id: string | null; assigned_count: number }
 
 /** A scalar RPC result can arrive as a number, a numeric string, or a one-row table. */
@@ -39,7 +39,7 @@ const positiveInt = (value: string) => {
 };
 
 /**
- * Spreads leads evenly over active telesales. The database picks the leads (030):
+ * Spreads leads evenly over the picked recipients (telesales, managers or admins). The database picks the leads (030):
  * admin = unassigned leads to any active telesales, manager = leads assigned to the manager, to their team.
  * count_unassigned_leads previews, distribute_unassigned_leads moves them; the country filter is leads.region.
  */
@@ -66,7 +66,8 @@ export default function DistributeLeadsModal({ open, onClose, agents, onDone, ma
 
   useEffect(() => {
     if (!open) return;
-    setPicked(agents.map(a => a.id));
+    // Telesales are picked by default; admins/managers (061+) only when chosen
+    setPicked(agents.filter(a => !a.role || a.role === 'telesales').map(a => a.id));
     setMaxPer('');
     setLimit('');
     setCountry('');
@@ -173,6 +174,7 @@ export default function DistributeLeadsModal({ open, onClose, agents, onDone, ma
                     <label key={a.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] p-2.5 hover:border-[#3a3a3a]">
                       <input type="checkbox" checked={picked.includes(a.id)} onChange={() => toggle(a.id)} className="accent-[#dfff03]" />
                       <span className="text-sm text-white">{a.fullName}</span>
+                      <RoleBadge role={a.role} />
                     </label>
                   ))}
                 </div>

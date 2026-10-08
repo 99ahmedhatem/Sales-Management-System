@@ -14,6 +14,14 @@ import { dateLocale } from "../../i18n/locale"
 import { ClientLink } from "../shared/AppOverlays"
 import { ClientCodeBadge, PhoneActions } from "../shared/ClientContact"
 import { useScopeFilter } from "../shared/ScopeFilter"
+import DealCreateModal from "../shared/DealCreateModal"
+import {
+  AttendanceControl,
+  formatMeetingDate,
+  MeetingLinkField,
+  MeetingOutcomeButtons,
+  MeetingWhatsAppButton,
+} from "../shared/MeetingActions"
 
 import {
   Avatar,
@@ -66,6 +74,12 @@ export default function AdminMeetings({ userId }: Props) {
 
   const [lostCount, setLostCount] = useState(0)
 
+  const [attendedCount, setAttendedCount] = useState(0)
+
+  const [missedCount, setMissedCount] = useState(0)
+
+  const [dealLeadId, setDealLeadId] = useState<string | null>(null)
+
   const [loading, setLoading] = useState(true)
 
   const [error, setError] = useState("")
@@ -76,12 +90,20 @@ export default function AdminMeetings({ userId }: Props) {
 
   useEffect(() => setPage(0), [scope.scopeKey])
 
+  /** Optimistic change of one meeting (attendance, link, outcome) in the table and the open details. */
+  const patchMeeting = (id: string, patch: Partial<Meeting>) => {
+    setMeetings((prev) => prev.map((meeting) => (meeting.id === id ? { ...meeting, ...patch } : meeting)))
+    setDetail((prev) => (prev && prev.id === id ? { ...prev, ...patch } : prev))
+  }
+
   async function loadMeetings() {
     setLoading(true)
 
     setError("")
 
-    const [pageResult, scheduledResult, wonResult, lostResult] =
+    const now = new Date().toISOString()
+
+    const [pageResult, scheduledResult, wonResult, lostResult, attendedResult, missedResult] =
       await Promise.all([
         loadMeetingsPage({
           page,
@@ -104,18 +126,34 @@ export default function AdminMeetings({ userId }: Props) {
           .from("meetings")
           .select("id", { count: "exact", head: true })
           .eq("outcome", "Deal Lost"),
+
+        supabase
+          .from("meetings")
+          .select("id", { count: "exact", head: true })
+          .not("attended_at", "is", null),
+
+        // Time passed and nobody marked attendance
+        supabase
+          .from("meetings")
+          .select("id", { count: "exact", head: true })
+          .is("attended_at", null)
+          .lt("proposed_date", now),
       ])
 
     const firstError =
       pageResult.error ??
       scheduledResult.error?.message ??
       wonResult.error?.message ??
+      attendedResult.error?.message ??
+      missedResult.error?.message ??
       lostResult.error?.message
 
     if (
       pageResult.error ||
       scheduledResult.error ||
       wonResult.error ||
+      attendedResult.error ||
+      missedResult.error ||
       lostResult.error ||
       pageResult.data === null
     ) {
@@ -139,6 +177,10 @@ export default function AdminMeetings({ userId }: Props) {
     setWonCount(wonResult.count ?? 0)
 
     setLostCount(lostResult.count ?? 0)
+
+    setAttendedCount(attendedResult.count ?? 0)
+
+    setMissedCount(missedResult.count ?? 0)
 
     setLoading(false)
   }
@@ -203,7 +245,7 @@ export default function AdminMeetings({ userId }: Props) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 anim-stagger">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 anim-stagger">
         {[
           { label: "Scheduled", value: scheduledCount, color: "#dfff03" },
 
@@ -212,6 +254,10 @@ export default function AdminMeetings({ userId }: Props) {
           { label: "Lost", value: lostCount, color: "#ff6464" },
 
           { label: "Total", value: total, color: "#6495ed" },
+
+          { label: "Attended meetings", value: attendedCount, color: "#64dc78" },
+
+          { label: "Missed without attendance", value: missedCount, color: "#ffc832" },
         ].map((stat) => (
           <Card key={stat.label} className="p-4 text-center anim-card">
             <div
@@ -269,7 +315,10 @@ export default function AdminMeetings({ userId }: Props) {
                   <div className="mt-1"><ClientCodeBadge code={meeting.clientCode} /></div>
                 </Td>
                 <Td>
-                  <PhoneActions phone={meeting.leadPhone} leadId={meeting.leadId} className="text-xs" />
+                  <div className="flex items-center gap-1">
+                    <PhoneActions phone={meeting.leadPhone} leadId={meeting.leadId} className="text-xs" />
+                    <MeetingWhatsAppButton meeting={meeting} onChange={(patch) => patchMeeting(meeting.id, patch)} />
+                  </div>
                 </Td>
                 <Td>
                   <div className="flex items-center gap-2">
@@ -280,9 +329,12 @@ export default function AdminMeetings({ userId }: Props) {
                   </div>
                 </Td>
                 <Td>
-                  <span className="font-mono text-xs text-[#dfff03]">
-                    {new Date(meeting.proposedDate).toLocaleString(locale)}
-                  </span>
+                  <div className="text-xs text-[#dfff03]">
+                    {formatMeetingDate(meeting.proposedDate, lang)}
+                  </div>
+                  <div className="mt-1">
+                    <AttendanceControl meeting={meeting} onChange={(patch) => patchMeeting(meeting.id, patch)} />
+                  </div>
                 </Td>
                 <Td>
                   <span className="line-clamp-1 max-w-48 text-xs text-[#6b6b6b]">
@@ -338,7 +390,7 @@ export default function AdminMeetings({ userId }: Props) {
 
                 ["Sales Agent", detail.assignedSalesName || t("Sales")],
 
-                ["Date & Time", new Date(detail.proposedDate).toLocaleString(locale)],
+                ["Date & Time", formatMeetingDate(detail.proposedDate, lang)],
 
                 ["Booked By", detail.bookedByName || t("Telesales")],
 
@@ -356,6 +408,24 @@ export default function AdminMeetings({ userId }: Props) {
                 {detail.telesalesNotes || "—"}
               </div>
             </div>
+            <div className="space-y-3 rounded bg-[#1a1a1a] p-3">
+              <div className="text-xs text-[#6b6b6b]">{t("Meeting link")}</div>
+              <div className="flex items-center gap-2">
+                <MeetingLinkField meeting={detail} onChange={(patch) => patchMeeting(detail.id, patch)} />
+                <MeetingWhatsAppButton meeting={detail} onChange={(patch) => patchMeeting(detail.id, patch)} />
+              </div>
+              <AttendanceControl meeting={detail} onChange={(patch) => patchMeeting(detail.id, patch)} />
+              {detail.attendedAt && (
+                <MeetingOutcomeButtons
+                  meeting={detail}
+                  onChange={(patch) => patchMeeting(detail.id, patch)}
+                  onCloseDeal={(meeting) => {
+                    setDealLeadId(meeting.leadId)
+                    setDetail(null)
+                  }}
+                />
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-[#6b6b6b]">{t("Current Outcome:")}</span>
               <StatusBadge status={detail.outcome} />
@@ -366,6 +436,13 @@ export default function AdminMeetings({ userId }: Props) {
           </div>
         )}
       </Modal>
+      <DealCreateModal
+        open={Boolean(dealLeadId)}
+        onClose={() => setDealLeadId(null)}
+        onCreated={() => setRefreshVersion((version) => version + 1)}
+        initialLeadId={dealLeadId ?? undefined}
+        role="admin"
+      />
     </div>
   )
 }

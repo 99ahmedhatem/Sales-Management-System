@@ -21,6 +21,15 @@ import { DealCommissions } from "./DealCommissions"
 import { onOpenDeal, takePendingDealId } from "../../lib/navigation"
 import { usePermissions } from "../../hooks/usePermissions"
 
+function CustomServiceTag() {
+  const { t } = useI18n()
+  return (
+    <span className="rounded border border-[#a78bfa]/30 bg-[#a78bfa]/10 px-1.5 py-0.5 text-[10px] text-[#c4b5fd]">
+      {t("Custom service")}
+    </span>
+  )
+}
+
 interface Props {
   userId: string
   role: "admin" | "manager" | "sales" | "telesales"
@@ -315,7 +324,14 @@ export default function ContractsModule({ userId, role }: Props) {
                 </Td>
                 <Td>
                   <div className="text-white">{deal.packageName}</div>
-                  <div className="text-xs text-[#6b6b6b]">{t("{n} months · List {price}", { n: deal.packageDurationMonths, price: formatSar.format(deal.listPriceSar) })}</div>
+                  {deal.isCustomService ? (
+                    <div className="mt-0.5 flex items-center gap-2 text-xs text-[#6b6b6b]">
+                      <CustomServiceTag />
+                      {t("{n} months", { n: deal.packageDurationMonths })}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-[#6b6b6b]">{t("{n} months · List {price}", { n: deal.packageDurationMonths, price: formatSar.format(deal.listPriceSar) })}</div>
+                  )}
                 </Td>
                 <Td><span className="font-mono text-white">{formatSar.format(deal.priceSar)}</span></Td>
                 <Td>
@@ -355,9 +371,9 @@ export default function ContractsModule({ userId, role }: Props) {
               {[
                 ["Client", selectedDeal.leadName],
                 ["Phone", selectedDeal.leadPhone || "—"],
-                ["Package", selectedDeal.packageName],
+                ["Package", selectedDeal.isCustomService ? `${selectedDeal.packageName} · ${t("Custom service")}` : selectedDeal.packageName],
                 ["Duration", t("{n} months", { n: selectedDeal.packageDurationMonths })],
-                ["List price", formatSar.format(selectedDeal.listPriceSar)],
+                ["List price", selectedDeal.isCustomService ? "—" : formatSar.format(selectedDeal.listPriceSar)],
                 ["Closing price", formatSar.format(selectedDeal.priceSar)],
                 ["Start date", selectedDeal.startDate],
                 ["End date", selectedDeal.endDate],

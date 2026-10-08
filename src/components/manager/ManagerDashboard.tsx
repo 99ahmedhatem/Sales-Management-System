@@ -14,6 +14,7 @@ import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
 import { useI18n } from '../../i18n/I18nProvider';
 import { ClientLink } from '../shared/AppOverlays';
+import ClientContact from '../shared/ClientContact';
 import { usePermissions } from '../../hooks/usePermissions';
 
 const ROLE_REGION_OPTIONS = [
@@ -547,7 +548,7 @@ export default function ManagerDashboard({ userId }: Props) {
               <div key={m.id} className="flex items-center gap-4 p-3 bg-[#1a1a1a] rounded-lg">
                 <div className="flex-1">
                   <div className="text-white text-sm font-medium"><ClientLink leadId={m.leadId}>{m.leadName}</ClientLink></div>
-                  <div className="text-[#6b6b6b] text-xs" dir="ltr">{m.leadPhone}</div>
+                  <ClientContact leadId={m.leadId} phone={m.leadPhone} code={m.clientCode} phoneClassName="text-[#6b6b6b]" />
                 </div>
                 <div className="text-end">
                   <div className="text-[#dfff03] text-xs font-mono">{new Date(m.proposedDate).toLocaleString(dateLocale(lang))}</div>

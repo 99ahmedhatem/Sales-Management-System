@@ -22,6 +22,22 @@ interface LeadOption {
   id: string
   name: string
   phone: string | null
+  clientCode?: string | null
+}
+
+/** Value of the "custom service" entry in the package list (create_custom_deal, 056). */
+const CUSTOM_PACKAGE = "__custom__"
+
+/** Text safe inside a PostgREST or() filter. */
+function filterText(value: string) {
+  return value.replace(/[,()%*\\]/g, " ").trim()
+}
+
+function leadLabel(lead: LeadOption) {
+  const name = lead.name || lead.phone || lead.clientCode || "—"
+  return [name, lead.phone !== name ? lead.phone : "", lead.clientCode !== name ? lead.clientCode : ""]
+    .filter(Boolean)
+    .join(" — ")
 }
 
 const formatSar = new Intl.NumberFormat("en-US", {
@@ -56,6 +72,8 @@ export default function DealCreateModal({
   const [packages, setPackages] = useState<SalesPackage[]>([])
   const [packageId, setPackageId] = useState("")
   const [priceSar, setPriceSar] = useState("")
+  const [serviceName, setServiceName] = useState("")
+  const [durationMonths, setDurationMonths] = useState("")
   const [startDate, setStartDate] = useState(localDateToday)
   const [notes, setNotes] = useState("")
   const [recording, setRecording] = useState<File | null>(null)
@@ -82,6 +100,11 @@ export default function DealCreateModal({
     setLookupKey((key) => key + 1)
   }
 
+  const isCustom = packageId === CUSTOM_PACKAGE
+  const durationIsValid =
+    Number.isInteger(Number(durationMonths)) && Number(durationMonths) >= 1 && Number(durationMonths) <= 120
+  const customIsValid = !isCustom || (serviceName.trim() !== "" && durationIsValid)
+
   const selectedPackage = useMemo(
     () => packages.find((item) => item.id === packageId),
     [packages, packageId],
@@ -99,21 +122,36 @@ export default function DealCreateModal({
     const timer = window.setTimeout(() => {
       void (async () => {
         setLoading(true)
+        const search = filterText(leadSearch)
         const leadQuery = supabase
           .from("leads")
-          .select("id, name, phone")
+          .select("id, name, phone, client_code")
           .order("updated_at", { ascending: false })
           .range(0, 24)
-        const [{ data: leadRows, error: leadError }, { data: packageRows, error: packageError }] =
-          await Promise.all([
+        // Sales can't read the telesales lead (RLS); their meetings carry a copy of name/phone/code (056).
+        let meetingQuery = supabase
+          .from("meetings")
+          .select("lead_id, lead_name, lead_phone, client_code")
+          .order("proposed_date", { ascending: false })
+          .range(0, 49)
+        if (initialLeadId) meetingQuery = meetingQuery.eq("lead_id", initialLeadId)
+        else if (search)
+          meetingQuery = meetingQuery.or(
+            `lead_name.ilike.%${search}%,lead_phone.ilike.%${search}%,client_code.ilike.%${search}%`,
+          )
+        const [
+          { data: leadRows, error: leadError },
+          { data: packageRows, error: packageError },
+          { data: meetingRows, error: meetingError },
+        ] = await Promise.all([
             initialLeadId
               ? supabase
                   .from("leads")
-                  .select("id, name, phone")
+                  .select("id, name, phone, client_code")
                   .eq("id", initialLeadId)
                   .limit(1)
-              : leadSearch.trim()
-                ? leadQuery.ilike("name", `%${leadSearch.trim()}%`)
+              : search
+                ? leadQuery.or(`name.ilike.%${search}%,phone.ilike.%${search}%,client_code.ilike.%${search}%`)
                 : leadQuery,
             supabase
               .from("packages")
@@ -123,18 +161,33 @@ export default function DealCreateModal({
               .eq("is_active", true)
               .order("price_sar")
               .range(0, 99),
+            meetingQuery,
           ])
         if (!active) return
-        if (leadError || packageError) {
-          setError(leadError?.message ?? packageError?.message ?? t("Could not load deal data."))
+        if (leadError || packageError || meetingError) {
+          setError(leadError?.message ?? packageError?.message ?? meetingError?.message ?? t("Could not load deal data."))
         } else {
-          const leadOptions = (leadRows ?? []) as LeadOption[]
+          const leadOptions: LeadOption[] = (leadRows ?? []).map((row) => ({
+            id: row.id,
+            name: row.name ?? "",
+            phone: row.phone,
+            clientCode: row.client_code,
+          }))
+          for (const row of meetingRows ?? []) {
+            if (leadOptions.some((lead) => lead.id === row.lead_id)) continue
+            leadOptions.push({
+              id: row.lead_id,
+              name: row.lead_name ?? "",
+              phone: row.lead_phone,
+              clientCode: row.client_code,
+            })
+          }
           setLeads(leadOptions)
           if (initialLeadId) setLeadId(initialLeadId)
           else if (!leadId && leadOptions.length > 0) setLeadId(leadOptions[0].id)
           const packageOptions = ((packageRows ?? []) as SalesPackageRow[]).map(mapSalesPackage)
           setPackages(packageOptions)
-          if (!packageOptions.some((item) => item.id === packageId)) {
+          if (packageId !== CUSTOM_PACKAGE && !packageOptions.some((item) => item.id === packageId)) {
             setPackageId(packageOptions[0]?.id ?? "")
           }
         }
@@ -153,6 +206,10 @@ export default function DealCreateModal({
     setSuccess("")
     const numericPrice = Number(priceSar)
     const recordingRequired = role !== "manager"
+    if (!customIsValid) {
+      setError(t("Enter the service name and a duration of 1 to 120 months."))
+      return
+    }
     if (!leadId || !packageId || !Number.isFinite(numericPrice) || numericPrice < 0 || !startDate || (recordingRequired && !recording)) {
       setError(
         recordingRequired
@@ -163,13 +220,22 @@ export default function DealCreateModal({
     }
 
     setSaving(true)
-    const { data: dealId, error: createError } = await supabase.rpc("create_deal", {
-      target_lead_id: leadId,
-      target_package_id: packageId,
-      target_price_sar: numericPrice,
-      target_start_date: startDate,
-      deal_notes: notes.trim() || null,
-    })
+    const { data: dealId, error: createError } = isCustom
+      ? await supabase.rpc("create_custom_deal", {
+          target_lead_id: leadId,
+          custom_service_name: serviceName.trim(),
+          custom_duration_months: Number(durationMonths),
+          target_price_sar: numericPrice,
+          target_start_date: startDate,
+          deal_notes: notes.trim() || null,
+        })
+      : await supabase.rpc("create_deal", {
+          target_lead_id: leadId,
+          target_package_id: packageId,
+          target_price_sar: numericPrice,
+          target_start_date: startDate,
+          deal_notes: notes.trim() || null,
+        })
     if (createError || !dealId) {
       setError(createError?.message ?? t("The deal could not be created."))
       setSaving(false)
@@ -296,6 +362,8 @@ export default function DealCreateModal({
     setLeadId(initialLeadId ?? "")
     setPackageId("")
     setPriceSar("")
+    setServiceName("")
+    setDurationMonths("")
     setStartDate(localDateToday())
     setNotes("")
     setRecording(null)
@@ -401,7 +469,7 @@ export default function DealCreateModal({
                 <input
                   value={leadSearch}
                   onChange={(event) => setLeadSearch(event.target.value)}
-                  placeholder={t("Search lead name...")}
+                  placeholder={t("Search name, phone or client code...")}
                   className="mt-1 w-full rounded border border-[#2a2a2a] bg-[#1a1a1a] px-3 py-2 text-sm text-white"
                 />
               </label>
@@ -417,7 +485,7 @@ export default function DealCreateModal({
                 <option value="">{t("Select a lead")}</option>
                 {leads.map((lead) => (
                   <option key={lead.id} value={lead.id}>
-                    {lead.name}{lead.phone ? ` — ${lead.phone}` : ""}
+                    {leadLabel(lead)}
                   </option>
                 ))}
               </select>
@@ -442,8 +510,34 @@ export default function DealCreateModal({
                     {item.name} — {formatSar.format(item.priceSar)}
                   </option>
                 ))}
+                <option value={CUSTOM_PACKAGE}>{t("➕ Custom service (not one of the packages)")}</option>
               </select>
             </label>
+            {isCustom && (
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-xs text-[#a0a0a0]">
+                  {t("Service name *")}
+                  <input
+                    value={serviceName}
+                    maxLength={200}
+                    onChange={(event) => setServiceName(event.target.value)}
+                    className="mt-1 w-full rounded border border-[#2a2a2a] bg-[#1a1a1a] px-3 py-2 text-sm text-white"
+                  />
+                </label>
+                <label className="block text-xs text-[#a0a0a0]">
+                  {t("Duration (months) *")}
+                  <input
+                    type="number"
+                    min="1"
+                    max="120"
+                    step="1"
+                    value={durationMonths}
+                    onChange={(event) => setDurationMonths(event.target.value)}
+                    className="mt-1 w-full rounded border border-[#2a2a2a] bg-[#1a1a1a] px-3 py-2 text-sm text-white"
+                  />
+                </label>
+              </div>
+            )}
             {selectedPackage && (
               <div className="rounded bg-[#1a1a1a] p-3 text-xs text-[#a0a0a0]">
                 {seeMinPrice
@@ -507,7 +601,7 @@ export default function DealCreateModal({
         )}
         <div className="flex gap-2">
           {!createdDealId && (
-            <Button disabled={saving || loading || !leadId || !packageId || !priceIsValid} onClick={() => void createDeal()}>
+            <Button disabled={saving || loading || !leadId || !packageId || !priceIsValid || !customIsValid} onClick={() => void createDeal()}>
               {saving ? t("Creating deal...") : t("Create Deal")}
             </Button>
           )}

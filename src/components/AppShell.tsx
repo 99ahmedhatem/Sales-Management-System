@@ -478,7 +478,9 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
       ? [...roleNav, myQueueNavItem, myMeetingsNavItem, teamNavItem, packagesNavItem, profileNavItem]
       : role === "admin"
         ? [...roleNav, myQueueNavItem, myMeetingsNavItem, teamNavItem, packagesNavItem, whatsappNavItem, discoveryNavItem, permissionsNavItem, profileNavItem]
-        : [...roleNav, earningsNavItem, packagesNavItem, profileNavItem]
+        : role === "telesales"
+          ? [...roleNav, myMeetingsNavItem, earningsNavItem, packagesNavItem, profileNavItem]
+          : [...roleNav, earningsNavItem, packagesNavItem, profileNavItem]
 
   // Packages: admin manages them (packages.manage); other roles get a read-only list (packages.view, 047).
   const nav = allNav.filter((item) => {

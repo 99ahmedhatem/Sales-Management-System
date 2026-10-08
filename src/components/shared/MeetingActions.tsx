@@ -56,8 +56,15 @@ async function saveLink(meetingId: string, link: string, markSent: boolean) {
   return error?.message ?? '';
 }
 
-/** "✓ Attended" button → green badge with the time + undo. Optimistic; reverts on error. */
-export function AttendanceControl({ meeting, onChange }: { meeting: Meeting; onChange: (patch: Patch) => void }) {
+/**
+ * "Meeting done" button (mark_meeting_attended) → green badge with the time + undo. Optimistic; reverts on error.
+ * onSettled runs after the server answered (success or error) so the page can refetch.
+ */
+export function AttendanceControl({ meeting, onChange, onSettled }: {
+  meeting: Meeting;
+  onChange: (patch: Patch) => void;
+  onSettled?: () => void;
+}) {
   const { t, lang } = useI18n();
   const [busy, setBusy] = useState(false);
 
@@ -72,6 +79,7 @@ export function AttendanceControl({ meeting, onChange }: { meeting: Meeting; onC
       onChange(before);
       toast(error.message, false);
     }
+    onSettled?.();
   }
 
   if (meeting.attendedAt) {
@@ -97,7 +105,7 @@ export function AttendanceControl({ meeting, onChange }: { meeting: Meeting; onC
         onClick={() => void setAttended(true)}
       >
         <span title={early ? t('The meeting time has not come yet') : undefined} className={early ? 'opacity-60' : ''}>
-          ✓ {t('I attended the meeting')}
+          ✓ {t('Meeting done')}
         </span>
       </Button>
     </span>

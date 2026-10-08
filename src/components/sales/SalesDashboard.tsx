@@ -10,7 +10,9 @@ import {
   loadMeetingsPage,
   Meeting,
   MeetingRequest,
+  UPCOMING_OUTCOMES,
 } from "../../data/meetings"
+import { participantFilter } from "../../lib/participantFilter"
 
 import { addClientComment, loadClientComments } from "../../data/clientComments"
 
@@ -154,10 +156,42 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
   const [leadComments, setLeadComments] =
     useState<Record<string, ClientComment[]>>({})
 
+  /**
+   * Whose meetings this page shows: sales = hosted by me · telesales = hosted or booked by me ·
+   * manager = me + my team · admin = everyone. null = no filter.
+   */
+  async function meetingScope(): Promise<{ ids: string[] | null; error: string }> {
+    if (role === "admin") return { ids: null, error: "" }
+    if (role !== "manager") return { ids: [userId], error: "" }
+    const { data, error: teamError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("manager_id", userId)
+      .range(0, 999)
+    return { ids: [userId, ...(data ?? []).map((row) => row.id as string)], error: teamError?.message ?? "" }
+  }
+
   async function loadDashboard() {
     setLoading(true)
 
     setError("")
+
+    const scope = await meetingScope()
+
+    if (scope.error) {
+      setError(scope.error)
+      setLoading(false)
+      return
+    }
+
+    // Counts use the same scope as the list
+    const countMeetings = () => {
+      const query = supabase.from("meetings").select("id", { count: "exact", head: true })
+      if (!scope.ids) return query
+      return role === "sales"
+        ? query.eq("assigned_sales_id", userId)
+        : query.or(participantFilter(["assigned_sales_id", "booked_by"], scope.ids))
+    }
 
     const [
       meetingsResult,
@@ -173,14 +207,11 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
 
         pageSize: PAGE_SIZE,
 
-        assignedSalesId: userId,
+        ...(role === "sales" ? { assignedSalesId: userId } : { participantIds: scope.ids }),
 
-        outcome:
-          tab === "upcoming"
-            ? "Scheduled"
-            : tab === "all"
-              ? outcomeFilter || undefined
-              : undefined,
+        upcoming: tab === "upcoming",
+
+        outcome: tab === "all" ? outcomeFilter || undefined : undefined,
       }),
 
       loadMeetingRequestsPage({
@@ -191,28 +222,13 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
 
       supabase.from("users").select("full_name").eq("id", userId).maybeSingle(),
 
-      supabase
-        .from("meetings")
-        .select("id", { count: "exact", head: true })
-        .eq("assigned_sales_id", userId)
-        .eq("outcome", "Scheduled"),
+      countMeetings().is("attended_at", null).in("outcome", UPCOMING_OUTCOMES),
 
-      supabase
-        .from("meetings")
-        .select("id", { count: "exact", head: true })
-        .eq("assigned_sales_id", userId)
-        .eq("outcome", "Deal Closed – Won"),
+      countMeetings().eq("outcome", "Deal Closed – Won"),
 
-      supabase
-        .from("meetings")
-        .select("id", { count: "exact", head: true })
-        .eq("assigned_sales_id", userId)
-        .eq("outcome", "Deal Lost"),
+      countMeetings().eq("outcome", "Deal Lost"),
 
-      supabase
-        .from("meetings")
-        .select("id", { count: "exact", head: true })
-        .eq("assigned_sales_id", userId),
+      countMeetings(),
     ])
 
     const firstError =
@@ -381,6 +397,10 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
 
     setRefreshVersion((version) => version + 1)
   }
+
+  /** Status shown in "All meetings": an attended meeting still Scheduled / Rescheduled reads "Attended". */
+  const meetingStatus = (meeting: Meeting) =>
+    meeting.attendedAt && UPCOMING_OUTCOMES.includes(meeting.outcome) ? "Attended" : meeting.outcome
 
   /** Optimistic change of one meeting (attendance, link, outcome) in the list and the open details. */
   const patchMeeting = (id: string, patch: Partial<Meeting>) => {
@@ -781,14 +801,17 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
                     <MeetingLinkField meeting={m} onChange={(patch) => patchMeeting(m.id, patch)} />
                     <MeetingWhatsAppButton meeting={m} onChange={(patch) => patchMeeting(m.id, patch)} />
                   </div>
-                  <AttendanceControl meeting={m} onChange={(patch) => patchMeeting(m.id, patch)} />
-                  {m.attendedAt && (
-                    <MeetingOutcomeButtons
-                      meeting={m}
-                      onChange={(patch) => patchMeeting(m.id, patch)}
-                      onCloseDeal={(meeting) => setDealLeadId(meeting.leadId)}
-                    />
-                  )}
+                  <AttendanceControl
+                    meeting={m}
+                    onChange={(patch) => {
+                      // "Meeting done" moves it to All meetings right away
+                      if (patch.attendedAt) {
+                        setMeetings((prev) => prev.filter((meeting) => meeting.id !== m.id))
+                        setScheduledCount((count) => Math.max(0, count - 1))
+                      } else patchMeeting(m.id, patch)
+                    }}
+                    onSettled={() => setRefreshVersion((version) => version + 1)}
+                  />
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
@@ -863,9 +886,16 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
                     </div>
                   </Td>
                   <Td>
-                    <StatusBadge status={m.outcome} />
+                    <StatusBadge status={meetingStatus(m)} />
                   </Td>
                   <Td>
+                    {m.attendedAt && m.outcome !== "Deal Closed – Won" && can("deals.create") && (
+                      <div className="mb-1" onClick={(e) => e.stopPropagation()}>
+                        <Button size="sm" onClick={() => setDealLeadId(m.leadId)}>
+                          {t("+ New Deal")}
+                        </Button>
+                      </div>
+                    )}
                     <select
                       value={m.outcome}
                       onChange={(e) => {
@@ -1106,7 +1136,11 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
                 <MeetingLinkField meeting={detail} onChange={(patch) => patchMeeting(detail.id, patch)} />
                 <MeetingWhatsAppButton meeting={detail} onChange={(patch) => patchMeeting(detail.id, patch)} />
               </div>
-              <AttendanceControl meeting={detail} onChange={(patch) => patchMeeting(detail.id, patch)} />
+              <AttendanceControl
+                meeting={detail}
+                onChange={(patch) => patchMeeting(detail.id, patch)}
+                onSettled={() => setRefreshVersion((version) => version + 1)}
+              />
               {detail.attendedAt && (
                 <MeetingOutcomeButtons
                   meeting={detail}

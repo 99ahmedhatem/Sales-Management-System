@@ -231,7 +231,7 @@ export default function App() {
           {(session.role === "admin" || session.role === "manager") && page === "myqueue" && (
             <TelesalesDashboard userId={session.userId} role={session.role} />
           )}
-          {(session.role === "admin" || session.role === "manager") && page === "mymeetings" && (
+          {(session.role === "admin" || session.role === "manager" || session.role === "telesales") && page === "mymeetings" && (
             <SalesDashboard userId={session.userId} role={session.role} />
           )}
           {page === "profile" && <ProfileView />}

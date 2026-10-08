@@ -1,4 +1,5 @@
 import { supabase } from "../supabaseClient"
+import { participantFilter } from "../lib/participantFilter"
 
 export type DealStatus =
   | "draft"
@@ -20,6 +21,8 @@ export interface Deal {
   telesalesUserId: string
   telesalesName: string
   closedByUserId: string
+  /** Whoever closed it (sales, telesales, manager or admin). */
+  closedByName: string
   /** null = custom service (create_custom_deal, 056); packageName holds the service name. */
   packageId: string | null
   isCustomService: boolean
@@ -83,6 +86,7 @@ export function mapDeal(row: DealRow, summaries: DealSummaryMaps): Deal {
     telesalesUserId: row.telesales_user_id,
     telesalesName: summaries.users.get(row.telesales_user_id) ?? "",
     closedByUserId: row.closed_by_user_id,
+    closedByName: summaries.users.get(row.closed_by_user_id) ?? "",
     packageId: row.package_id,
     isCustomService: row.package_id === null,
     packageName: row.package_name,
@@ -104,7 +108,13 @@ export function mapDeal(row: DealRow, summaries: DealSummaryMaps): Deal {
   }
 }
 
-export async function loadDealsPage(page: number, pageSize: number, onlyId?: string) {
+export async function loadDealsPage(
+  page: number,
+  pageSize: number,
+  onlyId?: string,
+  /** Only deals where one of these users closed it, owns the client or is the sales user. */
+  scopeUserIds?: string[] | null,
+) {
   const from = page * pageSize
   let query = supabase
     .from("deals")
@@ -113,6 +123,8 @@ export async function loadDealsPage(page: number, pageSize: number, onlyId?: str
       { count: "exact" },
     )
   if (onlyId) query = query.eq("id", onlyId)
+  if (scopeUserIds?.length)
+    query = query.or(participantFilter(["sales_user_id", "telesales_user_id", "closed_by_user_id"], scopeUserIds))
   const { data, error, count } = await query
     .order("created_at", { ascending: false })
     .range(from, from + pageSize - 1)
@@ -123,7 +135,7 @@ export async function loadDealsPage(page: number, pageSize: number, onlyId?: str
   const userIds = [
     ...new Set(
       rows.flatMap((row) =>
-        [row.sales_user_id, row.telesales_user_id].filter(
+        [row.sales_user_id, row.telesales_user_id, row.closed_by_user_id].filter(
           (id): id is string => Boolean(id),
         ),
       ),

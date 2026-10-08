@@ -4,11 +4,12 @@ import { useI18n } from '../../i18n/I18nProvider';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { formatSar } from '../../lib/format';
 
-/** deal_commissions.role_in_deal (008, 055) → label. */
+/** deal_commissions.role_in_deal (008, 055, 059) → label. */
 const ROLE_LABELS: Record<string, string> = {
   closer_sales: 'Closer (sales)',
   closer_telesales: 'Closer (telesales)',
   closer_manager: 'Closer (manager)',
+  closer_admin: 'Closer (admin)',
   lead_telesales: 'Client entry',
   manager: 'Manager share',
 };

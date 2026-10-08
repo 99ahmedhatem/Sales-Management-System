@@ -15,7 +15,8 @@ interface Props {
   onClose: () => void
   onCreated: (dealId: string) => void
   initialLeadId?: string
-  role?: "manager"
+  /** Manager / admin: recording is optional (they may close without a recorded sales meeting). */
+  role?: "manager" | "admin"
 }
 
 interface LeadOption {
@@ -205,7 +206,7 @@ export default function DealCreateModal({
     setError("")
     setSuccess("")
     const numericPrice = Number(priceSar)
-    const recordingRequired = role !== "manager"
+    const recordingRequired = !role
     if (!customIsValid) {
       setError(t("Enter the service name and a duration of 1 to 120 months."))
       return
@@ -580,7 +581,7 @@ export default function DealCreateModal({
               </div>
             )}
             <label className="block text-xs text-[#a0a0a0]">
-              {role === "manager" ? t("Meeting recording (optional)") : t("Meeting recording *")}
+              {role ? t("Meeting recording (optional)") : t("Meeting recording *")}
               <input
                 type="file"
                 accept="audio/*,video/*"

@@ -7,6 +7,7 @@ import {
   ClientComment,
   Lead,
   LeadStatus,
+  Role,
   User,
 } from "../../data/crmTypes"
 
@@ -73,6 +74,13 @@ const ROLE_PHONE_OPTIONS = [
   { value: "missing", label: "No phone" },
 ]
 
+const ROLE_NAMES: Record<string, string> = {
+  admin: "Admin",
+  manager: "Manager",
+  sales: "Sales",
+  telesales: "Telesales",
+}
+
 const CALL_STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: "No Answer", label: "No Answer" },
 
@@ -95,6 +103,8 @@ const CALL_STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
 
 interface Props {
   userId: string
+  /** Admin and manager open this page as "My Queue" (061); defaults to telesales. */
+  role?: Role
 }
 
 interface TelesalesLead extends Lead {
@@ -107,7 +117,7 @@ interface PendingLeadMeetingRequest {
   preferredDate: string | null
 }
 
-export default function TelesalesDashboard({ userId }: Props) {
+export default function TelesalesDashboard({ userId, role = "telesales" }: Props) {
   const { t } = useI18n()
   const { can } = usePermissions()
 
@@ -380,9 +390,19 @@ export default function TelesalesDashboard({ userId }: Props) {
 
   const [newComment, setNewComment] = useState("")
 
-  const salesUsers = users.filter(
-    (u) => u.role === "sales" && u.status === "active",
-  )
+  // Meeting host: any active sales, manager or admin (061); the caller can pick himself.
+  const salesUsers = users
+    .filter(
+      (u) =>
+        ["sales", "manager", "admin"].includes(u.role) && u.status === "active",
+    )
+    .sort(
+      (a, b) =>
+        Number(b.id === userId) - Number(a.id === userId) ||
+        a.fullName.localeCompare(b.fullName),
+    )
+
+  const [forwardError, setForwardError] = useState("")
 
   const saveCustomerNumber = async (leadId: string) => {
     const value = editingCustomerNumber.trim()
@@ -705,7 +725,7 @@ export default function TelesalesDashboard({ userId }: Props) {
 
       actorName: me?.fullName || "Telesales",
 
-      actorRole: "telesales",
+      actorRole: role,
 
       activityType: "call",
 
@@ -749,7 +769,12 @@ export default function TelesalesDashboard({ userId }: Props) {
   }
 
   const requestMeeting = async () => {
-    if (!forwardModal || !forwardTo || requestingMeeting) return
+    if (!forwardModal || requestingMeeting) return
+
+    if (!forwardTo) {
+      setForwardError("Choose the employee")
+      return
+    }
 
     const preferredDate = preferredMeetingDate
       ? new Date(preferredMeetingDate)
@@ -759,13 +784,13 @@ export default function TelesalesDashboard({ userId }: Props) {
       (Number.isNaN(preferredDate.getTime()) ||
         preferredDate.getTime() <= Date.now())
     ) {
-      setLoadError("Preferred meeting time must be in the future.")
+      setForwardError("Preferred meeting time must be in the future.")
       return
     }
 
     setRequestingMeeting(true)
 
-    setLoadError("")
+    setForwardError("")
 
     const { data: createdRequestId, error } = await supabase.rpc(
       "request_meeting",
@@ -781,7 +806,7 @@ export default function TelesalesDashboard({ userId }: Props) {
     )
 
     if (error) {
-      setLoadError(error.message)
+      setForwardError(error.message)
 
       setRequestingMeeting(false)
 
@@ -849,7 +874,7 @@ export default function TelesalesDashboard({ userId }: Props) {
 
       authorName: me?.fullName || "Telesales",
 
-      actorRole: "telesales",
+      actorRole: role,
 
       text: newComment.trim(),
     })
@@ -1233,6 +1258,8 @@ export default function TelesalesDashboard({ userId }: Props) {
                         size="sm"
                         onClick={() => {
                           setForwardModal(lead)
+                          setForwardTo(salesUsers.length === 1 ? salesUsers[0].id : "")
+                          setForwardError("")
                           setMeetingRequestNotes(lead.notes ?? "")
                           setPreferredMeetingDate("")
                         }}
@@ -1518,13 +1545,24 @@ export default function TelesalesDashboard({ userId }: Props) {
         {forwardModal && (
           <div className="space-y-4">
             <p className="text-[#a0a0a0] text-sm">
-              {t("Choose a sales agent. They will accept the request and set the meeting time.")}
+              {t("Choose the employee who will hold the meeting. They will accept the request and set the meeting time.")}
             </p>
+            {forwardError && (
+              <div role="alert" className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888] anim-shake">
+                {t(forwardError)}
+              </div>
+            )}
+            {salesUsers.length === 0 && (
+              <div className="text-sm text-[#ffc832]">{t("No active employees to hold the meeting.")}</div>
+            )}
             <div className="space-y-2">
               {salesUsers.map((u) => (
                 <button
                   key={u.id}
-                  onClick={() => setForwardTo(u.id)}
+                  onClick={() => {
+                    setForwardTo(u.id)
+                    setForwardError("")
+                  }}
                   className={`w-full text-start p-3 rounded-lg border transition-all ${
                     forwardTo === u.id
                       ? "border-[#dfff03] bg-[#dfff03]/5"
@@ -1533,7 +1571,10 @@ export default function TelesalesDashboard({ userId }: Props) {
                 >
                   <div className="flex items-center gap-2">
                     <Avatar name={u.fullName} size="sm" />
-                    <span className="text-white text-sm">{u.fullName}</span>
+                    <span className="text-white text-sm">
+                      {u.id === userId ? t("{name} (me)", { name: u.fullName }) : u.fullName}
+                    </span>
+                    <span className="ms-auto text-xs text-[#6b6b6b]">{t(ROLE_NAMES[u.role] ?? u.role)}</span>
                   </div>
                 </button>
               ))}
@@ -1564,7 +1605,7 @@ export default function TelesalesDashboard({ userId }: Props) {
             <div className="flex gap-2">
               <Button
                 variant="primary"
-                disabled={!forwardTo || requestingMeeting}
+                disabled={requestingMeeting}
                 onClick={requestMeeting}
               >
                 {requestingMeeting ? t("Sending...") : t("Request Meeting")}
@@ -1585,6 +1626,7 @@ export default function TelesalesDashboard({ userId }: Props) {
         onClose={() => setDealLeadId(null)}
         onCreated={() => setRefreshVersion((version) => version + 1)}
         initialLeadId={dealLeadId ?? undefined}
+        role={role === "admin" || role === "manager" ? role : undefined}
       />
     </div>
   )

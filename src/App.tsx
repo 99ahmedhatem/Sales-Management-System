@@ -228,6 +228,12 @@ export default function App() {
             <ContractsModule userId={session.userId} role="sales" />
           )}
           {session.role === "sales" && page === "packages" && <PackagesList />}
+          {(session.role === "admin" || session.role === "manager") && page === "myqueue" && (
+            <TelesalesDashboard userId={session.userId} role={session.role} />
+          )}
+          {(session.role === "admin" || session.role === "manager") && page === "mymeetings" && (
+            <SalesDashboard userId={session.userId} role={session.role} />
+          )}
           {page === "profile" && <ProfileView />}
           {session.role === "admin" && page === "whatsapp" && <WhatsAppTemplates />}
           {session.role === "admin" && page === "permissions" && <AdminPermissions />}

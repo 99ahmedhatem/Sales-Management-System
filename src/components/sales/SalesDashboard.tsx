@@ -36,6 +36,9 @@ import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 import { useI18n } from "../../i18n/I18nProvider"
 import { ClientLink } from "../shared/AppOverlays"
 import ClientContact, { ClientCodeBadge, PhoneActions } from "../shared/ClientContact"
+import DealCreateModal from "../shared/DealCreateModal"
+import { usePermissions } from "../../hooks/usePermissions"
+import { Role } from "../../data/crmTypes"
 
 import { dateLocale } from "../../i18n/locale"
 
@@ -43,6 +46,8 @@ const PAGE_SIZE = 20
 
 interface Props {
   userId: string
+  /** Admin and manager open this page as "My Meetings" (061); defaults to sales. */
+  role?: Role
 }
 
 const OUTCOME_OPTIONS: { value: MeetingOutcome; label: string }[] = [
@@ -53,8 +58,12 @@ const OUTCOME_OPTIONS: { value: MeetingOutcome; label: string }[] = [
   { value: "No-Show", label: "No-Show" },
 ]
 
-export default function SalesDashboard({ userId }: Props) {
+export default function SalesDashboard({ userId, role = "sales" }: Props) {
   const { t, lang } = useI18n()
+
+  const { can } = usePermissions()
+
+  const [dealLeadId, setDealLeadId] = useState<string | null>(null)
 
   const locale = dateLocale(lang)
 
@@ -480,7 +489,7 @@ export default function SalesDashboard({ userId }: Props) {
 
       authorName: myName || "Sales",
 
-      actorRole: "sales",
+      actorRole: role,
 
       text: newComment.trim(),
     })
@@ -1092,6 +1101,17 @@ export default function SalesDashboard({ userId }: Props) {
               >
                 💬 {t("Add Comment")}
               </Button>
+              {can("deals.create") && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setDealLeadId(detail.leadId)
+                    setDetail(null)
+                  }}
+                >
+                  {t("+ New Deal")}
+                </Button>
+              )}
               <Button variant="ghost" onClick={() => setDetail(null)}>
                 {t("Close")}
               </Button>
@@ -1158,6 +1178,13 @@ export default function SalesDashboard({ userId }: Props) {
           </div>
         )}
       </Modal>
+      <DealCreateModal
+        open={Boolean(dealLeadId)}
+        onClose={() => setDealLeadId(null)}
+        onCreated={() => setRefreshVersion((version) => version + 1)}
+        initialLeadId={dealLeadId ?? undefined}
+        role={role === "admin" || role === "manager" ? role : undefined}
+      />
     </div>
   )
 }

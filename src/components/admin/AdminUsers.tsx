@@ -170,8 +170,8 @@ export default function AdminUsers() {
         base_salary: Number(newUser.baseSalary) || 0,
         base_currency: newUser.baseCurrency,
         commission_percent: Number(newUser.commissionPercent) || 0,
-        lead_percent: ['telesales', 'manager'].includes(newUser.role) ? Number(newUser.leadPercent) || 0 : 0,
-        manager_percent: newUser.role === 'manager' ? 0 : Number(newUser.managerPercent) || 0,
+        lead_percent: ['telesales', 'manager', 'admin'].includes(newUser.role) ? Number(newUser.leadPercent) || 0 : 0,
+        manager_percent: ['manager', 'admin'].includes(newUser.role) ? 0 : Number(newUser.managerPercent) || 0,
       },
     });
     setCreatingUser(false);
@@ -230,7 +230,7 @@ export default function AdminUsers() {
     if (numberChanged('baseSalary')) params.p_base_salary = Number(f.baseSalary) || 0;
     if (changed('baseCurrency')) params.p_base_currency = f.baseCurrency;
     if (numberChanged('commissionPercent')) params.p_closer_percent = Number(f.commissionPercent) || 0;
-    if (['telesales', 'manager'].includes(f.role) && numberChanged('leadPercent')) params.p_lead_percent = Number(f.leadPercent) || 0;
+    if (['telesales', 'manager', 'admin'].includes(f.role) && numberChanged('leadPercent')) params.p_lead_percent = Number(f.leadPercent) || 0;
     if (['sales', 'telesales'].includes(f.role) && numberChanged('managerPercent')) params.p_manager_percent = Number(f.managerPercent) || 0;
     if (Object.keys(params).length === 1) {
       setEditUser(null);
@@ -699,8 +699,8 @@ function PayFields({ role, value, onChange }: { role: Role; value: PayForm; onCh
           </select>
         </div>
       </div>
-      {(role === 'sales' || role === 'telesales' || role === 'manager') && percent('commissionPercent', 'Closing %', 'Of each deal this employee closes himself')}
-      {(role === 'telesales' || role === 'manager') && percent('leadPercent', 'Client entry %', 'When someone else closes a deal on a client this employee entered')}
+      {(role === 'sales' || role === 'telesales' || role === 'manager' || role === 'admin') && percent('commissionPercent', 'Closing %', 'Of each deal this employee closes himself')}
+      {(role === 'telesales' || role === 'manager' || role === 'admin') && percent('leadPercent', 'Client entry %', 'When someone else closes a deal on a client this employee entered')}
       {(role === 'sales' || role === 'telesales') && percent('managerPercent', 'Manager share %', 'What this employee’s manager earns from each deal this employee closes or entered')}
     </div>
   );
@@ -713,8 +713,8 @@ interface Rates { closer: number; lead: number; manager: number }
 
 /** Which percentage applies to which user (the others show —). */
 const RATE_RULES: Record<keyof Rates, (u: User) => boolean> = {
-  closer: u => ['sales', 'telesales', 'manager'].includes(u.role),
-  lead: u => ['telesales', 'manager'].includes(u.role),
+  closer: u => ['sales', 'telesales', 'manager', 'admin'].includes(u.role),
+  lead: u => ['telesales', 'manager', 'admin'].includes(u.role),
   manager: u => ['sales', 'telesales'].includes(u.role) && Boolean(u.managerId),
 };
 

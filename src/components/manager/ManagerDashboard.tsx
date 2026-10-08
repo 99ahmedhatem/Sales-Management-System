@@ -5,7 +5,7 @@ import { generateCode, Lead, LeadStatus, User } from '../../data/mockData';
 import { normalizeWebsite } from '../../lib/websiteKey';
 import { loadMeetingsPage, Meeting } from '../../data/meetings';
 import { dateLocale } from '../../i18n/locale';
-import { Avatar, Button, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr, WebsiteLink } from '../ui';
+import { Avatar, Button, RoleBadge, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr, WebsiteLink } from '../ui';
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
 import { exportRowsToExcel } from '../shared/exportExcel';
 import DistributeLeadsModal from '../shared/DistributeLeadsModal';
@@ -15,6 +15,7 @@ import { createNotification } from '../../data/notifications';
 import { useI18n } from '../../i18n/I18nProvider';
 import { ClientLink } from '../shared/AppOverlays';
 import ClientContact from '../shared/ClientContact';
+import { AttendanceControl, formatMeetingDate, MeetingWhatsAppButton } from '../shared/MeetingActions';
 import { usePermissions } from '../../hooks/usePermissions';
 
 const ROLE_REGION_OPTIONS = [
@@ -55,8 +56,15 @@ export default function ManagerDashboard({ userId }: Props) {
   const teamLeadTotal = Object.values(leadStats).reduce((sum, row) => sum + row.total, 0);
   const converted = Object.values(leadStats).reduce((sum, row) => sum + row.converted, 0);
 
+  const [attendedCount, setAttendedCount] = useState(0);
+  const [missedCount, setMissedCount] = useState(0);
+  const patchMeeting = (id: string, patch: Partial<Meeting>) =>
+    setUpcomingMeetings(prev => prev.map(m => (m.id === id ? { ...m, ...patch } : m)));
+
   const telesalesTeam = myTeam.filter(u => u.role === 'telesales');
-  const assignableTelesales = telesalesTeam.filter(u => u.status === 'active');
+  // Recipients: the manager himself + active telesales of his team
+  const assignableTelesales = [...(me && me.status === 'active' ? [me] : []), ...telesalesTeam.filter(u => u.status === 'active')];
+  const recipientAgents = assignableTelesales.map(u => ({ id: u.id, fullName: u.fullName, role: u.role }));
   const salesTeam = myTeam.filter(u => u.role === 'sales');
 
   // Assignment
@@ -144,18 +152,22 @@ export default function ManagerDashboard({ userId }: Props) {
           if (outcome) query = query.eq('outcome', outcome);
           return query;
         };
-        const [receivedRes, distributedRes, workedRes, leadStatsRes, upcomingRes, ...salesCountRes] = await Promise.all([
+        // Meetings hosted by the manager himself or his team (061: a manager can host meetings too)
+        const hostIds = [userId, ...teamIds];
+        const now = new Date().toISOString();
+        const [receivedRes, distributedRes, workedRes, leadStatsRes, upcomingRes, attendedRes, missedRes, ...salesCountRes] = await Promise.all([
           supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', userId),
           teamIds.length ? supabase.from('leads').select('id', { count: 'exact', head: true }).in('assigned_to', teamIds) : Promise.resolve({ count: 0, error: null }),
           teamIds.length ? supabase.rpc('get_worked_clients_count', { p_user_ids: teamIds }) : Promise.resolve({ data: 0, error: null }),
           supabase.rpc('get_team_lead_stats', { p_user_ids: [userId, ...teamIds] }),
-          salesIds.length
-            ? loadMeetingsPage({ page: 0, pageSize: 10, assignedSalesIds: salesIds, outcome: 'Scheduled', proposedAfter: new Date().toISOString() })
-            : Promise.resolve({ data: [] as Meeting[], count: 0, error: null }),
+          loadMeetingsPage({ page: 0, pageSize: 10, assignedSalesIds: [userId, ...salesIds], outcome: 'Scheduled', proposedAfter: now }),
+          supabase.from('meetings').select('id', { count: 'exact', head: true }).in('assigned_sales_id', hostIds).not('attended_at', 'is', null),
+          supabase.from('meetings').select('id', { count: 'exact', head: true }).in('assigned_sales_id', hostIds).is('attended_at', null).lt('proposed_date', now),
           ...salesIds.flatMap(id => [meetingCount(id), meetingCount(id, 'Deal Closed – Won')]),
         ]);
         const countError = receivedRes.error?.message || distributedRes.error?.message || workedRes.error?.message
-          || leadStatsRes.error?.message || upcomingRes.error || salesCountRes.find(res => res.error)?.error?.message;
+          || leadStatsRes.error?.message || upcomingRes.error || attendedRes.error?.message || missedRes.error?.message
+          || salesCountRes.find(res => res.error)?.error?.message;
         if (countError) setErrorMsg(countError);
         setLeadStats(Object.fromEntries(((leadStatsRes.data ?? []) as { user_id: string; total: number; contacted: number; converted: number }[])
           .map(row => [row.user_id, { total: Number(row.total), contacted: Number(row.contacted), converted: Number(row.converted) }])));
@@ -163,6 +175,8 @@ export default function ManagerDashboard({ userId }: Props) {
         setDistributedCount(distributedRes.count ?? 0);
         setWorkedClientCount(Number(workedRes.data ?? 0));
         setUpcomingMeetings(upcomingRes.data ?? []);
+        setAttendedCount(attendedRes.count ?? 0);
+        setMissedCount(missedRes.count ?? 0);
         setSalesMeetingCounts(Object.fromEntries(salesIds.map((id, index) => [id, {
           total: salesCountRes[index * 2]?.count ?? 0,
           won: salesCountRes[index * 2 + 1]?.count ?? 0,
@@ -189,10 +203,7 @@ export default function ManagerDashboard({ userId }: Props) {
     if (!assignTo || assignLeads.length === 0 || assigning || !assignableTelesales.some(u => u.id === assignTo)) return;
     setAssigning(true);
     setErrorMsg('');
-    const { error } = await supabase
-      .from('leads')
-      .update({ assigned_to: assignTo, status: 'Assigned' as LeadStatus, updated_at: new Date().toISOString() })
-      .in('id', assignLeads);
+    const { error } = await supabase.rpc('assign_leads', { p_lead_ids: assignLeads, p_assignee: assignTo });
     if (error) {
       setErrorMsg(error.message);
       setAssigning(false);
@@ -389,6 +400,8 @@ export default function ManagerDashboard({ userId }: Props) {
         <KpiCard label="Distributed" value={distributedCount} sub="Assigned to your team" />
         <KpiCard label="Converted" value={converted} accent sub={t('{n}% rate', { n: teamLeadTotal > 0 ? Math.round(converted / teamLeadTotal * 100) : 0 })} />
         <KpiCard label="Deals Won" value={won} sub={t('{n} total meetings', { n: teamMeetingTotal })} />
+        <KpiCard label="Attended meetings" value={attendedCount} sub="You + your team" />
+        <KpiCard label="Missed without attendance" value={missedCount} sub="Time passed, not marked attended" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -548,10 +561,14 @@ export default function ManagerDashboard({ userId }: Props) {
               <div key={m.id} className="flex items-center gap-4 p-3 bg-[#1a1a1a] rounded-lg">
                 <div className="flex-1">
                   <div className="text-white text-sm font-medium"><ClientLink leadId={m.leadId}>{m.leadName}</ClientLink></div>
-                  <ClientContact leadId={m.leadId} phone={m.leadPhone} code={m.clientCode} phoneClassName="text-[#6b6b6b]" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ClientContact leadId={m.leadId} phone={m.leadPhone} code={m.clientCode} phoneClassName="text-[#6b6b6b]" />
+                    <MeetingWhatsAppButton meeting={m} onChange={patch => patchMeeting(m.id, patch)} />
+                  </div>
+                  <div className="mt-2"><AttendanceControl meeting={m} onChange={patch => patchMeeting(m.id, patch)} /></div>
                 </div>
                 <div className="text-end">
-                  <div className="text-[#dfff03] text-xs font-mono">{new Date(m.proposedDate).toLocaleString(dateLocale(lang))}</div>
+                  <div className="text-[#dfff03] text-xs">{formatMeetingDate(m.proposedDate, lang)}</div>
                   <div className="text-[#6b6b6b] text-xs">{salesUser?.fullName ?? m.assignedSalesName}</div>
                 </div>
                 <StatusBadge status={m.outcome} />
@@ -568,14 +585,14 @@ export default function ManagerDashboard({ userId }: Props) {
       <DistributeLeadsModal
         open={distributeModal}
         onClose={() => setDistributeModal(false)}
-        agents={assignableTelesales}
+        agents={recipientAgents}
         managerPool
         onDone={() => setRefreshVersion(version => version + 1)}
       />
 
       <Modal open={assignModal} onClose={() => setAssignModal(false)} title="Distribute Leads to Team Member">
         <div className="space-y-4">
-          <p className="text-[#a0a0a0] text-sm">{t('Assign leads from your pool to a telesales agent on your team.')}</p>
+          <p className="text-[#a0a0a0] text-sm">{t('Assign leads from your pool to yourself or a telesales agent on your team.')}</p>
           <div>
             <label className="block text-xs text-[#a0a0a0] mb-2">{t('Assign to:')}</label>
             <div className="space-y-2">
@@ -587,7 +604,9 @@ export default function ManagerDashboard({ userId }: Props) {
                     onClick={() => setAssignTo(u.id)}
                     className={`w-full text-start p-3 rounded-lg border transition-all ${assignTo === u.id ? 'border-[#dfff03] bg-[#dfff03]/5' : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'}`}
                   >
-                    <div className="text-white text-sm font-medium">{u.fullName}</div>
+                    <div className="flex items-center gap-2 text-white text-sm font-medium">
+                      {u.id === userId ? t('{name} (me)', { name: u.fullName }) : u.fullName} <RoleBadge role={u.role} />
+                    </div>
                     <div className="text-[#6b6b6b] text-xs">{t('{n} leads currently assigned', { n: count })}</div>
                   </button>
                 );

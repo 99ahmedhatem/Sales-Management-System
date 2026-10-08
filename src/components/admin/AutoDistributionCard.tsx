@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useI18n } from '../../i18n/I18nProvider';
-import { Button, Card, Input, Table, Td, Toggle, Tr } from '../ui';
+import { Button, Card, Input, RoleBadge, Table, Td, Toggle, Tr } from '../ui';
 
-interface Agent { id: string; fullName: string }
+interface Agent { id: string; fullName: string; role?: string }
 interface AutoSettings { enabled: boolean; user_ids: string[]; max_open: number | null; waiting: number }
 interface JobRow { job: string; affected: number }
 
@@ -130,6 +130,7 @@ export default function AutoDistributionCard({ agents, onDistributed }: { agents
               <label key={a.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] p-2.5 hover:border-[#3a3a3a]">
                 <input type="checkbox" checked={picked.includes(a.id)} onChange={() => toggle(a.id)} disabled={loading} className="accent-[#dfff03]" />
                 <span className="text-sm text-white truncate">{a.fullName}</span>
+                <RoleBadge role={a.role} />
               </label>
             ))}
           </div>

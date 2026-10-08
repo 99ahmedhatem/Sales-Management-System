@@ -30,6 +30,21 @@ export function Badge({ children, className = '' }: { children: ReactNode; class
   );
 }
 
+const ROLE_TAG: Record<string, { label: string; className: string }> = {
+  admin: { label: 'Admin', className: 'bg-[#dfff03]/10 text-[#dfff03]' },
+  manager: { label: 'Manager', className: 'bg-[#a78bfa]/10 text-[#c4b5fd]' },
+  sales: { label: 'Sales', className: 'bg-[#64b4ff]/10 text-[#8cc8ff]' },
+  telesales: { label: 'Telesales', className: 'bg-[#252525] text-[#a0a0a0]' },
+};
+
+/** Small role tag next to a person's name (recipient lists, hosts). */
+export function RoleBadge({ role }: { role?: string | null }) {
+  const { t } = useI18n();
+  const tag = role ? ROLE_TAG[role] : undefined;
+  if (!tag) return null;
+  return <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${tag.className}`}>{t(tag.label)}</span>;
+}
+
 export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     'New': 'status-new',

@@ -5,7 +5,7 @@ import { supabase } from '../../supabaseClient';
 import { recordActivity } from '../../data/activityLog';
 import { createNotification } from '../../data/notifications';
 import { generateCode, Lead, LeadDataQuality, LeadStatus, User } from '../../data/mockData';
-import { Button, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Pagination, WebsiteLink, EmptyState, useConfirm } from '../ui';
+import { Button, RoleBadge, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Pagination, WebsiteLink, EmptyState, useConfirm } from '../ui';
 import { toast } from '../shared/toast';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
@@ -308,7 +308,9 @@ export default function AdminLeads() {
   // Live updates: when anyone changes a lead or a user, this page refreshes by itself
   useRealtimeRefresh(['leads', 'users'], () => loadData(page, true));
 
-  const assignableUsers = users.filter(u => ['manager', 'telesales'].includes(u.role) && u.status === 'active');
+  // Recipients: telesales, managers and admins (they work their own queue too)
+  const assignableUsers = users.filter(u => ['telesales', 'manager', 'admin'].includes(u.role) && u.status === 'active');
+  const recipientAgents = assignableUsers.map(u => ({ id: u.id, fullName: u.fullName, role: u.role }));
 
   const toggleSelect = (id: string) => {
     setSelected(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
@@ -320,10 +322,7 @@ export default function AdminLeads() {
 
   const handleAssign = async () => {
     if (!assignTo || selected.length === 0) return;
-    const { error } = await supabase
-      .from('leads')
-      .update({ assigned_to: assignTo, status: 'Assigned' as LeadStatus, updated_at: new Date().toISOString() })
-      .in('id', selected);
+    const { error } = await supabase.rpc('assign_leads', { p_lead_ids: selected, p_assignee: assignTo });
     if (error) {
       setErrorMsg(error.message);
       return;
@@ -641,7 +640,7 @@ export default function AdminLeads() {
 
       {can('leads.distribute') && (
         <AutoDistributionCard
-          agents={users.filter(u => u.role === 'telesales' && u.status === 'active')}
+          agents={recipientAgents}
           onDistributed={() => { setSelected([]); void loadData(0); }}
         />
       )}
@@ -777,7 +776,7 @@ export default function AdminLeads() {
       {/* Assign Modal */}
       <Modal open={assignModal} onClose={() => setAssignModal(false)} title={t('Assign {n} Leads', { n: selected.length })}>
         <div className="space-y-4">
-          <p className="text-[#a0a0a0] text-sm">{t('Select a manager or Telesales agent to assign these leads to:')}</p>
+          <p className="text-[#a0a0a0] text-sm">{t('Select who gets these leads (telesales, manager or admin):')}</p>
           <div className="space-y-2">
             {assignableUsers.map(u => {
               const assignedCount = leads.filter(l => l.assignedTo === u.id).length;
@@ -787,9 +786,9 @@ export default function AdminLeads() {
                   onClick={() => setAssignTo(u.id)}
                   className={`w-full text-start p-3 rounded-lg border transition-all ${assignTo === u.id ? 'border-[#dfff03] bg-[#dfff03]/5' : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'}`}
                 >
-                  <div className="text-white text-sm font-medium">{u.fullName}</div>
+                  <div className="flex items-center gap-2 text-white text-sm font-medium">{u.fullName} <RoleBadge role={u.role} /></div>
                   <div className="text-[#6b6b6b] text-xs">
-                    {u.role === 'manager' ? t('Manager') : t('Telesales')} · {t('{n} leads currently assigned', { n: assignedCount })}
+                    {t('{n} leads currently assigned', { n: assignedCount })}
                   </div>
                 </button>
               );
@@ -805,7 +804,7 @@ export default function AdminLeads() {
       <DistributeLeadsModal
         open={distributeModal}
         onClose={() => setDistributeModal(false)}
-        agents={users.filter(u => u.role === 'telesales' && u.status === 'active')}
+        agents={recipientAgents}
         onDone={() => { setSelected([]); void loadData(0); }}
       />
 

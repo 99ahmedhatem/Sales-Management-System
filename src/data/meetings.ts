@@ -31,6 +31,16 @@ export interface Meeting {
   bookedByName: string
 
   createdAt: string
+
+  /** Host marked the meeting as attended (mark_meeting_attended). */
+  attendedAt: string | null
+
+  attendedBy: string | null
+
+  /** Google Meet / Zoom link (set_meeting_link) and when it was sent on WhatsApp. */
+  meetingLink: string
+
+  linkSentAt: string | null
 }
 
 export interface MeetingRow {
@@ -58,6 +68,14 @@ export interface MeetingRow {
   client_code: string | null
 
   lead_website: string | null
+
+  attended_at: string | null
+
+  attended_by: string | null
+
+  meeting_link: string | null
+
+  link_sent_at: string | null
 }
 
 export interface MeetingRequest {
@@ -176,6 +194,14 @@ export function mapMeeting(
     bookedByName: users.get(row.booked_by) ?? "",
 
     createdAt: row.created_at,
+
+    attendedAt: row.attended_at,
+
+    attendedBy: row.attended_by,
+
+    meetingLink: row.meeting_link ?? "",
+
+    linkSentAt: row.link_sent_at,
   }
 }
 
@@ -209,7 +235,7 @@ export function mapMeetingRequest(
 
 const SNAPSHOT_COLUMNS = "lead_name, lead_phone, client_code, lead_website"
 
-export const MEETING_COLUMNS = `id, lead_id, booked_by, assigned_sales_id, proposed_date, telesales_notes, outcome, created_at, ${SNAPSHOT_COLUMNS}`
+export const MEETING_COLUMNS = `id, lead_id, booked_by, assigned_sales_id, proposed_date, telesales_notes, outcome, created_at, attended_at, attended_by, meeting_link, link_sent_at, ${SNAPSHOT_COLUMNS}`
 
 const REQUEST_COLUMNS = `id, lead_id, requested_by, assigned_sales_id, notes, preferred_date, created_at, ${SNAPSHOT_COLUMNS}`
 

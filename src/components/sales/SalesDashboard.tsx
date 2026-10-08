@@ -37,6 +37,13 @@ import { useI18n } from "../../i18n/I18nProvider"
 import { ClientLink } from "../shared/AppOverlays"
 import ClientContact, { ClientCodeBadge, PhoneActions } from "../shared/ClientContact"
 import DealCreateModal from "../shared/DealCreateModal"
+import {
+  AttendanceControl,
+  formatMeetingDate,
+  MeetingLinkField,
+  MeetingOutcomeButtons,
+  MeetingWhatsAppButton,
+} from "../shared/MeetingActions"
 import { usePermissions } from "../../hooks/usePermissions"
 import { Role } from "../../data/crmTypes"
 
@@ -373,6 +380,14 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
     setCustomerPhone(phone)
 
     setRefreshVersion((version) => version + 1)
+  }
+
+  /** Optimistic change of one meeting (attendance, link, outcome) in the list and the open details. */
+  const patchMeeting = (id: string, patch: Partial<Meeting>) => {
+    setMeetings((prev) =>
+      prev.map((meeting) => (meeting.id === id ? { ...meeting, ...patch } : meeting)),
+    )
+    setDetail((prev) => (prev && prev.id === id ? { ...prev, ...patch } : prev))
   }
 
   const updateOutcome = async (id: string, outcome: MeetingOutcome) => {
@@ -751,7 +766,7 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
                       d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                     />
                   </svg>
-                  <span className="font-mono">{m.proposedDate}</span>
+                  <span>{formatMeetingDate(m.proposedDate, lang)}</span>
                 </div>
                 <div className="bg-[#1a1a1a] rounded p-3 mb-4">
                   <div className="text-[#6b6b6b] text-xs mb-1">
@@ -760,6 +775,20 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
                   <div className="text-[#d0d0d0] text-sm leading-relaxed">
                     {m.telesalesNotes}
                   </div>
+                </div>
+                <div className="mb-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <MeetingLinkField meeting={m} onChange={(patch) => patchMeeting(m.id, patch)} />
+                    <MeetingWhatsAppButton meeting={m} onChange={(patch) => patchMeeting(m.id, patch)} />
+                  </div>
+                  <AttendanceControl meeting={m} onChange={(patch) => patchMeeting(m.id, patch)} />
+                  {m.attendedAt && (
+                    <MeetingOutcomeButtons
+                      meeting={m}
+                      onChange={(patch) => patchMeeting(m.id, patch)}
+                      onCloseDeal={(meeting) => setDealLeadId(meeting.leadId)}
+                    />
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
@@ -812,12 +841,18 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
                     <div className="mt-1"><ClientCodeBadge code={m.clientCode} /></div>
                   </Td>
                   <Td>
-                    <PhoneActions phone={m.leadPhone} leadId={m.leadId} className="text-xs" />
+                    <div className="flex items-center gap-1">
+                      <PhoneActions phone={m.leadPhone} leadId={m.leadId} className="text-xs" />
+                      <MeetingWhatsAppButton meeting={m} onChange={(patch) => patchMeeting(m.id, patch)} />
+                    </div>
                   </Td>
                   <Td>
-                    <span className="font-mono text-xs text-[#dfff03]">
-                      {m.proposedDate}
-                    </span>
+                    <div className="text-xs text-[#dfff03]">
+                      {formatMeetingDate(m.proposedDate, lang)}
+                    </div>
+                    <div className="mt-1">
+                      <AttendanceControl meeting={m} onChange={(patch) => patchMeeting(m.id, patch)} />
+                    </div>
                   </Td>
                   <Td>
                     <div className="flex items-center gap-2">
@@ -972,9 +1007,9 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
                 <PhoneActions phone={detail.leadPhone} leadId={detail.leadId} className="text-white text-sm" />
               </div>
               {[
-                ["Scheduled", detail.proposedDate],
+                ["Scheduled", formatMeetingDate(detail.proposedDate, lang)],
 
-                ["Created", detail.createdAt],
+                ["Created", formatMeetingDate(detail.createdAt, lang)],
               ].map(([k, v]) => (
                 <div key={k} className="bg-[#1a1a1a] rounded p-3">
                   <div className="text-[#6b6b6b] text-xs mb-1">{t(k)}</div>
@@ -1064,6 +1099,24 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
               <div className="text-[#d0d0d0] text-sm leading-relaxed">
                 {detail.telesalesNotes}
               </div>
+            </div>
+            <div className="bg-[#1a1a1a] rounded p-3 space-y-3">
+              <div className="text-[#6b6b6b] text-xs">{t("Meeting link")}</div>
+              <div className="flex items-center gap-2">
+                <MeetingLinkField meeting={detail} onChange={(patch) => patchMeeting(detail.id, patch)} />
+                <MeetingWhatsAppButton meeting={detail} onChange={(patch) => patchMeeting(detail.id, patch)} />
+              </div>
+              <AttendanceControl meeting={detail} onChange={(patch) => patchMeeting(detail.id, patch)} />
+              {detail.attendedAt && (
+                <MeetingOutcomeButtons
+                  meeting={detail}
+                  onChange={(patch) => patchMeeting(detail.id, patch)}
+                  onCloseDeal={(meeting) => {
+                    setDealLeadId(meeting.leadId)
+                    setDetail(null)
+                  }}
+                />
+              )}
             </div>
             <div>
               <label className="block text-xs text-[#a0a0a0] mb-1">

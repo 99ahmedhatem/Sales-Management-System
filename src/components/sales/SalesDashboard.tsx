@@ -874,7 +874,11 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
                       {formatMeetingDate(m.proposedDate, lang)}
                     </div>
                     <div className="mt-1">
-                      <AttendanceControl meeting={m} onChange={(patch) => patchMeeting(m.id, patch)} />
+                      <AttendanceControl
+                        meeting={m}
+                        onChange={(patch) => patchMeeting(m.id, patch)}
+                        onSettled={() => setRefreshVersion((version) => version + 1)}
+                      />
                     </div>
                   </Td>
                   <Td>

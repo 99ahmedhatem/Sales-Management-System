@@ -153,5 +153,6 @@ Use these exact names (read `supabase/migrations/009_management_tools.sql` for d
 - Writes stay admin-only (or via the existing RPCs) unless the user says otherwise.
 - `notifications.type` has a check constraint in the live DB that does **not** allow `comment`: use `system` (or `assignment` / `meeting` / `reminder`) and wrap notification inserts in `begin … exception when others then null; end;` so they never block the main action (050, 051).
 - Packages (047): `list_packages()` for every role with `packages.view`; `min_price_sar` is null without `packages.view_min_price` (manager by default). The admin page (`AdminPackages.tsx`) keeps managing the table directly.
+- Package visibility per manager (SQL pasted as "065", **not in the repo yet** — save it as `061_package_manager_access.sql`): a package with no rows is for everyone; with rows only those managers + their team (+ admin) see it. Filtering is in the DB (RLS, `list_packages`, `create_deal`) — the UI never filters. Admin reads `get_package_access()` → rows `package_id, manager_id`; saves `set_package_access(p_package_id, p_manager_ids uuid[])` (empty = everyone). UI: Visibility column, modal and bulk "Assign to manager" in `AdminPackages.tsx`.
 
 === END ===

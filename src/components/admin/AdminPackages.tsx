@@ -50,6 +50,15 @@ const EMPTY_FORM: PackageForm = {
   minPriceSar: "",
 }
 
+interface ManagerOption {
+  id: string
+
+  fullName: string
+}
+
+/** get_package_access() rows grouped by package; a package with no rows is visible to everyone (065). */
+type AccessMap = Record<string, string[]>
+
 function mapToForm(item: SalesPackage): PackageForm {
   return {
     name: item.name,
@@ -87,14 +96,82 @@ export default function AdminPackages() {
 
   const [form, setForm] = useState<PackageForm>(EMPTY_FORM)
 
+  const [managers, setManagers] = useState<ManagerOption[]>([])
+
+  const [access, setAccess] = useState<AccessMap>({})
+
+  const [accessLoaded, setAccessLoaded] = useState(false)
+
+  const [managerFilter, setManagerFilter] = useState("")
+
+  const [accessFor, setAccessFor] = useState<SalesPackage | null>(null)
+
+  const [accessDraft, setAccessDraft] = useState<string[]>([])
+
+  const [accessError, setAccessError] = useState("")
+
+  const [selected, setSelected] = useState<string[]>([])
+
+  const [bulkManager, setBulkManager] = useState("")
+
+  const [bulkSaving, setBulkSaving] = useState(false)
+
+  async function loadAccess() {
+    const [accessResult, managersResult] = await Promise.all([
+      supabase.rpc("get_package_access"),
+
+      supabase
+        .from("users")
+        .select("id, full_name")
+        .eq("role", "manager")
+        .eq("status", "active")
+        .order("full_name"),
+    ])
+
+    if (accessResult.error || managersResult.error) {
+      setError(
+        accessResult.error?.message ??
+          managersResult.error?.message ??
+          "Could not load package visibility.",
+      )
+
+      setAccessLoaded(false)
+
+      return null
+    }
+
+    const grouped: AccessMap = {}
+
+    for (const row of (accessResult.data ?? []) as {
+      package_id: string
+      manager_id: string
+    }[]) {
+      ;(grouped[row.package_id] ??= []).push(row.manager_id)
+    }
+
+    setAccess(grouped)
+
+    setManagers(
+      ((managersResult.data ?? []) as { id: string; full_name: string | null }[]).map(
+        (row) => ({ id: row.id, fullName: row.full_name ?? "—" }),
+      ),
+    )
+
+    setAccessLoaded(true)
+
+    return grouped
+  }
+
   async function loadPackages() {
     setLoading(true)
 
     setError("")
 
+    const grouped = await loadAccess()
+
     const from = page * PAGE_SIZE
 
-    const { data, error: queryError } = await supabase
+    let query = supabase
 
       .from("packages")
 
@@ -105,6 +182,17 @@ export default function AdminPackages() {
       .order("created_at", { ascending: false })
 
       .range(from, from + PAGE_SIZE)
+
+    // "Show packages of manager": hide the packages limited to other managers only
+    if (managerFilter && grouped) {
+      const hidden = Object.entries(grouped)
+        .filter(([, ids]) => !ids.includes(managerFilter))
+        .map(([id]) => id)
+
+      if (hidden.length) query = query.not("id", "in", `(${hidden.join(",")})`)
+    }
+
+    const { data, error: queryError } = await query
 
     if (queryError) {
       setError(queryError.message)
@@ -124,8 +212,10 @@ export default function AdminPackages() {
   }
 
   useEffect(() => {
+    setSelected([])
+
     loadPackages()
-  }, [page])
+  }, [page, managerFilter])
 
   useRealtimeRefresh(["packages"], loadPackages)
 
@@ -231,6 +321,83 @@ export default function AdminPackages() {
     else await loadPackages()
   }
 
+  const managerName = (id: string) =>
+    managers.find((manager) => manager.id === id)?.fullName ?? "—"
+
+  function openAccess(item: SalesPackage) {
+    setAccessFor(item)
+
+    setAccessDraft(access[item.id] ?? [])
+
+    setAccessError("")
+  }
+
+  async function saveAccess() {
+    if (!accessFor) return
+
+    setSaving(true)
+
+    setAccessError("")
+
+    const { error: rpcError } = await supabase.rpc("set_package_access", {
+      p_package_id: accessFor.id,
+
+      p_manager_ids: accessDraft,
+    })
+
+    setSaving(false)
+
+    if (rpcError) {
+      setAccessError(rpcError.message)
+
+      return
+    }
+
+    setAccessFor(null)
+
+    await loadPackages()
+  }
+
+  /** Adds the manager to each selected package's current list (a package for everyone becomes limited to him). */
+  async function assignSelectedToManager() {
+    if (!bulkManager || selected.length === 0) return
+
+    setBulkSaving(true)
+
+    setError("")
+
+    const failures: string[] = []
+
+    for (const packageId of selected) {
+      const current = access[packageId] ?? []
+
+      if (current.includes(bulkManager)) continue
+
+      const { error: rpcError } = await supabase.rpc("set_package_access", {
+        p_package_id: packageId,
+
+        p_manager_ids: [...current, bulkManager],
+      })
+
+      if (rpcError) {
+        const name = packages.find((item) => item.id === packageId)?.name ?? packageId
+
+        failures.push(`${name}: ${rpcError.message}`)
+      }
+    }
+
+    setBulkSaving(false)
+
+    setSelected([])
+
+    await loadPackages()
+
+    if (failures.length) setError(failures.join(" · "))
+  }
+
+  const allSelected =
+    packages.length > 0 && packages.every((item) => selected.includes(item.id))
+
   return (
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between gap-4">
@@ -241,6 +408,77 @@ export default function AdminPackages() {
           </p>
         </div>
         <Button onClick={openCreate}>{t("+ New Package")}</Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-xs text-[#a0a0a0]">
+          {t("Show packages of manager:")}
+          <select
+            value={managerFilter}
+            onChange={(event) => {
+              setPage(0)
+
+              setManagerFilter(event.target.value)
+            }}
+            className="rounded border border-[#2a2a2a] bg-[#1a1a1a] px-2 py-1.5 text-sm text-white focus:border-[#dfff03]/60 focus:outline-none"
+          >
+            <option value="">{t("All packages")}</option>
+            {managers.map((manager) => (
+              <option key={manager.id} value={manager.id}>
+                {manager.fullName}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {packages.length > 0 && (
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-[#a0a0a0]">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={() =>
+                setSelected(allSelected ? [] : packages.map((item) => item.id))
+              }
+              className="accent-[#dfff03]"
+            />
+            {t("Select all on this page")}
+          </label>
+        )}
+
+        {selected.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded border border-[#dfff03]/30 bg-[#dfff03]/5 px-3 py-1.5">
+            <span className="text-xs text-[#dfff03]">
+              {t("{n} selected", { n: selected.length })}
+            </span>
+            <select
+              value={bulkManager}
+              onChange={(event) => setBulkManager(event.target.value)}
+              className="rounded border border-[#2a2a2a] bg-[#1a1a1a] px-2 py-1 text-xs text-white focus:border-[#dfff03]/60 focus:outline-none"
+            >
+              <option value="">{t("Choose a manager")}</option>
+              {managers.map((manager) => (
+                <option key={manager.id} value={manager.id}>
+                  {manager.fullName}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              disabled={!bulkManager || bulkSaving || !accessLoaded}
+              onClick={assignSelectedToManager}
+            >
+              {bulkSaving ? t("Saving...") : t("Assign to manager")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={bulkSaving}
+              onClick={() => setSelected([])}
+            >
+              {t("Cancel")}
+            </Button>
+          </div>
+        )}
       </div>
 
       {error && !modalOpen && (
@@ -262,10 +500,34 @@ export default function AdminPackages() {
           </div>
         ) : (
           <Table
-            headers={["Package", "Duration", "Price", "Minimum", "Status", ""]}
+            headers={[
+              "",
+              "Package",
+              "Duration",
+              "Price",
+              "Minimum",
+              "Visibility",
+              "Status",
+              "",
+            ]}
           >
             {packages.map((item) => (
               <Tr key={item.id}>
+                <Td>
+                  <input
+                    type="checkbox"
+                    aria-label={item.name}
+                    checked={selected.includes(item.id)}
+                    onChange={() =>
+                      setSelected((current) =>
+                        current.includes(item.id)
+                          ? current.filter((id) => id !== item.id)
+                          : [...current, item.id],
+                      )
+                    }
+                    className="accent-[#dfff03]"
+                  />
+                </Td>
                 <Td>
                   <div className="font-medium text-white">{item.name}</div>
                   <div className="max-w-sm truncate text-xs text-[#6b6b6b]">
@@ -284,6 +546,24 @@ export default function AdminPackages() {
                   </span>
                 </Td>
                 <Td>
+                  {!accessLoaded ? (
+                    <span className="text-xs text-[#6b6b6b]">—</span>
+                  ) : (access[item.id] ?? []).length === 0 ? (
+                    <span className="text-xs text-[#a0a0a0]">{t("Everyone")}</span>
+                  ) : (
+                    <div className="flex max-w-xs flex-wrap gap-1">
+                      {(access[item.id] ?? []).map((managerId) => (
+                        <span
+                          key={managerId}
+                          className="rounded-full border border-[#dfff03]/30 bg-[#dfff03]/10 px-2 py-0.5 text-xs text-[#dfff03]"
+                        >
+                          {managerName(managerId)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </Td>
+                <Td>
                   <span
                     className={
                       item.isActive ? "text-[#64dc78]" : "text-[#6b6b6b]"
@@ -300,6 +580,14 @@ export default function AdminPackages() {
                       onClick={() => openEdit(item)}
                     >
                       {t("Edit")}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={!accessLoaded}
+                      onClick={() => openAccess(item)}
+                    >
+                      {t("Set visibility")}
                     </Button>
                     <Button
                       variant={item.isActive ? "danger" : "ghost"}
@@ -339,6 +627,65 @@ export default function AdminPackages() {
           </div>
         </div>
       )}
+
+      <Modal
+        open={Boolean(accessFor)}
+        onClose={() => setAccessFor(null)}
+        title="Package visibility"
+      >
+        <div className="space-y-4">
+          <div className="text-sm font-medium text-white">{accessFor?.name}</div>
+          {accessError && (
+            <div
+              role="alert"
+              className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-3 text-sm text-[#ff8888] anim-shake"
+            >
+              {accessError}
+            </div>
+          )}
+          <p className="text-xs text-[#a0a0a0]">
+            {t("If you don't select anyone, the package is visible to everyone.")}
+          </p>
+          {managers.length === 0 ? (
+            <p className="text-sm text-[#6b6b6b]">{t("No active managers.")}</p>
+          ) : (
+            <div className="max-h-72 space-y-1 overflow-y-auto">
+              {managers.map((manager) => (
+                <label
+                  key={manager.id}
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-white hover:bg-[#1a1a1a]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={accessDraft.includes(manager.id)}
+                    onChange={() =>
+                      setAccessDraft((current) =>
+                        current.includes(manager.id)
+                          ? current.filter((id) => id !== manager.id)
+                          : [...current, manager.id],
+                      )
+                    }
+                    className="accent-[#dfff03]"
+                  />
+                  {manager.fullName}
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2 pt-2">
+            <Button disabled={saving} onClick={saveAccess}>
+              {saving ? t("Saving...") : t("Save")}
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={saving}
+              onClick={() => setAccessFor(null)}
+            >
+              {t("Cancel")}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={modalOpen}

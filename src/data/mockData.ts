@@ -60,6 +60,9 @@ export interface Lead {
   region?: string;
   source?: string;
   isSallaStore?: boolean;
+  /** 066: the lead was assigned before and came back when its telesales was deleted (historical; never cleared). */
+  wasDistributed?: boolean;
+  releasedAt?: string;
   dataQuality?: LeadDataQuality;
   status: LeadStatus;
   assignedTo?: string; // user id (telesales or manager)

@@ -1187,4 +1187,9 @@ export const ar: Record<string, string> = {
   "Choose a manager": "اختر مدير",
   "Assign to manager": "تعيين لمدير",
   "Could not load package visibility.": "تعذّر تحميل ظهور الباقات.",
+  "Previously distributed": "سبق توزيعه",
+  "Brand new": "جديد تماماً",
+  "All clients": "كل العملاء",
+  "Returned to the list on {date}": "رجع للقائمة في {date}",
+  "The user's clients will go back to the regular list, and their activity data (meetings / calls / draft deals) will be deleted.": "عملاء الموظف هيرجعوا للقائمة العادية وبيانات نشاطه (اجتماعات/مكالمات/صفقات مسودة) هتتمسح.",
 };

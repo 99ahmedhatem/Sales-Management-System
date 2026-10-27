@@ -20,6 +20,12 @@ import WebsiteChecks, { WEBSITE_REASON_FILTER_OPTIONS, WEBSITE_STATUS_FILTER_OPT
 import WhatsAppButton from '../shared/WhatsAppButton';
 import { usePermissions } from '../../hooks/usePermissions';
 
+const HISTORY_FILTER_OPTIONS = [
+  { value: '', label: 'All clients' },
+  { value: 'previous', label: 'Previously distributed' },
+  { value: 'fresh', label: 'Brand new' },
+];
+
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
   { value: 'New', label: 'New' },
@@ -125,6 +131,8 @@ function mapLead(row: any): Lead {
     region: row.region ?? undefined,
     source: row.source ?? undefined,
     isSallaStore: row.is_salla_store ?? false,
+    wasDistributed: row.was_distributed ?? false,
+    releasedAt: row.released_at ?? undefined,
     dataQuality: row.data_quality ?? 'normal',
     status: row.status,
     assignedTo: row.assigned_to ?? undefined,
@@ -169,10 +177,11 @@ export default function AdminLeads() {
   const [assignmentFilter, setAssignmentFilter] = usePersistentState('leads.assignment', '');
   const [websiteFilter, setWebsiteFilter] = usePersistentState('leads.website', '');
   const [websiteReasonFilter, setWebsiteReasonFilter] = usePersistentState('leads.websiteReason', '');
-  const hasFilters = !!(search.trim() || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || assignmentFilter || websiteFilter || websiteReasonFilter);
+  const [historyFilter, setHistoryFilter] = usePersistentState('leads.history', '');
+  const hasFilters = !!(search.trim() || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || assignmentFilter || websiteFilter || websiteReasonFilter || historyFilter);
   const clearFilters = () => {
     setSearch(''); setStatusFilter(''); setRegionFilter(''); setPhoneFilter(''); setTypeFilter('');
-    setQualityFilter(''); setAssignmentFilter(''); setWebsiteFilter(''); setWebsiteReasonFilter('');
+    setQualityFilter(''); setAssignmentFilter(''); setWebsiteFilter(''); setWebsiteReasonFilter(''); setHistoryFilter('');
   };
   const { confirm, confirmUi } = useConfirm();
   const [showWebsiteChecks, setShowWebsiteChecks] = useState(false);
@@ -222,12 +231,15 @@ export default function AdminLeads() {
   const requestId = useRef(0);
   const pageSize = 100;
 
-  /** Website status / check reason filters (033), shared by the list and the Excel export. */
-  function applyWebsiteFilters<Q extends { eq: (c: string, v: string) => Q; is: (c: string, v: null) => Q; not: (c: string, op: string, v: null) => Q }>(query: Q): Q {
+  /** Website status / check reason (033) and distribution history (066) filters, shared by the list and the Excel export. */
+  function applyWebsiteFilters<Q extends { eq: (c: string, v: string) => Q; is: (c: string, v: null | boolean) => Q; not: (c: string, op: string, v: null | boolean) => Q }>(query: Q): Q {
     let q = query;
     if (websiteFilter === 'working' || websiteFilter === 'not_working') q = q.eq('website_status', websiteFilter);
     if (websiteFilter === 'unchecked') q = q.not('website', 'is', null).is('website_checked_at', null).is('website_status', null);
     if (websiteReasonFilter) q = q.eq('website_check_category', websiteReasonFilter);
+    // 066: was_distributed = the lead came back after its telesales was deleted
+    if (historyFilter === 'previous') q = q.is('was_distributed', true);
+    if (historyFilter === 'fresh') q = q.not('was_distributed', 'is', true);
     return q;
   }
 
@@ -241,7 +253,7 @@ export default function AdminLeads() {
     const managerIds = loadedUsers.filter(user => user.role === 'manager').map(user => user.id);
 
     const q = debouncedSearch.replace(/[%,()]/g, ' ').trim();
-    const otherFilters = Boolean(q || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || websiteFilter || websiteReasonFilter);
+    const otherFilters = Boolean(q || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || websiteFilter || websiteReasonFilter || historyFilter);
     // With no filters (or only "Not distributed") the total comes from get_leads_counts, so skip the slow count.
     const countFromRpc = !otherFilters && (assignmentFilter === '' || assignmentFilter === 'unassigned');
 
@@ -303,7 +315,7 @@ export default function AdminLeads() {
     setSelected([]);
     loadData(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter, qualityFilter, assignmentFilter, websiteFilter, websiteReasonFilter]);
+  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter, qualityFilter, assignmentFilter, websiteFilter, websiteReasonFilter, historyFilter]);
 
   // Live updates: when anyone changes a lead or a user, this page refreshes by itself
   useRealtimeRefresh(['leads', 'users'], () => loadData(page, true));
@@ -663,6 +675,7 @@ export default function AdminLeads() {
         <Select value={websiteFilter} onChange={setWebsiteFilter} options={WEBSITE_STATUS_FILTER_OPTIONS} className="w-44" />
         <Select value={websiteReasonFilter} onChange={setWebsiteReasonFilter} options={WEBSITE_REASON_FILTER_OPTIONS} className="w-52" />
         <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: '', label: 'All Assignments' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
+        <Select value={historyFilter} onChange={setHistoryFilter} options={HISTORY_FILTER_OPTIONS} className="w-44" />
         {can('leads.export') && <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? t('Exporting...') : t('Export Excel')}</Button>}
         {can('leads.distribute') && <Button variant="secondary" size="sm" onClick={() => setDistributeModal(true)}>{t('Distribute evenly')}</Button>}
         {hasFilters && <Button variant="ghost" size="sm" onClick={clearFilters}>{t('Clear filters')}</Button>}
@@ -709,7 +722,19 @@ export default function AdminLeads() {
                     />
                   </Td>
                   <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
-                  <Td><span className="font-medium text-white">{lead.name}</span></Td>
+                  <Td>
+                    <span className="font-medium text-white">{lead.name}</span>
+                    {lead.wasDistributed && (
+                      <span
+                        className="ms-2 inline-flex items-center rounded bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-300"
+                        title={lead.releasedAt
+                          ? t('Returned to the list on {date}', { date: new Date(lead.releasedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) })
+                          : t('Previously distributed')}
+                      >
+                        {t('Previously distributed')}
+                      </span>
+                    )}
+                  </Td>
                   <Td><EditablePhoneCell phone={lead.phone} onSave={phone => saveInlinePhone(lead, phone)} /></Td>
                   <Td><WebsiteLink url={lead.website} className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block" /></Td>
                   <Td>

@@ -304,14 +304,16 @@ export default function AdminUsers() {
   const deleteUser = async (u: User) => {
     const ok = await confirm({
       title: 'Delete user',
-      message: t('Delete {name}? This also removes their login account and cannot be undone.', { name: u.fullName }),
+      message: t('Delete {name}? This also removes their login account and cannot be undone.', { name: u.fullName })
+        + '\n\n' + t("The user's clients will go back to the regular list, and their activity data (meetings / calls / draft deals) will be deleted."),
       confirmLabel: 'Delete', danger: true,
     });
     if (!ok) return;
     setErrorMsg('');
     const { error } = await supabase.rpc('delete_user_account', { target_user_id: u.id });
     if (error) {
-      setErrorMsg(t('{msg}. Run supabase-setup.sql in Supabase SQL Editor, then refresh the page.', { msg: error.message }));
+      // 066 returns a ready Arabic message (e.g. why the user can't be deleted): show it as is
+      toast(error.message, false);
       return;
     }
     setUsers(prev => prev.filter(x => x.id !== u.id));

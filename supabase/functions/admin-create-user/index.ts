@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-const CREATABLE_ROLES = new Set(['manager', 'sales', 'telesales'])
+const CREATABLE_ROLES = new Set(['manager', 'sales', 'telesales', 'sales_telesales'])
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -62,7 +62,7 @@ Deno.serve(async (request) => {
   if (!EMAIL_PATTERN.test(email)) return jsonResponse(400, { error: 'A valid email is required' })
   if (password.length < 8) return jsonResponse(400, { error: 'Password must be at least 8 characters' })
   if (!fullName) return jsonResponse(400, { error: 'Full name is required' })
-  if (!CREATABLE_ROLES.has(role)) return jsonResponse(400, { error: 'Role must be manager, sales or telesales' })
+  if (!CREATABLE_ROLES.has(role)) return jsonResponse(400, { error: 'Role must be manager, sales, telesales or sales_telesales' })
   for (const [label, value] of [['Commission %', commissionPercent], ['Lead %', leadPercent], ['Manager %', managerPercent]] as const) {
     if (!Number.isFinite(value) || value < 0 || value > 100) {
       return jsonResponse(400, { error: `${label} must be between 0 and 100` })
@@ -101,7 +101,7 @@ Deno.serve(async (request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
-  const assignedManagerId = ['sales', 'telesales'].includes(role) ? managerId : null
+  const assignedManagerId = ['sales', 'telesales', 'sales_telesales'].includes(role) ? managerId : null
   if (assignedManagerId) {
     const { data: manager, error: managerError } = await service
       .from('users')
@@ -141,13 +141,13 @@ Deno.serve(async (request) => {
   }
 
   // Salary and percentages (008). Sales/telesales only: managers earn from their team's rows.
-  const earnsCommission = role === 'sales' || role === 'telesales'
+  const earnsCommission = role === 'sales' || role === 'telesales' || role === 'sales_telesales'
   const { error: payError } = await service.from('user_commission_rates').upsert({
     user_id: created.user.id,
     base_salary: baseSalary,
     base_currency: baseCurrency,
     closer_percent: earnsCommission ? commissionPercent : 0,
-    lead_percent: role === 'telesales' ? leadPercent : 0,
+    lead_percent: role === 'telesales' || role === 'sales_telesales' ? leadPercent : 0,
     manager_percent: earnsCommission ? managerPercent : 0,
     updated_by: authData.user.id,
   })

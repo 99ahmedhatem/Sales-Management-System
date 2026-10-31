@@ -12,7 +12,7 @@ import WhatsAppButton from './WhatsAppButton';
 import { websiteCategoryLabel } from './WebsiteChecks';
 import { usePermissions } from '../../hooks/usePermissions';
 
-type Role = 'admin' | 'manager' | 'sales' | 'telesales';
+type Role = 'admin' | 'manager' | 'sales' | 'telesales' | 'sales_telesales';
 
 export interface LeadCardLead {
   id: string;

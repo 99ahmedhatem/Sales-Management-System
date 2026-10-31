@@ -61,11 +61,11 @@ export default function ManagerDashboard({ userId }: Props) {
   const patchMeeting = (id: string, patch: Partial<Meeting>) =>
     setUpcomingMeetings(prev => prev.map(m => (m.id === id ? { ...m, ...patch } : m)));
 
-  const telesalesTeam = myTeam.filter(u => u.role === 'telesales');
+  const telesalesTeam = myTeam.filter(u => u.role === 'telesales' || u.role === 'sales_telesales');
   // Recipients: the manager himself + active telesales of his team
   const assignableTelesales = [...(me && me.status === 'active' ? [me] : []), ...telesalesTeam.filter(u => u.status === 'active')];
   const recipientAgents = assignableTelesales.map(u => ({ id: u.id, fullName: u.fullName, role: u.role }));
-  const salesTeam = myTeam.filter(u => u.role === 'sales');
+  const salesTeam = myTeam.filter(u => u.role === 'sales' || u.role === 'sales_telesales');
 
   // Assignment
   const [assignModal, setAssignModal] = useState(false);
@@ -146,7 +146,7 @@ export default function ManagerDashboard({ userId }: Props) {
         })));
         setTotalTeamLeads(leadsRes.count ?? 0);
         const teamIds = mappedUsers.filter(user => user.managerId === userId).map(user => user.id);
-        const salesIds = mappedUsers.filter(user => user.managerId === userId && user.role === 'sales').map(user => user.id);
+        const salesIds = mappedUsers.filter(user => user.managerId === userId && (user.role === 'sales' || user.role === 'sales_telesales')).map(user => user.id);
         const meetingCount = (salesId: string, outcome?: string) => {
           let query = supabase.from('meetings').select('id', { count: 'exact', head: true }).eq('assigned_sales_id', salesId);
           if (outcome) query = query.eq('outcome', outcome);

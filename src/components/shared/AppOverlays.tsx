@@ -5,7 +5,7 @@ import ErrorBoundary from './ErrorBoundary';
 const LeadCard = lazy(() => import('./LeadCard'));
 const ProfileView = lazy(() => import('./ProfileView'));
 
-type Role = 'admin' | 'manager' | 'sales' | 'telesales';
+type Role = 'admin' | 'manager' | 'sales' | 'telesales' | 'sales_telesales';
 
 interface OverlaysValue {
   /** Opens the client card drawer for this lead. */

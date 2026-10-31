@@ -66,8 +66,8 @@ export default function DistributeLeadsModal({ open, onClose, agents, onDone, ma
 
   useEffect(() => {
     if (!open) return;
-    // Telesales are picked by default; admins/managers (061+) only when chosen
-    setPicked(agents.filter(a => !a.role || a.role === 'telesales').map(a => a.id));
+    // Telesales (and sales + telesales) are picked by default; admins/managers (061+) only when chosen
+    setPicked(agents.filter(a => !a.role || a.role === 'telesales' || a.role === 'sales_telesales').map(a => a.id));
     setMaxPer('');
     setLimit('');
     setCountry('');

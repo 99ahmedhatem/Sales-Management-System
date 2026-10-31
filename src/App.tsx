@@ -145,6 +145,30 @@ export default function App() {
     return () => listener.subscription.unsubscribe()
   }, [])
 
+  // 065: when the admin changes this user's job, switch the dashboard right away, no re-login.
+  // Realtime for instant updates; re-checking when the tab gets focus covers a dropped realtime connection.
+  const myId = session?.userId
+  useEffect(() => {
+    if (!myId) return
+    const apply = (row: { role?: Role } | null) => {
+      if (row?.role) setSession((s) => (s && s.userId === myId && s.role !== row.role ? { ...s, role: row.role as Role } : s))
+    }
+    const recheck = () => {
+      void supabase.from("users").select("role").eq("id", myId).maybeSingle().then(({ data }) => apply(data))
+    }
+    const channel = supabase
+      .channel(`my-role-${myId}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "users", filter: `id=eq.${myId}` }, (payload) =>
+        apply(payload.new as { role?: Role }),
+      )
+      .subscribe()
+    window.addEventListener("focus", recheck)
+    return () => {
+      window.removeEventListener("focus", recheck)
+      void supabase.removeChannel(channel)
+    }
+  }, [myId])
+
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-[#0c0c0c] flex items-center justify-center text-[#a0a0a0] text-sm">
@@ -171,6 +195,7 @@ export default function App() {
     <PermissionsProvider role={session.role} userId={session.userId}>
     <AppOverlaysProvider role={session.role}>
     <AppShell
+      key={session.role}
       role={session.role}
       userId={session.userId}
       onLogout={() => supabase.auth.signOut()}
@@ -190,7 +215,7 @@ export default function App() {
           {(session.role === "admin" || session.role === "manager") && page === "team" && (
             <TeamPerformance mode="team" userId={session.userId} role={session.role} />
           )}
-          {(session.role === "sales" || session.role === "telesales") && page === "earnings" && (
+          {(session.role === "sales" || session.role === "telesales" || session.role === "sales_telesales") && page === "earnings" && (
             <TeamPerformance mode="mine" userId={session.userId} role={session.role} />
           )}
           {session.role === "admin" && page === "leads" && <AdminLeads />}
@@ -218,6 +243,17 @@ export default function App() {
           {session.role === "telesales" && page === "queue" && (
             <TelesalesDashboard userId={session.userId} />
           )}
+          {/* Sales + telesales (065): the telesales queue, plus meetings both booked by and assigned to them */}
+          {session.role === "sales_telesales" && page === "queue" && (
+            <TelesalesDashboard userId={session.userId} role="sales_telesales" />
+          )}
+          {session.role === "sales_telesales" && page === "meetings" && (
+            <SalesDashboard userId={session.userId} role="sales_telesales" />
+          )}
+          {session.role === "sales_telesales" && page === "contracts" && (
+            <ContractsModule userId={session.userId} role="sales_telesales" />
+          )}
+          {session.role === "sales_telesales" && page === "packages" && <PackagesList />}
           {session.role === "telesales" && page === "packages" && (
             <PackagesList />
           )}

@@ -480,7 +480,10 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
         ? [...roleNav, myQueueNavItem, myMeetingsNavItem, teamNavItem, packagesNavItem, whatsappNavItem, discoveryNavItem, permissionsNavItem, profileNavItem]
         : role === "telesales"
           ? [...roleNav, myMeetingsNavItem, earningsNavItem, packagesNavItem, profileNavItem]
-          : [...roleNav, earningsNavItem, packagesNavItem, profileNavItem]
+          : role === "sales_telesales"
+            ? // Sales + telesales (065): the telesales queue + the sales meetings and contracts
+              [...telesalesNav, ...salesNav, earningsNavItem, packagesNavItem, profileNavItem]
+            : [...roleNav, earningsNavItem, packagesNavItem, profileNavItem]
 
   // Packages: admin manages them (packages.manage); other roles get a read-only list (packages.view, 047).
   const nav = allNav.filter((item) => {
@@ -562,6 +565,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
     manager: "Manager",
     sales: "Sales",
     telesales: "Telesales",
+    sales_telesales: "Sales + Telesales",
   }[role]
 
   const roleBadgeColor = {
@@ -569,6 +573,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
     manager: "bg-orange-500/10 text-orange-300",
     sales: "bg-blue-500/10 text-blue-300",
     telesales: "bg-[#dfff03]/10 text-[#dfff03]",
+    sales_telesales: "bg-teal-500/10 text-teal-300",
   }[role]
 
   return (

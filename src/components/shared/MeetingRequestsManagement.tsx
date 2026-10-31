@@ -55,7 +55,7 @@ export default function MeetingRequestsManagement({ role, userId, participantIds
       let usersQuery = supabase
         .from("users")
         .select("id, full_name")
-        .eq("role", "sales")
+        .in("role", ["sales", "sales_telesales"])
         .eq("status", "active")
         .order("full_name")
       if (role === "manager") {

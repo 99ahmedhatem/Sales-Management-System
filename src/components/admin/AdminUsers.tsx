@@ -36,7 +36,7 @@ export default function AdminUsers() {
   const [createdCredentials, setCreatedCredentials] = useState<{ username: string; email: string; password: string } | null>(null);
   const [detailUser, setDetailUser] = useState<User | null>(null);
   const { confirm, confirmUi } = useConfirm();
-  const [tab, setTab] = useState<'all' | 'manager' | 'telesales' | 'sales'>('all');
+  const [tab, setTab] = useState<'all' | 'manager' | 'telesales' | 'sales' | 'sales_telesales'>('all');
   const [pageView, setPageView] = useState<'users' | 'clients'>('users');
   const [assignedLeads, setAssignedLeads] = useState<AssignedLead[]>([]);
   const [clientCounts, setClientCounts] = useState({ total: 0, active: 0, converted: 0, matching: 0 });
@@ -166,11 +166,11 @@ export default function AdminUsers() {
         password: newUser.password,
         full_name: newUser.fullName.trim(),
         role: newUser.role,
-        manager_id: ['sales', 'telesales'].includes(newUser.role) && newUser.managerId ? newUser.managerId : null,
+        manager_id: ['sales', 'telesales', 'sales_telesales'].includes(newUser.role) && newUser.managerId ? newUser.managerId : null,
         base_salary: Number(newUser.baseSalary) || 0,
         base_currency: newUser.baseCurrency,
         commission_percent: Number(newUser.commissionPercent) || 0,
-        lead_percent: ['telesales', 'manager', 'admin'].includes(newUser.role) ? Number(newUser.leadPercent) || 0 : 0,
+        lead_percent: ['telesales', 'sales_telesales', 'manager', 'admin'].includes(newUser.role) ? Number(newUser.leadPercent) || 0 : 0,
         manager_percent: ['manager', 'admin'].includes(newUser.role) ? 0 : Number(newUser.managerPercent) || 0,
       },
     });
@@ -222,7 +222,7 @@ export default function AdminUsers() {
     const params: Record<string, unknown> = { p_user_id: editUser.id };
     if (f.fullName.trim() !== init.fullName) params.p_full_name = f.fullName.trim();
     if (changed('role')) params.p_role = f.role;
-    if (['sales', 'telesales'].includes(f.role) && changed('managerId')) {
+    if (['sales', 'telesales', 'sales_telesales'].includes(f.role) && changed('managerId')) {
       params.p_set_manager = true;
       params.p_manager_id = f.managerId || null;
     }
@@ -230,8 +230,8 @@ export default function AdminUsers() {
     if (numberChanged('baseSalary')) params.p_base_salary = Number(f.baseSalary) || 0;
     if (changed('baseCurrency')) params.p_base_currency = f.baseCurrency;
     if (numberChanged('commissionPercent')) params.p_closer_percent = Number(f.commissionPercent) || 0;
-    if (['telesales', 'manager', 'admin'].includes(f.role) && numberChanged('leadPercent')) params.p_lead_percent = Number(f.leadPercent) || 0;
-    if (['sales', 'telesales'].includes(f.role) && numberChanged('managerPercent')) params.p_manager_percent = Number(f.managerPercent) || 0;
+    if (['telesales', 'sales_telesales', 'manager', 'admin'].includes(f.role) && numberChanged('leadPercent')) params.p_lead_percent = Number(f.leadPercent) || 0;
+    if (['sales', 'telesales', 'sales_telesales'].includes(f.role) && numberChanged('managerPercent')) params.p_manager_percent = Number(f.managerPercent) || 0;
     if (Object.keys(params).length === 1) {
       setEditUser(null);
       return;
@@ -321,12 +321,13 @@ export default function AdminUsers() {
     await loadUsers();
   };
 
-  const roleLabel: Record<Role, string> = { admin: 'Admin', manager: 'Manager', telesales: 'Telesales', sales: 'Sales' };
+  const roleLabel: Record<Role, string> = { admin: 'Admin', manager: 'Manager', telesales: 'Telesales', sales: 'Sales', sales_telesales: 'Sales + Telesales' };
   const roleColor: Record<Role, string> = {
     admin: 'bg-purple-500/10 text-purple-300',
     manager: 'bg-orange-500/10 text-orange-300',
     telesales: 'bg-[#dfff03]/10 text-[#dfff03]',
     sales: 'bg-blue-500/10 text-blue-300',
+    sales_telesales: 'bg-teal-500/10 text-teal-300',
   };
 
   if (loading) {
@@ -361,7 +362,7 @@ export default function AdminUsers() {
 
       {pageView === 'users' && <>
       <div className="flex gap-1 bg-[#1a1a1a] rounded-lg p-1 w-fit">
-        {(['all', 'manager', 'telesales', 'sales'] as const).map(tabKey => (
+        {(['all', 'manager', 'telesales', 'sales', 'sales_telesales'] as const).map(tabKey => (
           <button
             key={tabKey}
             onClick={() => setTab(tabKey)}
@@ -511,9 +512,10 @@ export default function AdminUsers() {
               <option value="manager">{t('Manager')}</option>
               <option value="telesales">{t('Telesales')}</option>
               <option value="sales">{t('Sales')}</option>
+              <option value="sales_telesales">{t('Sales + Telesales')}</option>
             </select>
           </div>
-          {['sales', 'telesales'].includes(newUser.role) && (
+          {['sales', 'telesales', 'sales_telesales'].includes(newUser.role) && (
             <div>
               <label className="block text-xs text-[#a0a0a0] mb-1">{t('Assign to Manager')}</label>
               <select
@@ -583,6 +585,7 @@ export default function AdminUsers() {
                       <option value="manager">{t('Manager')}</option>
                       <option value="telesales">{t('Telesales')}</option>
                       <option value="sales">{t('Sales')}</option>
+                      <option value="sales_telesales">{t('Sales + Telesales')}</option>
                     </select>
                   </div>
                   <div>
@@ -593,7 +596,7 @@ export default function AdminUsers() {
                     </select>
                   </div>
                 </div>
-                {['sales', 'telesales'].includes(editForm.role) && (
+                {['sales', 'telesales', 'sales_telesales'].includes(editForm.role) && (
                   <div>
                     <label className="block text-xs text-[#a0a0a0] mb-1">{t('Assign to Manager')}</label>
                     <select value={editForm.managerId} onChange={e => setEditForm(prev => ({ ...prev, managerId: e.target.value }))} className={INPUT_CLASS}>
@@ -701,9 +704,9 @@ function PayFields({ role, value, onChange }: { role: Role; value: PayForm; onCh
           </select>
         </div>
       </div>
-      {(role === 'sales' || role === 'telesales' || role === 'manager' || role === 'admin') && percent('commissionPercent', 'Closing %', 'Of each deal this employee closes himself')}
-      {(role === 'telesales' || role === 'manager' || role === 'admin') && percent('leadPercent', 'Client entry %', 'When someone else closes a deal on a client this employee entered')}
-      {(role === 'sales' || role === 'telesales') && percent('managerPercent', 'Manager share %', 'What this employee’s manager earns from each deal this employee closes or entered')}
+      {(role === 'sales' || role === 'telesales' || role === 'sales_telesales' || role === 'manager' || role === 'admin') && percent('commissionPercent', 'Closing %', 'Of each deal this employee closes himself')}
+      {(role === 'telesales' || role === 'sales_telesales' || role === 'manager' || role === 'admin') && percent('leadPercent', 'Client entry %', 'When someone else closes a deal on a client this employee entered')}
+      {(role === 'sales' || role === 'telesales' || role === 'sales_telesales') && percent('managerPercent', 'Manager share %', 'What this employee’s manager earns from each deal this employee closes or entered')}
     </div>
   );
 }
@@ -715,9 +718,9 @@ interface Rates { closer: number; lead: number; manager: number }
 
 /** Which percentage applies to which user (the others show —). */
 const RATE_RULES: Record<keyof Rates, (u: User) => boolean> = {
-  closer: u => ['sales', 'telesales', 'manager', 'admin'].includes(u.role),
-  lead: u => ['telesales', 'manager', 'admin'].includes(u.role),
-  manager: u => ['sales', 'telesales'].includes(u.role) && Boolean(u.managerId),
+  closer: u => ['sales', 'telesales', 'sales_telesales', 'manager', 'admin'].includes(u.role),
+  lead: u => ['telesales', 'sales_telesales', 'manager', 'admin'].includes(u.role),
+  manager: u => ['sales', 'telesales', 'sales_telesales'].includes(u.role) && Boolean(u.managerId),
 };
 
 /** Inline % input; saves on blur when the value changed. */

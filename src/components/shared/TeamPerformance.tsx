@@ -10,7 +10,7 @@ import { useProfileViewer } from './AppOverlays';
 interface PerformanceRow {
   user_id: string;
   full_name: string;
-  role: 'manager' | 'sales' | 'telesales';
+  role: 'manager' | 'sales' | 'telesales' | 'sales_telesales';
   manager_id: string | null;
   manager_name: string | null;
   base_salary: number;
@@ -50,7 +50,7 @@ export default function TeamPerformance({ mode, userId, role }: { mode: 'team' |
 
   const money = (value: number | null | undefined, currency: 'SAR' | 'EGP') =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(value ?? 0));
-  const roleLabel = (role: string) => (role === 'manager' ? t('Manager') : role === 'sales' ? t('Sales') : t('Telesales'));
+  const roleLabel = (role: string) => (role === 'manager' ? t('Manager') : role === 'sales' ? t('Sales') : role === 'sales_telesales' ? t('Sales + Telesales') : t('Telesales'));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -115,8 +115,8 @@ export default function TeamPerformance({ mode, userId, role }: { mode: 'team' |
           <TargetProgress month={allTime ? thisMonth() : month} canEdit={role === 'admin'} />
           <Panel title={t('My rates')} hint={t('Set by the admin')}>
             <SimpleTable
-              head={[t('Commission %'), ...(me.role === 'telesales' ? [t('Lead %')] : []), t('Manager %')]}
-              rows={[[`${nf(me.closer_percent, 2)}%`, ...(me.role === 'telesales' ? [`${nf(me.lead_percent, 2)}%`] : []), `${nf(me.manager_percent, 2)}%`]]}
+              head={[t('Commission %'), ...(me.role === 'telesales' || me.role === 'sales_telesales' ? [t('Lead %')] : []), t('Manager %')]}
+              rows={[[`${nf(me.closer_percent, 2)}%`, ...(me.role === 'telesales' || me.role === 'sales_telesales' ? [`${nf(me.lead_percent, 2)}%`] : []), `${nf(me.manager_percent, 2)}%`]]}
             />
           </Panel>
         </>
@@ -139,7 +139,7 @@ export default function TeamPerformance({ mode, userId, role }: { mode: 'team' |
               ]}
               rows={visible.map(r => [
                 r.full_name ?? '—', roleLabel(r.role), r.manager_name ?? '—', money(r.base_salary, r.base_currency),
-                `${nf(r.closer_percent, 2)}%`, r.role === 'telesales' ? `${nf(r.lead_percent, 2)}%` : '—', `${nf(r.manager_percent, 2)}%`,
+                `${nf(r.closer_percent, 2)}%`, r.role === 'telesales' || r.role === 'sales_telesales' ? `${nf(r.lead_percent, 2)}%` : '—', `${nf(r.manager_percent, 2)}%`,
                 nf(r.deals_count), money(r.deals_value_sar, 'SAR'), money(r.collected_sar, 'SAR'), money(r.collected_total_sar, 'SAR'),
                 money(r.commission_sar, 'SAR'), money(r.commission_egp, 'EGP'),
                 r.user_id === userId ? '' : (

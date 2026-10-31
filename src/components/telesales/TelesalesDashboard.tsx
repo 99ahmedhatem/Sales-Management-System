@@ -79,6 +79,7 @@ const ROLE_NAMES: Record<string, string> = {
   manager: "Manager",
   sales: "Sales",
   telesales: "Telesales",
+  sales_telesales: "Sales + Telesales",
 }
 
 const CALL_STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
@@ -394,7 +395,7 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
   const salesUsers = users
     .filter(
       (u) =>
-        ["sales", "manager", "admin"].includes(u.role) && u.status === "active",
+        ["sales", "sales_telesales", "manager", "admin"].includes(u.role) && u.status === "active",
     )
     .sort(
       (a, b) =>

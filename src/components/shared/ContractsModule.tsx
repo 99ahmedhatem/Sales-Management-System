@@ -33,7 +33,7 @@ function CustomServiceTag() {
 
 interface Props {
   userId: string
-  role: "admin" | "manager" | "sales" | "telesales"
+  role: "admin" | "manager" | "sales" | "telesales" | "sales_telesales"
 }
 
 const PAGE_SIZE = 25

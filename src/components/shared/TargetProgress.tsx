@@ -13,7 +13,7 @@ interface TargetRow {
   kind: 'member' | 'team';
   user_id: string;
   full_name: string;
-  role: 'manager' | 'sales' | 'telesales';
+  role: 'manager' | 'sales' | 'telesales' | 'sales_telesales';
   manager_id: string | null;
   team_size: number;
   calls_done: number;
@@ -99,7 +99,7 @@ export default function TargetProgress({ month, canEdit }: { month: string; canE
     await load();
   };
 
-  const roleLabel = (role: string) => (role === 'manager' ? t('Manager') : role === 'sales' ? t('Sales') : t('Telesales'));
+  const roleLabel = (role: string) => (role === 'manager' ? t('Manager') : role === 'sales' ? t('Sales') : role === 'sales_telesales' ? t('Sales + Telesales') : t('Telesales'));
 
   const card = (row: TargetRow, compact = false) => (
     <div key={`${row.kind}-${row.user_id}`} className={`rounded-lg border p-4 space-y-2 ${row.kind === 'team' ? 'border-[#dfff03]/30 bg-[#dfff03]/5' : 'border-[#262626] bg-[#161616]'}`}>

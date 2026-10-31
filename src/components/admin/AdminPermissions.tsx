@@ -9,7 +9,7 @@ interface UserPermissions {
   user_id: string;
   username: string | null;
   full_name: string;
-  role: 'manager' | 'sales' | 'telesales';
+  role: 'manager' | 'sales' | 'telesales' | 'sales_telesales';
   status: string;
   permissions: Record<string, boolean>;
   overrides: Record<string, boolean>;
@@ -177,7 +177,7 @@ export default function AdminPermissions() {
             value={roleFilter}
             onChange={setRoleFilter}
             className="w-full"
-            options={[{ value: '', label: 'All roles' }, { value: 'manager', label: 'Manager' }, { value: 'sales', label: 'Sales' }, { value: 'telesales', label: 'Telesales' }]}
+            options={[{ value: '', label: 'All roles' }, { value: 'manager', label: 'Manager' }, { value: 'sales', label: 'Sales' }, { value: 'telesales', label: 'Telesales' }, { value: 'sales_telesales', label: 'Sales + Telesales' }]}
           />
           {loading && !users.length ? <TableSkeleton rows={6} cols={1} /> : visibleUsers.length === 0 ? (
             <p className="py-8 text-center text-sm text-[#4a4a4a]">{t('No users match.')}</p>

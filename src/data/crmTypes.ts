@@ -1,4 +1,4 @@
-export type Role = "admin" | "manager" | "sales" | "telesales"
+export type Role = "admin" | "manager" | "sales" | "telesales" | "sales_telesales"
 
 export type LeadStatus = "New" | "Assigned" | "Contacted" | "No Answer" | "Call Back Later" | "Interested" | "Not Interested" | "Free Trial" | "Subscribed" | "Did Not Subscribe" | "Converted"
 

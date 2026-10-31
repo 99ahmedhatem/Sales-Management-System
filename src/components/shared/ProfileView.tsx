@@ -23,7 +23,7 @@ const DEAL_STATUS_LABELS: Record<string, string> = {
   draft: 'Draft', contract_uploaded: 'Contract Uploaded', pending_approval: 'Pending Approval',
   approved: 'Approved', active: 'Active', cancelled: 'Cancelled',
 };
-const ROLE_LABELS: Record<string, string> = { admin: 'Administrator', manager: 'Manager', sales: 'Sales', telesales: 'Telesales' };
+const ROLE_LABELS: Record<string, string> = { admin: 'Administrator', manager: 'Manager', sales: 'Sales', telesales: 'Telesales', sales_telesales: 'Sales + Telesales' };
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; };

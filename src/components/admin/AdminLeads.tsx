@@ -334,7 +334,7 @@ export default function AdminLeads() {
   useRealtimeRefresh(['leads', 'users'], () => loadData(page, true));
 
   // Recipients: telesales, managers and admins (they work their own queue too)
-  const assignableUsers = users.filter(u => ['telesales', 'manager', 'admin'].includes(u.role) && u.status === 'active');
+  const assignableUsers = users.filter(u => ['telesales', 'sales_telesales', 'manager', 'admin'].includes(u.role) && u.status === 'active');
   const recipientAgents = assignableUsers.map(u => ({ id: u.id, fullName: u.fullName, role: u.role }));
 
   const toggleSelect = (id: string) => {

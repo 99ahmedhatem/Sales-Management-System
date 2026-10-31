@@ -1208,4 +1208,5 @@ export const ar: Record<string, string> = {
   "Tag removed from {n}": "اتشالت العلامة من {n}",
   "Show only this tag": "اعرض العلامة دي بس",
   "Clear the tag filter first, or select the rows to add.": "شيل فلتر العلامة الأول، أو حدد الصفوف اللي عاوز تضيفها.",
+  "Sales + Telesales": "سيلز + تيلي سيلز",
 };

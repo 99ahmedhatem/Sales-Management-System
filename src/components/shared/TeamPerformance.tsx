@@ -50,7 +50,7 @@ export default function TeamPerformance({ mode, userId, role }: { mode: 'team' |
 
   const money = (value: number | null | undefined, currency: 'SAR' | 'EGP') =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(value ?? 0));
-  const roleLabel = (role: string) => (role === 'manager' ? t('Manager') : role === 'sales' ? t('Sales') : role === 'sales_telesales' ? t('Sales + Telesales') : t('Telesales'));
+  const roleLabel = (role: string) => (role === 'manager' ? t('Manager') : role === 'sales' ? t('Sales') : role === 'sales_telesales' ? t('Telesales + Sales') : t('Telesales'));
 
   const load = useCallback(async () => {
     setLoading(true);

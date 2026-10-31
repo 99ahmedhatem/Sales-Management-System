@@ -99,7 +99,7 @@ export default function TargetProgress({ month, canEdit }: { month: string; canE
     await load();
   };
 
-  const roleLabel = (role: string) => (role === 'manager' ? t('Manager') : role === 'sales' ? t('Sales') : role === 'sales_telesales' ? t('Sales + Telesales') : t('Telesales'));
+  const roleLabel = (role: string) => (role === 'manager' ? t('Manager') : role === 'sales' ? t('Sales') : role === 'sales_telesales' ? t('Telesales + Sales') : t('Telesales'));
 
   const card = (row: TargetRow, compact = false) => (
     <div key={`${row.kind}-${row.user_id}`} className={`rounded-lg border p-4 space-y-2 ${row.kind === 'team' ? 'border-[#dfff03]/30 bg-[#dfff03]/5' : 'border-[#262626] bg-[#161616]'}`}>

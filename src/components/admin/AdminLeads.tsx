@@ -131,6 +131,7 @@ function mapLead(row: any): Lead {
     region: row.region ?? undefined,
     source: row.source ?? undefined,
     isSallaStore: row.is_salla_store ?? false,
+    tag: row.tag ?? undefined,
     wasDistributed: row.was_distributed ?? false,
     releasedAt: row.released_at ?? undefined,
     dataQuality: row.data_quality ?? 'normal',
@@ -178,10 +179,20 @@ export default function AdminLeads() {
   const [websiteFilter, setWebsiteFilter] = usePersistentState('leads.website', '');
   const [websiteReasonFilter, setWebsiteReasonFilter] = usePersistentState('leads.websiteReason', '');
   const [historyFilter, setHistoryFilter] = usePersistentState('leads.history', '');
-  const hasFilters = !!(search.trim() || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || assignmentFilter || websiteFilter || websiteReasonFilter || historyFilter);
+  // Tag (064): set in Lead discovery; '__none__' = clients without a tag
+  const [tagFilter, setTagFilter] = usePersistentState('leads.tag', '');
+  const [tagOptions, setTagOptions] = useState<{ value: string; label: string }[]>([]);
+  useEffect(() => {
+    void supabase.rpc('discovery_tags').then(({ data, error }) => {
+      if (error) return; // 064 not run yet: no tag filter options
+      setTagOptions(((data ?? []) as { tag: string; leads: number }[]).filter(r => r.tag && r.leads > 0)
+        .map(r => ({ value: r.tag, label: `${r.tag} (${r.leads})` })));
+    });
+  }, []);
+  const hasFilters = !!(search.trim() || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || assignmentFilter || websiteFilter || websiteReasonFilter || historyFilter || tagFilter);
   const clearFilters = () => {
     setSearch(''); setStatusFilter(''); setRegionFilter(''); setPhoneFilter(''); setTypeFilter('');
-    setQualityFilter(''); setAssignmentFilter(''); setWebsiteFilter(''); setWebsiteReasonFilter(''); setHistoryFilter('');
+    setQualityFilter(''); setAssignmentFilter(''); setWebsiteFilter(''); setWebsiteReasonFilter(''); setHistoryFilter(''); setTagFilter('');
   };
   const { confirm, confirmUi } = useConfirm();
   const [showWebsiteChecks, setShowWebsiteChecks] = useState(false);
@@ -253,7 +264,7 @@ export default function AdminLeads() {
     const managerIds = loadedUsers.filter(user => user.role === 'manager').map(user => user.id);
 
     const q = debouncedSearch.replace(/[%,()]/g, ' ').trim();
-    const otherFilters = Boolean(q || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || websiteFilter || websiteReasonFilter || historyFilter);
+    const otherFilters = Boolean(q || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || websiteFilter || websiteReasonFilter || historyFilter || tagFilter);
     // With no filters (or only "Not distributed") the total comes from get_leads_counts, so skip the slow count.
     const countFromRpc = !otherFilters && (assignmentFilter === '' || assignmentFilter === 'unassigned');
 
@@ -270,6 +281,8 @@ export default function AdminLeads() {
     if (phoneFilter === 'missing') leadsQuery = leadsQuery.is('phone', null);
     if (phoneFilter === 'has') leadsQuery = leadsQuery.not('phone', 'is', null);
     if (typeFilter) leadsQuery = leadsQuery.eq('is_salla_store', typeFilter === 'salla');
+    if (tagFilter === '__none__') leadsQuery = leadsQuery.is('tag', null);
+    else if (tagFilter) leadsQuery = leadsQuery.eq('tag', tagFilter);
     if (qualityFilter) leadsQuery = leadsQuery.eq('data_quality', qualityFilter);
     leadsQuery = applyWebsiteFilters(leadsQuery);
     if (assignmentFilter === 'manager') {
@@ -315,7 +328,7 @@ export default function AdminLeads() {
     setSelected([]);
     loadData(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter, qualityFilter, assignmentFilter, websiteFilter, websiteReasonFilter, historyFilter]);
+  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter, qualityFilter, assignmentFilter, websiteFilter, websiteReasonFilter, historyFilter, tagFilter]);
 
   // Live updates: when anyone changes a lead or a user, this page refreshes by itself
   useRealtimeRefresh(['leads', 'users'], () => loadData(page, true));
@@ -439,6 +452,8 @@ export default function AdminLeads() {
       if (phoneFilter === 'missing') query = query.is('phone', null);
       if (phoneFilter === 'has') query = query.not('phone', 'is', null);
       if (typeFilter) query = query.eq('is_salla_store', typeFilter === 'salla');
+      if (tagFilter === '__none__') query = query.is('tag', null);
+      else if (tagFilter) query = query.eq('tag', tagFilter);
       if (qualityFilter) query = query.eq('data_quality', qualityFilter);
       query = applyWebsiteFilters(query);
       if (assignmentFilter === 'manager') query = managerIds.length ? query.in('assigned_to', managerIds) : query.eq('id', '00000000-0000-0000-0000-000000000000');
@@ -457,6 +472,7 @@ export default function AdminLeads() {
         PHONE: row.phone ?? '',
         WEBSITE: row.website ?? '',
         SALLA: row.is_salla_store ? 'Yes' : 'No',
+        TAG: row.tag ?? '',
         QUALITY: row.data_quality ?? '',
         STATUS: row.status ?? '',
         'WEBSITE STATUS': row.website_status === 'working' ? 'Working' : row.website_status === 'not_working' ? 'Not Working' : 'Not Checked',
@@ -670,6 +686,10 @@ export default function AdminLeads() {
         <Select value={statusFilter} onChange={setStatusFilter} options={STATUS_OPTIONS} className="w-40" />
         <Select value={regionFilter} onChange={setRegionFilter} options={REGION_OPTIONS} className="w-48" />
         <Select value={typeFilter} onChange={setTypeFilter} options={TYPE_FILTER_OPTIONS} className="w-36" />
+        {(tagOptions.length > 0 || tagFilter) && (
+          <Select value={tagFilter} onChange={setTagFilter} className="w-44"
+            options={[{ value: '', label: 'All tags' }, { value: '__none__', label: 'No tag' }, ...tagOptions]} />
+        )}
         <Select value={qualityFilter} onChange={setQualityFilter} options={QUALITY_FILTER_OPTIONS} className="w-40" />
         <Select value={phoneFilter} onChange={setPhoneFilter} options={PHONE_FILTER_OPTIONS} className="w-36" />
         <Select value={websiteFilter} onChange={setWebsiteFilter} options={WEBSITE_STATUS_FILTER_OPTIONS} className="w-44" />
@@ -724,6 +744,12 @@ export default function AdminLeads() {
                   <Td><span className="font-mono text-xs text-[#dfff03]">{lead.clientCode}</span></Td>
                   <Td>
                     <span className="font-medium text-white">{lead.name}</span>
+                    {lead.tag && (
+                      <button type="button" onClick={e => { e.stopPropagation(); setTagFilter(lead.tag!); }} title={t('Show only this tag')}
+                        className="ms-2 inline-flex items-center rounded bg-[#64a0ff]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#8fb8ff] hover:bg-[#64a0ff]/20" dir="auto">
+                        🏷 {lead.tag}
+                      </button>
+                    )}
                     {lead.wasDistributed && (
                       <span
                         className="ms-2 inline-flex items-center rounded bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-300"

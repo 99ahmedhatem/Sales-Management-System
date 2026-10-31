@@ -57,6 +57,7 @@ interface Progress {
 interface Result {
   id: string; name: string | null; url: string; domain: string; phone: string | null; phones: string[] | null;
   features: string[] | null; notes: string | null; status: string; found_at: string; country: string | null; country_code: string | null;
+  tag: string | null;
 }
 
 /** Quick choices for pages_per_query; 50 = "until the last result". */
@@ -83,6 +84,28 @@ const SERPER_WARN = 2000;
 const lines = (s: string) => s.split('\n').map(x => x.trim()).filter(Boolean);
 const asList = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
 const uniq = (xs: string[]) => [...new Set(xs)];
+
+/**
+ * Search note (064). One idea per line:
+ *   normal line  → one more search on its own (the country word is added)
+ *   "+ word"     → added to the end of every search
+ *   "- word"     → results whose name / domain / link contain it are skipped (commas = several words)
+ */
+function parseNote(note: string) {
+  const extra: string[] = [];
+  const add: string[] = [];
+  const exclude: string[] = [];
+  for (const raw of note.split('\n')) {
+    const l = raw.trim();
+    if (!l) continue;
+    if (/^[-–—]/.test(l)) exclude.push(...splitItems(l.replace(/^[-–—]+\s*/, '')));
+    else if (l.startsWith('+')) { const w = l.replace(/^\++\s*/, '').trim(); if (w) add.push(w); }
+    else extra.push(l);
+  }
+  return { extra_searches: uniq(extra), add_terms: uniq(add), exclude_words: uniq(exclude) };
+}
+const NO_TAG = '__none__';
+interface TagRow { tag: string; results: number; leads: number }
 
 function toAdvanced(cfg: Config): Advanced {
   const a = { country_defs: JSON.stringify(cfg.country_defs ?? {}, null, 2) } as Advanced;
@@ -165,7 +188,9 @@ export default function AdminDiscovery() {
     setConfigError(err);
     if (!cfgRes.error) {
       applyConfig(cfgRes.data as Config, defRes.error ? null : (defRes.data as Config));
-      setInstructions((rowRes.data as { instructions?: string | null } | null)?.instructions ?? '');
+      // 064: the note lives in config.search_note (so clearing it sticks); older saves only had the instructions column
+      const savedNote = (cfgRes.data as Config | null)?.search_note;
+      setInstructions(typeof savedNote === 'string' ? savedNote : (rowRes.data as { instructions?: string | null } | null)?.instructions ?? '');
     }
     setConfigLoading(false);
   }, [applyConfig]);
@@ -180,13 +205,18 @@ export default function AdminDiscovery() {
     } catch {
       return { config: null, error: 'Country definitions are not valid JSON.' };
     }
-    const out: Config = { ...cfg, features: explicitFeatures(cfg.features), country_defs: countryDefs, sectors: allSectors ? sectorCatalog : cfg.sectors };
+    const out: Config = {
+      ...cfg, features: explicitFeatures(cfg.features), country_defs: countryDefs, sectors: allSectors ? sectorCatalog : cfg.sectors,
+      ...parseNote(instructions), search_note: instructions.trim(),
+    };
+    delete out.run_tag; // the tag belongs to one run only, never to the saved settings
     for (const k of ADV_LISTS) out[k] = lines(adv[k]);
     for (const k of ADV_NUMBERS) out[k] = Number(adv[k]) || 0;
     out.pages_per_query = Math.max(1, Math.floor(Number(adv.pages_per_query) || 1));
     out.countries = cfg.countries.filter(c => countryDefs[c]);
     return { config: out, error: '' };
-  }, [cfg, adv, allSectors, sectorCatalog]);
+  }, [cfg, adv, allSectors, sectorCatalog, instructions]);
+  const note = useMemo(() => parseNote(instructions), [instructions]);
 
   const builtKey = built.config ? JSON.stringify(built.config) : '';
 
@@ -306,6 +336,18 @@ export default function AdminDiscovery() {
     showToast(true, t('Default settings loaded — press Save to keep them'));
   }
 
+  // ---------- Tags (064) ----------
+  const [tags, setTags] = useState<TagRow[]>([]);
+  const [runTag, setRunTag] = useState('');
+  const [tagDraft, setTagDraft] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
+  const tagFilterRef = useRef('');
+  const [tagBusy, setTagBusy] = useState(false);
+  const loadTags = useCallback(async () => {
+    const { data, error } = await supabase.rpc('discovery_tags');
+    if (!error) setTags(((data ?? []) as TagRow[]).filter(r => r.tag));
+  }, []);
+
   // ---------- Run ----------
   const [progress, setProgress] = useState<Progress | null>(null);
   const [runError, setRunError] = useState('');
@@ -340,7 +382,7 @@ export default function AdminDiscovery() {
     setRunBusy(true);
     const saved = await saveConfig(true);
     if (!saved) { setRunBusy(false); return; }
-    const { error } = await supabase.rpc('start_discovery_run', { p_name: 'default', p_config: built.config });
+    const { error } = await supabase.rpc('start_discovery_run', { p_name: 'default', p_config: { ...built.config, run_tag: runTag.trim() || null } });
     setRunBusy(false);
     if (error) { showToast(false, error.message); return; }
     showToast(true, t('Search started'));
@@ -353,7 +395,7 @@ export default function AdminDiscovery() {
     const sectors = built.config.sectors.slice(0, 3);
     if (!sectors.length) { showToast(false, t('No search queries — check sectors and countries')); return; }
     setRunBusy(true);
-    const { error } = await supabase.rpc('start_discovery_run', { p_name: 'default', p_config: { ...built.config, sectors, pages_per_query: 1 } });
+    const { error } = await supabase.rpc('start_discovery_run', { p_name: 'default', p_config: { ...built.config, sectors, pages_per_query: 1, run_tag: runTag.trim() || null } });
     setRunBusy(false);
     if (error) { showToast(false, error.message); return; }
     showToast(true, t('Small trial started'));
@@ -407,10 +449,13 @@ export default function AdminDiscovery() {
   const loadResults = useCallback(async (nextPage: number) => {
     const req = ++resultsReq.current;
     setResultsLoading(true);
-    const { data, error, count } = await supabase
+    let query = supabase
       .from('discovery_results')
-      .select('id,name,url,domain,phone,phones,features,notes,status,found_at,country,country_code', { count: 'exact' })
-      .eq('status', 'new')
+      .select('id,name,url,domain,phone,phones,features,notes,status,found_at,country,country_code,tag', { count: 'exact' })
+      .eq('status', 'new');
+    if (tagFilterRef.current === NO_TAG) query = query.is('tag', null);
+    else if (tagFilterRef.current) query = query.eq('tag', tagFilterRef.current);
+    const { data, error, count } = await query
       .order('found_at', { ascending: false })
       .order('id', { ascending: false })
       .range(nextPage * PAGE_SIZE, (nextPage + 1) * PAGE_SIZE - 1);
@@ -456,7 +501,31 @@ export default function AdminDiscovery() {
       a: res.added, b: res.duplicates, type: t(TYPE_LABEL[usedType]), q: t(usedQuality),
     }));
     // Clients page needs nothing here: it loads fresh when opened and listens to realtime on `leads`.
-    await Promise.all([loadResults(0), loadProgress()]);
+    await Promise.all([loadResults(0), loadProgress(), loadTags()]);
+  }
+
+  /** Sets the tag on the selected results (empty = remove the tag). */
+  async function applyTag(tag: string) {
+    if (!selected.length || tagBusy) return;
+    setTagBusy(true);
+    const { data, error } = await supabase.rpc('set_discovery_results_tag', { p_ids: selected, p_tag: tag.trim() || null });
+    setTagBusy(false);
+    if (error) { showToast(false, error.message); return; }
+    const value = tag.trim() || null;
+    const ids = new Set(selected);
+    setResults(rs => rs.map(r => (ids.has(r.id) ? { ...r, tag: value } : r)));
+    showToast(true, value ? t('Tagged {n} as "{tag}"', { n: Number(data ?? 0), tag: value }) : t('Tag removed from {n}', { n: Number(data ?? 0) }));
+    setSelected([]);
+    setTagDraft('');
+    await loadTags();
+    if (tagFilterRef.current) await loadResults(page);
+  }
+
+  function changeTagFilter(v: string) {
+    tagFilterRef.current = v;
+    setTagFilter(v);
+    setSelected([]);
+    void loadResults(0);
   }
 
   async function reject() {
@@ -476,7 +545,8 @@ export default function AdminDiscovery() {
     void loadConfig();
     void loadProgress();
     void loadResults(0);
-  }, [loadKey, loadConfig, loadProgress, loadResults]);
+    void loadTags();
+  }, [loadKey, loadConfig, loadProgress, loadResults, loadTags]);
 
   // Diagnostics for the latest run: once when it changes, then every 5s while it runs
   const runId = progress?.run_id;
@@ -566,6 +636,21 @@ export default function AdminDiscovery() {
                 })}
               </div>
               <p className="text-xs text-[#6b6b6b]">{t('Searches the whole country — no need to pick cities.')}</p>
+            </section>
+
+            {/* Search note (064): taken into account by the search */}
+            <section className="space-y-2">
+              <div className="text-sm text-white">{t('Search note')}</div>
+              <textarea rows={4} dir="auto" value={instructions} onChange={e => setInstructions(e.target.value)} className={`${input} resize-y`}
+                placeholder={t('One idea per line, e.g.:\nperfume stores\n+ online\n- used, rent')} />
+              <p className="text-xs text-[#6b6b6b]">{t('Each line = one more search. A line starting with + is added to every search. A line starting with - skips results that contain it.')}</p>
+              {(note.extra_searches.length > 0 || note.add_terms.length > 0 || note.exclude_words.length > 0) && (
+                <div className="flex flex-wrap gap-1.5 text-[11px]" aria-live="polite">
+                  {note.extra_searches.map(x => <span key={`e${x}`} className="rounded bg-[#dfff03]/10 px-1.5 py-0.5 text-[#dfff03]" dir="auto">🔍 {x}</span>)}
+                  {note.add_terms.map(x => <span key={`a${x}`} className="rounded bg-[#64a0ff]/10 px-1.5 py-0.5 text-[#8fb8ff]" dir="auto">+ {x}</span>)}
+                  {note.exclude_words.map(x => <span key={`x${x}`} className="rounded bg-[#ff8888]/10 px-1.5 py-0.5 text-[#ff8888]" dir="auto">− {x}</span>)}
+                </div>
+              )}
             </section>
 
             {/* What to look for */}
@@ -753,9 +838,6 @@ export default function AdminDiscovery() {
                     <textarea rows={10} dir="ltr" spellCheck={false} className={`mt-1 ${input} font-mono text-xs`} value={adv.country_defs} onChange={e => setAdv({ ...adv, country_defs: e.target.value })} />
                   </label>
                   <p className="text-xs text-[#6b6b6b]">{t('Each country has its query word, domain ending, phone code, signals and cities.')}</p>
-                  <label className="block text-xs text-[#a0a0a0]">{t('Notes / instructions for these settings')}
-                    <textarea rows={3} dir="auto" className={`mt-1 ${input}`} value={instructions} onChange={e => setInstructions(e.target.value)} />
-                  </label>
                   <div className="flex flex-wrap justify-end gap-2">
                     <Button size="sm" variant="secondary" disabled={!!configBusy} onClick={() => setResetOpen(true)}>{t('Back to defaults')}</Button>
                     <Button size="sm" disabled={!!configBusy} onClick={() => void saveConfig()}>{configBusy === 'save' ? t('Saving…') : t('Save')}</Button>
@@ -798,6 +880,13 @@ export default function AdminDiscovery() {
           </div>
         )}
         {!hasKey && hasKey !== null && <p className="text-xs text-[#ffc832]">{t('Save the Serper key first.')}</p>}
+        {!active && (
+          <label className="flex flex-col gap-1 text-xs text-[#a0a0a0] sm:flex-row sm:items-center sm:gap-2">
+            <span className="whitespace-nowrap">{t('Tag for this search (optional)')}</span>
+            <input value={runTag} onChange={e => setRunTag(e.target.value)} list="discovery-tags" dir="auto" className={`${input} sm:w-72`}
+              placeholder={t('e.g. Riyadh clinics – October')} />
+          </label>
+        )}
         {!active && <p className="text-xs text-[#6b6b6b]">{t('Starting saves the settings above first.')} {t('Small trial = same settings, first 3 business types and 1 result page (not saved).')}</p>}
         {runError && <div role="alert" className="text-sm text-[#ff8888]">{t(runError)}</div>}
         {progress && (
@@ -874,17 +963,34 @@ export default function AdminDiscovery() {
               <Select value={quality} onChange={v => setQuality(v as Quality)} className="w-32"
                 options={[{ value: 'high', label: 'high' }, { value: 'medium', label: 'medium' }, { value: 'normal', label: 'normal' }]} />
             </label>
+            <label className="flex items-center gap-1.5 text-xs text-[#6b6b6b]">{t('Tag')}
+              <Select value={tagFilter} onChange={changeTagFilter} className="w-44"
+                options={[{ value: '', label: 'All tags' }, { value: NO_TAG, label: 'No tag' }, ...tags.map(x => ({ value: x.tag, label: `${x.tag} (${x.results})` }))]} />
+            </label>
             <Button size="sm" disabled={!selected.length || !!resultBusy} onClick={() => void approve(selected, 'selected')}>
               {resultBusy === 'selected' ? t('Adding…') : t('Add selected as clients')}
             </Button>
-            <Button size="sm" variant="secondary" disabled={!resultsTotal || !!resultBusy} onClick={() => void approve(null, 'all')}>
-              {resultBusy === 'all' ? t('Adding…') : t('Add all new')}
-            </Button>
+            <span title={tagFilter ? t('Clear the tag filter first, or select the rows to add.') : undefined}>
+              <Button size="sm" variant="secondary" disabled={!resultsTotal || !!resultBusy || !!tagFilter} onClick={() => void approve(null, 'all')}>
+                {resultBusy === 'all' ? t('Adding…') : t('Add all new')}
+              </Button>
+            </span>
             <Button size="sm" variant="danger" disabled={!selected.length || !!resultBusy} onClick={() => void reject()}>
               {resultBusy === 'reject' ? t('Rejecting…') : t('Reject selected')}
             </Button>
           </div>
         </div>
+        {selected.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-[#262626] bg-[#1a1a1a] px-4 py-2 text-xs">
+            <span className="text-[#d0d0d0]">{t('Tag the {n} selected as', { n: selected.length })}</span>
+            <input value={tagDraft} onChange={e => setTagDraft(e.target.value)} list="discovery-tags" dir="auto"
+              onKeyDown={e => { if (e.key === 'Enter' && tagDraft.trim()) void applyTag(tagDraft); }}
+              placeholder={t('Write a tag or pick one')} className={`${input} w-56 py-1`} />
+            <Button size="sm" disabled={tagBusy || !tagDraft.trim()} onClick={() => void applyTag(tagDraft)}>{tagBusy ? t('Saving…') : t('Apply tag')}</Button>
+            <Button size="sm" variant="ghost" disabled={tagBusy} onClick={() => void applyTag('')}>{t('Remove tag')}</Button>
+          </div>
+        )}
+        <datalist id="discovery-tags">{tags.map(x => <option key={x.tag} value={x.tag} />)}</datalist>
         {resultsTotal > 0 && (
           <div className="border-b border-[#262626] px-4 py-2 text-xs text-[#d0d0d0]" aria-live="polite">
             {t('You will add {n} clients → {type} · {q} quality', {
@@ -911,6 +1017,7 @@ export default function AdminDiscovery() {
                       onChange={() => setSelected(allOnPage ? selected.filter(id => !results.some(r => r.id === id)) : uniq([...selected, ...results.map(r => r.id)]))} />
                   </th>
                   <th className="px-4 py-3 text-start font-medium">{t('Name')}</th>
+                  <th className="px-4 py-3 text-start font-medium">{t('Tag')}</th>
                   <th className="px-4 py-3 text-start font-medium">{t('Country')}</th>
                   <th className="px-4 py-3 text-start font-medium">{t('Website')}</th>
                   <th className="px-4 py-3 text-start font-medium">{t('Phone')}</th>
@@ -926,6 +1033,11 @@ export default function AdminDiscovery() {
                         onChange={() => setSelected(s => (s.includes(r.id) ? s.filter(x => x !== r.id) : [...s, r.id]))} />
                     </td>
                     <td className="px-4 py-3 text-white" dir="auto">{r.name || r.domain}</td>
+                    <td className="px-4 py-3">
+                      {r.tag
+                        ? <button type="button" onClick={() => changeTagFilter(r.tag!)} title={t('Show only this tag')} className="rounded bg-[#64a0ff]/10 px-1.5 py-0.5 text-[11px] text-[#8fb8ff] whitespace-nowrap hover:bg-[#64a0ff]/20" dir="auto">🏷 {r.tag}</button>
+                        : <span className="text-xs text-[#4a4a4a]">—</span>}
+                    </td>
                     <td className="px-4 py-3 text-xs text-[#a0a0a0] whitespace-nowrap">{countryName(r.country_code, r.country)}</td>
                     <td className="px-4 py-3"><WebsiteLink url={r.url} className="text-xs text-[#a0a0a0] break-all" /></td>
                     <td className="px-4 py-3 font-mono text-xs text-[#d0d0d0]" dir="ltr">{r.phone || '—'}</td>

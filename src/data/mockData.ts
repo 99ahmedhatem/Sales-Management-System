@@ -60,6 +60,8 @@ export interface Lead {
   region?: string;
   source?: string;
   isSallaStore?: boolean;
+  /** Tag (064): where this client came from, e.g. a discovery search. */
+  tag?: string;
   /** 066: the lead was assigned before and came back when its telesales was deleted (historical; never cleared). */
   wasDistributed?: boolean;
   releasedAt?: string;

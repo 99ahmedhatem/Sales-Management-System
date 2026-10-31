@@ -565,7 +565,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
     manager: "Manager",
     sales: "Sales",
     telesales: "Telesales",
-    sales_telesales: "Sales + Telesales",
+    sales_telesales: "Telesales + Sales",
   }[role]
 
   const roleBadgeColor = {

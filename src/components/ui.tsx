@@ -35,7 +35,7 @@ const ROLE_TAG: Record<string, { label: string; className: string }> = {
   manager: { label: 'Manager', className: 'bg-[#a78bfa]/10 text-[#c4b5fd]' },
   sales: { label: 'Sales', className: 'bg-[#64b4ff]/10 text-[#8cc8ff]' },
   telesales: { label: 'Telesales', className: 'bg-[#252525] text-[#a0a0a0]' },
-  sales_telesales: { label: 'Sales + Telesales', className: 'bg-[#2dd4bf]/10 text-[#5eead4]' },
+  sales_telesales: { label: 'Telesales + Sales', className: 'bg-[#2dd4bf]/10 text-[#5eead4]' },
 };
 
 /** Small role tag next to a person's name (recipient lists, hosts). */

@@ -177,7 +177,7 @@ export default function AdminPermissions() {
             value={roleFilter}
             onChange={setRoleFilter}
             className="w-full"
-            options={[{ value: '', label: 'All roles' }, { value: 'manager', label: 'Manager' }, { value: 'sales', label: 'Sales' }, { value: 'telesales', label: 'Telesales' }, { value: 'sales_telesales', label: 'Sales + Telesales' }]}
+            options={[{ value: '', label: 'All roles' }, { value: 'manager', label: 'Manager' }, { value: 'sales', label: 'Sales' }, { value: 'telesales', label: 'Telesales' }, { value: 'sales_telesales', label: 'Telesales + Sales' }]}
           />
           {loading && !users.length ? <TableSkeleton rows={6} cols={1} /> : visibleUsers.length === 0 ? (
             <p className="py-8 text-center text-sm text-[#4a4a4a]">{t('No users match.')}</p>

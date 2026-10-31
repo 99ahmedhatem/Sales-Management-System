@@ -321,7 +321,7 @@ export default function AdminUsers() {
     await loadUsers();
   };
 
-  const roleLabel: Record<Role, string> = { admin: 'Admin', manager: 'Manager', telesales: 'Telesales', sales: 'Sales', sales_telesales: 'Sales + Telesales' };
+  const roleLabel: Record<Role, string> = { admin: 'Admin', manager: 'Manager', telesales: 'Telesales', sales: 'Sales', sales_telesales: 'Telesales + Sales' };
   const roleColor: Record<Role, string> = {
     admin: 'bg-purple-500/10 text-purple-300',
     manager: 'bg-orange-500/10 text-orange-300',
@@ -512,7 +512,7 @@ export default function AdminUsers() {
               <option value="manager">{t('Manager')}</option>
               <option value="telesales">{t('Telesales')}</option>
               <option value="sales">{t('Sales')}</option>
-              <option value="sales_telesales">{t('Sales + Telesales')}</option>
+              <option value="sales_telesales">{t('Telesales + Sales')}</option>
             </select>
           </div>
           {['sales', 'telesales', 'sales_telesales'].includes(newUser.role) && (
@@ -585,7 +585,7 @@ export default function AdminUsers() {
                       <option value="manager">{t('Manager')}</option>
                       <option value="telesales">{t('Telesales')}</option>
                       <option value="sales">{t('Sales')}</option>
-                      <option value="sales_telesales">{t('Sales + Telesales')}</option>
+                      <option value="sales_telesales">{t('Telesales + Sales')}</option>
                     </select>
                   </div>
                   <div>

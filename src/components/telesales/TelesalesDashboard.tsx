@@ -79,7 +79,7 @@ const ROLE_NAMES: Record<string, string> = {
   manager: "Manager",
   sales: "Sales",
   telesales: "Telesales",
-  sales_telesales: "Sales + Telesales",
+  sales_telesales: "Telesales + Sales",
 }
 
 const CALL_STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [

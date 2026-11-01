@@ -1210,4 +1210,6 @@ export const ar: Record<string, string> = {
   "Clear the tag filter first, or select the rows to add.": "شيل فلتر العلامة الأول، أو حدد الصفوف اللي عاوز تضيفها.",
   "Telesales + Sales": "تيلي + سيلز",
   "Role must be manager, sales, telesales or sales_telesales": "الدور لازم يكون مدير أو تيلي أو سيلز أو تيلي + سيلز",
+  "Imported {a} new clients · {b} already in the system were skipped": "اتضاف {a} عميل جديد · واتشال {b} مكرر (موجودين قبل كده أو متكررين في الملف)",
+  "{n} duplicate rows in the file (same website or phone) were skipped automatically.": "{n} صف متكرر في الملف (نفس الموقع أو نفس الرقم) اتشالوا تلقائياً.",
 };

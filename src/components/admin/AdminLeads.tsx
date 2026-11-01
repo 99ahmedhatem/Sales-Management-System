@@ -544,13 +544,18 @@ export default function AdminLeads() {
           notes: readImportValue(row, ['notes', 'ملاحظات']),
         }))
         .filter(row => row.name); // phone is optional
+      // Duplicates inside the file: same website OR same phone (last 9 digits) → keep the first row only.
+      // Duplicates of clients already in the system are skipped by import_leads on the server.
       const seenWebsites = new Set<string>();
+      const seenPhones = new Set<string>();
       const parsed = parsedRows.filter(row => {
         const websiteKey = normalizeWebsite(row.website || '');
         row.websiteKey = websiteKey;
-        if (!websiteKey) return true;
-        if (seenWebsites.has(websiteKey)) return false;
-        seenWebsites.add(websiteKey);
+        const phoneKey = (row.phone || '').replace(/\D/g, '').slice(-9);
+        if (websiteKey && seenWebsites.has(websiteKey)) return false;
+        if (phoneKey.length >= 7 && seenPhones.has(phoneKey)) return false;
+        if (websiteKey) seenWebsites.add(websiteKey);
+        if (phoneKey.length >= 7) seenPhones.add(phoneKey);
         return true;
       });
       setDuplicateImportCount(parsedRows.length - parsed.length);
@@ -572,42 +577,36 @@ export default function AdminLeads() {
     setImportError('');
     setImportProgress(0);
     const batchSize = 500;
-    let quantitySupported = true;
+    let added = 0;
+    let skipped = 0;
 
-    // Rows are already de-duplicated by website when the file is read
+    // import_leads (019) inserts on the server and skips any row that already exists:
+    // same website, same phone, or same customer number. One duplicate never stops the import.
     for (let start = 0; start < importRows.length; start += batchSize) {
       const batch = importRows.slice(start, start + batchSize).map(row => ({
         ...(row.customerNumber ? { customer_number: row.customerNumber } : {}),
         website: row.website || null,
         website_key: row.websiteKey || null,
-        client_code: generateCode('CLT'),
         name: row.name,
         phone: row.phone || null,
-        phone_source: row.phone ? 'manual' : null,
         company: row.company || null,
         region: row.region || null,
         source: row.source,
         notes: row.notes || null,
-        is_salla_store: importType === 'salla',
-        data_quality: importDataQuality,
-        ...(quantitySupported ? { quantity: row.quantity } : {}),
-        status: 'New',
+        quantity: row.quantity || 0,
       }));
-      let { error } = await supabase.from('leads').upsert(batch, { onConflict: 'website_key', ignoreDuplicates: true });
-      if (error && quantitySupported && isMissingQuantityColumn(error)) {
-        quantitySupported = false;
-        const legacyBatch = batch.map(({ quantity: _quantity, ...row }) => row);
-        const retry = await supabase.from('leads').upsert(legacyBatch, { onConflict: 'website_key', ignoreDuplicates: true });
-        error = retry.error;
-        if (!error) {
-          setImportError('Import is continuing, but quantity is not being saved. Run supabase-setup.sql once to add the quantity column.');
-        }
-      }
+      const { data, error } = await supabase.rpc('import_leads', {
+        p_rows: batch, p_is_salla: importType === 'salla', p_data_quality: importDataQuality,
+      });
       if (error) {
         setImportError(t('Import stopped at row {n}: {msg}', { n: start + 1, msg: error.message }));
         setImporting(false);
+        if (added) await loadData(0);
         return;
       }
+      const res = (Array.isArray(data) ? data[0] : data) as { inserted?: number; skipped?: number } | null;
+      added += Number(res?.inserted ?? 0);
+      skipped += Number(res?.skipped ?? 0);
       setImportProgress(Math.round(((start + batch.length) / importRows.length) * 90));
     }
 
@@ -627,6 +626,9 @@ export default function AdminLeads() {
 
     setImportProgress(100);
     setImporting(false);
+    toast(t('Imported {a} new clients · {b} already in the system were skipped', {
+      a: added.toLocaleString('en-US'), b: (skipped + duplicateImportCount).toLocaleString('en-US'),
+    }));
     await loadData(0);
     setImportFile(null);
     setImportRows([]);
@@ -988,7 +990,7 @@ export default function AdminLeads() {
               })}
             </p>
           )}
-          {duplicateImportCount > 0 && <p className="text-[#ffc832] text-xs">{t('{n} duplicate website rows were skipped automatically.', { n: duplicateImportCount.toLocaleString('en-US') })}</p>}
+          {duplicateImportCount > 0 && <p className="text-[#ffc832] text-xs">{t('{n} duplicate rows in the file (same website or phone) were skipped automatically.', { n: duplicateImportCount.toLocaleString('en-US') })}</p>}
           {importing && (
             <div className="space-y-1">
               <div className="flex justify-between text-xs text-[#a0a0a0]"><span>{t('Uploading customers')}</span><span>{importProgress}%</span></div>
@@ -1032,8 +1034,4 @@ export default function AdminLeads() {
 
 function formatCount(value: number | null): string {
   return value === null ? '—' : value.toLocaleString('en-US');
-}
-
-function isMissingQuantityColumn(error: { message?: string } | null): boolean {
-  return Boolean(error?.message && /quantity.*column|column.*quantity|schema cache/i.test(error.message));
 }

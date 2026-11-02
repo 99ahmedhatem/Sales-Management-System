@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "format": "oxfmt",
-    "extract:phones": "node scripts/extract-phones.mjs"
+    "extract:phones": "node scripts/extract-phones.mjs",
+    "check:websites": "node --experimental-strip-types scripts/check-websites-local.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

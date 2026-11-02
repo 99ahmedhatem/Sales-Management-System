@@ -20,6 +20,14 @@
 //   npm run find:phones                            all clients without a phone (continues after a stop)
 //   npm run find:phones -- --from-start            start again from the first client
 //   npm run find:phones -- --extra-to-notes        also write the other numbers found into the client's notes
+//
+// Second pass for the clients still without a number (run after the first pass; clients that got a phone are skipped):
+//   npm run find:phones -- --browser --from-start  open each site in a real Chrome: finds numbers that the site
+//                                                   shows with JavaScript (WhatsApp buttons, footers, React / Salla stores)
+//                                                   once: npm i -D playwright  &&  npx playwright install chromium
+//   npm run find:phones -- --google --from-start   ask Google (Serper "places", the same key as Lead discovery) for the
+//                                                   business phone by name + website — 1 Serper credit per client
+//   (the two can be used together: --browser --google)
 import fs from 'node:fs';
 import process from 'node:process';
 import { createClient } from '@supabase/supabase-js';
@@ -44,7 +52,9 @@ const LIMIT = Number(argValue('--limit')) || 0;
 const DRY = args.includes('--dry-run');
 const FROM_START = args.includes('--from-start');
 const EXTRA_TO_NOTES = args.includes('--extra-to-notes');
-const CONCURRENCY = Number(argValue('--parallel')) || 8;
+const BROWSER = args.includes('--browser');
+const GOOGLE = args.includes('--google');
+const CONCURRENCY = Number(argValue('--parallel')) || (BROWSER ? 4 : 8);
 const TIMEOUT_MS = 20_000;
 const CHECKPOINT = 'scripts/find-phones.checkpoint.json';
 const REPORT = `.tmp-find-phones-report-${new Date().toISOString().slice(0, 10)}.csv`;
@@ -202,8 +212,103 @@ async function findPhones(lead) {
       if ([...all.values()].some(p => p.score >= 8)) break;
     }
   }
-  const phones = [...all.values()].sort((a, b) => b.score - a.score || Number(b.mobile) - Number(a.mobile));
-  return { result: phones.length ? 'found' : 'no_number_on_site', phones };
+  let phones = [...all.values()].sort((a, b) => b.score - a.score || Number(b.mobile) - Number(a.mobile));
+  if (phones.length) return { result: 'found', phones, via: 'site' };
+  return { result: 'no_number_on_site', phones: [] };
+}
+
+// ---------- second pass: real Chrome ----------
+let browserPromise = null;
+async function browserPage() {
+  browserPromise ??= import('playwright').then(({ chromium }) => chromium.launch());
+  const browser = await browserPromise;
+  return browser.newPage({ userAgent: HEADERS['User-Agent'], locale: 'ar-SA' });
+}
+
+async function renderedHtml(page, url) {
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
+    await page.mouse.wheel(0, 20_000).catch(() => {});      // footers often load on scroll
+    await page.waitForTimeout(1_500);
+    const hrefs = await page.$$eval('a[href]', as => as.map(a => `<a href="${a.getAttribute('href')}">${(a.textContent || '').slice(0, 60)}</a>`).join(' ')).catch(() => '');
+    return (await page.content()) + hrefs;
+  } catch {
+    return null;
+  }
+}
+
+async function findPhonesInBrowser(lead) {
+  const cc = guessCountry(lead);
+  let base; try { base = homeUrl(lead.website); } catch { return null; }
+  const page = await browserPage();
+  try {
+    const html = await renderedHtml(page, base);
+    if (html === null) return null;
+    const all = phonesFromHtml(html, cc);
+    if (![...all.values()].some(p => p.score >= 8)) {
+      for (const link of contactLinks(html, page.url() || base).slice(0, 3)) {
+        const more = await renderedHtml(page, link);
+        if (!more) continue;
+        for (const [e164, p] of phonesFromHtml(more, cc)) { const cur = all.get(e164); if (cur) cur.score += p.score; else all.set(e164, p); }
+        if ([...all.values()].some(p => p.score >= 8)) break;
+      }
+    }
+    return [...all.values()].sort((a, b) => b.score - a.score || Number(b.mobile) - Number(a.mobile));
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+// ---------- second pass: Google (Serper places) ----------
+let serperKey;
+async function getSerperKey() {
+  if (serperKey !== undefined) return serperKey;
+  const { data } = await supabase.from('discovery_settings').select('value').eq('key', 'serper_key').maybeSingle();
+  serperKey = data?.value || process.env.SERPER_API_KEY || null;
+  if (!serperKey) console.error('\n  No Serper key: save it in Lead discovery (or SERPER_API_KEY in .env.local) to use --google.');
+  return serperKey;
+}
+const GL = { '966': 'sa', '971': 'ae', '965': 'kw', '974': 'qa', '973': 'bh', '968': 'om', '20': 'eg' };
+const bareHost = u => { try { return new URL(homeUrl(u)).hostname.replace(/^www\./, ''); } catch { return ''; } };
+
+async function findPhonesOnGoogle(lead) {
+  const key = await getSerperKey();
+  if (!key) return null;
+  const cc = guessCountry(lead);
+  const host = bareHost(lead.website);
+  const q = [lead.name && !/^https?:/i.test(lead.name) ? lead.name : '', host].filter(Boolean).join(' ');
+  try {
+    const res = await fetch('https://google.serper.dev/places', {
+      method: 'POST', headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q, gl: GL[cc] ?? 'sa', hl: 'ar' }),
+    });
+    if (!res.ok) return null;
+    const places = (await res.json()).places ?? [];
+    // only a place whose website is this client's site (safe), or a single result named like the client
+    const sameSite = places.filter(p => p.website && bareHost(p.website) === host);
+    const pick = sameSite.length ? sameSite : places.length === 1 && lead.name && places[0].title?.includes(lead.name.slice(0, 12)) ? places : [];
+    const out = [];
+    for (const p of pick) { const n = p.phoneNumber && normalizePhone(p.phoneNumber, cc); if (n) out.push({ ...n, score: 9 }); }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/** First pass on the site; then, if asked, real Chrome and Google for the ones still without a number. */
+async function findPhonesAllWays(lead) {
+  const first = await findPhones(lead);
+  if (first.result === 'found') return first;
+  if (BROWSER) {
+    const phones = await findPhonesInBrowser(lead);
+    if (phones?.length) return { result: 'found', phones, via: 'browser' };
+  }
+  if (GOOGLE) {
+    const phones = await findPhonesOnGoogle(lead);
+    if (phones?.length) return { result: 'found', phones, via: 'google' };
+  }
+  return first;
 }
 
 // ---------- database ----------
@@ -229,7 +334,7 @@ async function savePhone(lead, phones) {
 }
 
 async function loadBatch(afterId) {
-  let q = supabase.from('leads').select('id, website, region, notes, phone')
+  let q = supabase.from('leads').select('id, name, website, region, notes, phone')
     .not('website', 'is', null).neq('website', '').or('phone.is.null,phone.eq.')
     .order('id').limit(500);
   if (afterId) q = q.gt('id', afterId);
@@ -255,13 +360,13 @@ outer: while (true) {
       stats.checked++;
       let line;
       try {
-        const { result, phones } = await findPhones(lead);
+        const { result, phones, via } = await findPhonesAllWays(lead);
         if (result !== 'found') {
           stats[result]++;
           line = [lead.id, lead.website, result, '', ''];
         } else {
           const r = await savePhone(lead, phones);
-          if (r.saved) { stats.saved++; line = [lead.id, lead.website, 'saved', r.saved, phones.filter(p => p.e164 !== r.saved).map(p => p.e164).join(' ')]; }
+          if (r.saved) { stats.saved++; if (via !== 'site') stats[`saved_via_${via}`] = (stats[`saved_via_${via}`] ?? 0) + 1; line = [lead.id, lead.website, `saved (${via})`, r.saved, phones.filter(p => p.e164 !== r.saved).map(p => p.e164).join(' ')]; }
           else if (r.duplicate) { stats.number_belongs_to_other_client++; line = [lead.id, lead.website, 'number_belongs_to_other_client', '', phones.map(p => p.e164).join(' ')]; }
           else { stats.errors++; line = [lead.id, lead.website, `error: ${r.error}`, '', '']; }
           if (DRY) console.log(`  ${lead.website} → ${line[2]} ${line[3]} ${line[4] ? `(others: ${line[4]})` : ''}`);
@@ -280,6 +385,7 @@ outer: while (true) {
 }
 
 fs.writeFileSync(REPORT, report.join('\n'));
+if (browserPromise) await (await browserPromise).close().catch(() => {});
 if (!DRY && !LIMIT && fs.existsSync(CHECKPOINT)) fs.unlinkSync(CHECKPOINT); // finished: the next run starts from the beginning
 console.log('\n\nDone.');
 console.table(stats);

@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "format": "oxfmt",
     "extract:phones": "node scripts/extract-phones.mjs",
-    "check:websites": "node --experimental-strip-types scripts/check-websites-local.mjs"
+    "check:websites": "node --experimental-strip-types scripts/check-websites-local.mjs",
+    "find:phones": "node scripts/find-phones.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

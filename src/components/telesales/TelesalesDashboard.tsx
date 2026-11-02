@@ -45,6 +45,8 @@ import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 import { useI18n } from "../../i18n/I18nProvider"
 import { ClientLink } from "../shared/AppOverlays"
 import { usePermissions } from "../../hooks/usePermissions"
+import { loadAllMyContactIds, useMyContacts } from "../../hooks/useMyContacts"
+import { CONTACT_FILTER_OPTIONS, ContactStats, ContactedToggle } from "../shared/Contacted"
 
 const ROLE_REGION_OPTIONS = [
   { value: "", label: "All Countries" },
@@ -338,6 +340,9 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
   const [phoneFilter, setPhoneFilter] = useState("")
 
   const [needsMeetingFilter, setNeedsMeetingFilter] = useState("")
+  // "تواصلت" marks (070)
+  const [contactFilter, setContactFilter] = useState("")
+  const [contactStatsKey, setContactStatsKey] = useState(0)
 
   const [tab, setTab] = useState<"queue" | "done">("queue")
 
@@ -563,6 +568,8 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
     })
   }, [commentModal?.id])
 
+  const { contacted, toggle } = useMyContacts(userId, leads.map((l) => l.id))
+
   const filtered = (tab === "queue" ? activeLeads : doneLeads).filter((l) => {
     const q = search.toLowerCase()
 
@@ -574,7 +581,8 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
         (typeFilter === "salla" ? l.isSallaStore : !l.isSallaStore)) &&
       (!qualityFilter || l.dataQuality === qualityFilter) &&
       (!phoneFilter || (phoneFilter === "has" ? Boolean(l.phone) : !l.phone)) &&
-      (!needsMeetingFilter || l.needsMeeting)
+      (!needsMeetingFilter || l.needsMeeting) &&
+      (!contactFilter || (contactFilter === "yes") === Boolean(contacted[l.id]))
     )
   })
 
@@ -620,6 +628,8 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
 
       const searchQuery = search.toLowerCase()
 
+      const contactIds = contactFilter ? await loadAllMyContactIds(userId) : null
+
       const rows = (data ?? []).filter((row) => {
         const isDone = [
           "Subscribed",
@@ -643,7 +653,8 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
           (!qualityFilter || row.data_quality === qualityFilter) &&
           (!phoneFilter ||
             (phoneFilter === "has" ? Boolean(row.phone) : !row.phone)) &&
-          (!needsMeetingFilter || row.needs_meeting)
+          (!needsMeetingFilter || row.needs_meeting) &&
+          (!contactIds || (contactFilter === "yes") === contactIds.has(row.id))
         )
       })
 
@@ -936,6 +947,8 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
         </p>
       </div>
 
+      <ContactStats mode="mine" userId={userId} refreshKey={contactStatsKey} />
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 anim-stagger">
         <KpiCard
           label="Clients Worked"
@@ -1079,6 +1092,12 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
           ]}
           className="w-44"
         />
+        <Select
+          value={contactFilter}
+          onChange={setContactFilter}
+          options={CONTACT_FILTER_OPTIONS}
+          className="w-44"
+        />
         {can("leads.export") && (
           <Button
             variant="secondary"
@@ -1097,6 +1116,7 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
             "No.",
             "Code",
             "Lead",
+            "Contacted",
             "Phone",
             "Website",
             "Website Status",
@@ -1146,6 +1166,12 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
               </Td>
               <Td>
                 <ClientLink leadId={lead.id} className="font-medium text-white">{lead.name}</ClientLink>
+              </Td>
+              <Td>
+                <ContactedToggle
+                  on={Boolean(contacted[lead.id])}
+                  onToggle={() => void toggle(lead.id).then((r) => { if (r !== null) setContactStatsKey((k) => k + 1) })}
+                />
               </Td>
               <Td>
                 <EditablePhoneCell

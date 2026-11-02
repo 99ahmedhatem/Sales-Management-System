@@ -4,6 +4,7 @@ import { supabase } from '../../supabaseClient';
 import { useI18n } from '../../i18n/I18nProvider';
 import { Empty, ErrorNote, Kpi, Panel, SimpleTable, nf } from './charts';
 import TargetProgress from './TargetProgress';
+import { ContactStats } from './Contacted';
 import { useProfileViewer } from './AppOverlays';
 
 /** One row of get_team_performance (018). Numeric columns arrive as numbers or numeric strings. */
@@ -121,6 +122,9 @@ export default function TeamPerformance({ mode, userId, role }: { mode: 'team' |
           </Panel>
         </>
       )}
+
+      {/* "تواصلت" counts per employee (070) */}
+      {mode === 'team' && <ContactStats mode="team" />}
 
       {!loading && !error && visible.length > 0 && mode === 'team' && (
         <>

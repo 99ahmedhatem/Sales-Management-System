@@ -3,6 +3,7 @@
 -- حالياً: 032_auto_distribution (لو لسه) · 056_custom_deal_meeting_snapshot · 059_fix_admin_closer_and_booked_by_id · 064_discovery_notes_and_tags · 066_fill_missing_phones_skip_duplicates. من 004 لحد 028 و 030 اتشغّلوا (030 بيغطي 029، فـ 029 ما يتشغّلش).
 -- أي migration جديد يتحط هنا فوق استعلام التحقق، وبعد ما يتشغّل يتشال.
 -- ⚠ 067_one_client_per_website مش محطوط هنا عن قصد: بيدمج ويمسح عملاء مكررين. شغّله لوحده من ملفه: PART 1 (معاينة) → backup → PART 2.
+-- ⚠ 068_websites_open_home_page كمان مش محطوط هنا: بيغيّر روابط العملاء. شغّله لوحده بعد 067 من ملفه: PART 1 (معاينة) → PART 2. وبعده اعمل deploy لـ check-websites.
 -- =====================================================================
 
 -- =====================================================================

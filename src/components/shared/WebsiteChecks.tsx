@@ -4,7 +4,7 @@ import { useI18n } from '../../i18n/I18nProvider';
 import { Button, Card } from '../ui';
 
 /** Reason codes written by the check-websites Edge Function. */
-export const WEBSITE_CATEGORIES = ['ok', 'ok_protected', 'dns', 'dns_typo', 'timeout', 'ssl', 'refused', 'http_404', 'http_4xx', 'http_5xx', 'parked', 'suspended', 'invalid_url', 'redirect_loop', 'network'] as const;
+export const WEBSITE_CATEGORIES = ['ok', 'ok_protected', 'dns', 'dns_typo', 'timeout', 'ssl', 'refused', 'http_404', 'http_4xx', 'http_5xx', 'parked', 'suspended', 'store_closed', 'invalid_url', 'redirect_loop', 'network'] as const;
 
 const CATEGORY_LABELS: Record<string, string> = {
   ok: 'Opens normally',
@@ -20,6 +20,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   http_5xx: 'Server error (5xx)',
   parked: 'Domain for sale / parked',
   suspended: 'Site or store suspended',
+  store_closed: 'Salla store closed (redirects to salla.com)',
   invalid_url: 'Invalid website address',
   network: 'Connection error',
 };

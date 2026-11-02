@@ -2,7 +2,11 @@ import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../i18n/I18nProvider';
 import { AnimatedNumber } from './shared/motion';
+import { siteHome } from '../lib/websiteKey';
+/** Link target for a client's website: always the site's home page (068), never an inner page. */
 export function normalizeWebsiteUrl(url: string): string {
+  const home = siteHome(url);
+  if (home) return home;
   const trimmed = url.trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }

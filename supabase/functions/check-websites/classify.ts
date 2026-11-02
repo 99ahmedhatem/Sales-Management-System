@@ -1,7 +1,7 @@
 // منطق تصنيف حالة الموقع — دوال نقية (تشتغل في Deno و Node) عشان تتختبر بسهولة.
 export type Category =
   | 'ok' | 'ok_protected' | 'dns' | 'dns_typo' | 'timeout' | 'ssl' | 'refused' | 'network'
-  | 'http_404' | 'http_4xx' | 'http_5xx' | 'parked' | 'suspended' | 'redirect_loop' | 'invalid_url'
+  | 'http_404' | 'http_4xx' | 'http_5xx' | 'parked' | 'suspended' | 'store_closed' | 'redirect_loop' | 'invalid_url'
 
 export interface CheckResult {
   status: 'working' | 'not_working'
@@ -44,6 +44,18 @@ function hostOf(u: string | null): string {
   try { return new URL(u ?? '').hostname.replace(/^www\./, '') } catch { return '' }
 }
 
+// صفحات المنصة الرئيسية اللي سلة بتحوّل عليها المتجر المقفول أو المنتهي اشتراكه.
+const SALLA_PLATFORM_HOSTS = ['salla.com', 'salla.sa', 's.salla.sa']
+
+/** true لو الرابط اتحوّل لصفحة سلة الرئيسية بدل المتجر نفسه (متجر مقفول/منتهي). */
+export function isSallaPlatformRedirect(originalUrl: string, finalUrl: string | null): boolean {
+  const from = hostOf(originalUrl)
+  const to = hostOf(finalUrl)
+  if (!to || !from || from === to) return false
+  if (SALLA_PLATFORM_HOSTS.includes(from)) return false
+  return SALLA_PLATFORM_HOSTS.includes(to)
+}
+
 /** يصنّف خطأ الشبكة من رسالته. */
 export function classifyNetworkError(err: unknown): CheckResult {
   const name = (err as { name?: string })?.name ?? ''
@@ -83,6 +95,8 @@ export function classifyResponse(
   if (status >= 400)
     return { ...common, status: 'not_working', category: 'http_4xx', note: `الموقع يرد بخطأ ${status} — غير متاح للزوار.` }
 
+  if (isSallaPlatformRedirect(originalUrl, finalUrl))
+    return { ...common, isSalla: true, status: 'not_working', category: 'store_closed', note: `المتجر مقفول أو اشتراكه في سلة انتهى — الرابط بيحوّل على صفحة سلة الرئيسية (${hostOf(finalUrl)}) بدل المتجر.` }
   if (SUSPENDED.some((r) => r.test(html)))
     return { ...common, status: 'not_working', category: 'suspended', note: 'الموقع موقوف (الاستضافة معلّقة أو انتهت).' }
   const movedAway = hostOf(finalUrl) && hostOf(originalUrl) && hostOf(finalUrl) !== hostOf(originalUrl)

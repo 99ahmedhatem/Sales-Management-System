@@ -36,3 +36,20 @@ export function normalizeWebsite(url: string): string {
   }
   return host;
 }
+
+/**
+ * The site's home page (068), same rule as public.site_home() in the database:
+ *   https://www.example.com/blog/post-1 → https://www.example.com/   ·   salla.sa/mystore/p/1 → https://salla.sa/mystore/
+ * Returns '' when the text is not a usable link (or is a bare platform page like salla.sa).
+ */
+export function siteHome(url: string): string {
+  const key = normalizeWebsite(url);
+  if (!key) return '';
+  let s = (url ?? '').trim().toLowerCase();
+  const scheme = /^http:\/\//.test(s) ? 'http://' : 'https://';
+  s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//, '').replace(/^[^/@]*@/, '');
+  const host = s.split('/')[0].split('?')[0].split('#')[0].replace(/:[0-9]+$/, '').replace(/\.+$/, '');
+  const www = /^www[0-9]*\./.exec(host)?.[0] ?? '';
+  const keepWww = www && host.slice(www.length) === key.split('/')[0];
+  return `${scheme}${keepWww ? www : ''}${key}/`;
+}

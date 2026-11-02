@@ -848,6 +848,7 @@ export const ar: Record<string, string> = {
   "Request error (4xx)": "خطأ في الطلب (4xx)",
   "Server error (5xx)": "خطأ في السيرفر (5xx)",
   "Domain for sale / parked": "الدومين للبيع / Parking",
+  "Salla store closed (redirects to salla.com)": "متجر سلة مقفول (بيحوّل على salla.com)",
   "Site or store suspended": "الموقع أو المتجر موقوف",
   "Invalid website address": "رابط الموقع غلط",
   "Connection error": "خطأ اتصال",

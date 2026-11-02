@@ -47,6 +47,8 @@ import {
   MeetingWhatsAppButton,
 } from "../shared/MeetingActions"
 import { usePermissions } from "../../hooks/usePermissions"
+import { useMyContacts } from "../../hooks/useMyContacts"
+import { ContactStats, ContactedToggle } from "../shared/Contacted"
 import { Role } from "../../data/crmTypes"
 
 import { dateLocale } from "../../i18n/locale"
@@ -547,6 +549,10 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
     setNewComment("")
   }
 
+  // "تواصلت" marks (070) for the clients of these meetings
+  const { contacted, toggle: toggleContact } = useMyContacts(userId, [...new Set(meetings.map((m) => m.leadId))])
+  const [contactStatsKey, setContactStatsKey] = useState(0)
+
   const displayed = meetings.filter((meeting) => {
     const query = search.trim().toLowerCase()
 
@@ -566,6 +572,8 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
           {t("Welcome back, {name}", { name: myName || t("Sales") })}
         </p>
       </div>
+
+      <ContactStats mode="mine" userId={userId} refreshKey={contactStatsKey} />
 
       {error && (
         <div
@@ -770,7 +778,13 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
                       phoneClassName="text-[#dfff03] text-sm"
                     />
                   </div>
-                  <StatusBadge status={m.outcome} />
+                  <div className="flex flex-col items-end gap-2">
+                    <StatusBadge status={m.outcome} />
+                    <ContactedToggle
+                      on={Boolean(contacted[m.leadId])}
+                      onToggle={() => void toggleContact(m.leadId).then((r) => { if (r !== null) setContactStatsKey((k) => k + 1) })}
+                    />
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 text-[#6b6b6b] text-sm mb-3">
                   <svg
@@ -849,6 +863,7 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
           <Table
             headers={[
               "Client",
+              "Contacted",
               "Phone",
               "Date & Time",
               "Booked By",
@@ -862,6 +877,12 @@ export default function SalesDashboard({ userId, role = "sales" }: Props) {
                   <Td>
                     <ClientLink leadId={m.leadId} className="font-medium text-white">{m.leadName}</ClientLink>
                     <div className="mt-1"><ClientCodeBadge code={m.clientCode} /></div>
+                  </Td>
+                  <Td>
+                    <ContactedToggle
+                      on={Boolean(contacted[m.leadId])}
+                      onToggle={() => void toggleContact(m.leadId).then((r) => { if (r !== null) setContactStatsKey((k) => k + 1) })}
+                    />
                   </Td>
                   <Td>
                     <div className="flex items-center gap-1">

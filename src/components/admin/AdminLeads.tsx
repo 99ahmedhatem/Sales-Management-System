@@ -7,6 +7,8 @@ import { createNotification } from '../../data/notifications';
 import { generateCode, Lead, LeadDataQuality, LeadStatus, User } from '../../data/mockData';
 import { Button, RoleBadge, SearchInput, Select, StatusBadge, Table, Td, Tr, Modal, Card, Pagination, WebsiteLink, EmptyState, useConfirm } from '../ui';
 import { toast } from '../shared/toast';
+import { useMyContacts } from '../../hooks/useMyContacts';
+import { CONTACT_FILTER_OPTIONS, ContactedToggle } from '../shared/Contacted';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
 import { exportRowsToExcel } from '../shared/exportExcel';
@@ -132,6 +134,8 @@ function mapLead(row: any): Lead {
     source: row.source ?? undefined,
     isSallaStore: row.is_salla_store ?? false,
     tag: row.tag ?? undefined,
+    contactedAt: row.contacted_at ?? undefined,
+    contactedBy: row.contacted_by ?? undefined,
     wasDistributed: row.was_distributed ?? false,
     releasedAt: row.released_at ?? undefined,
     dataQuality: row.data_quality ?? 'normal',
@@ -181,6 +185,10 @@ export default function AdminLeads() {
   const [historyFilter, setHistoryFilter] = usePersistentState('leads.history', '');
   // Tag (064): set in Lead discovery; '__none__' = clients without a tag
   const [tagFilter, setTagFilter] = usePersistentState('leads.tag', '');
+  // "تواصلت" (070): '' | 'yes' | 'no' — contacted by anyone
+  const [contactFilter, setContactFilter] = usePersistentState('leads.contacted', '');
+  const [myId, setMyId] = useState('');
+  useEffect(() => { void supabase.auth.getUser().then(({ data }) => setMyId(data.user?.id ?? '')); }, []);
   const [tagOptions, setTagOptions] = useState<{ value: string; label: string }[]>([]);
   useEffect(() => {
     void supabase.rpc('discovery_tags').then(({ data, error }) => {
@@ -189,10 +197,10 @@ export default function AdminLeads() {
         .map(r => ({ value: r.tag, label: `${r.tag} (${r.leads})` })));
     });
   }, []);
-  const hasFilters = !!(search.trim() || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || assignmentFilter || websiteFilter || websiteReasonFilter || historyFilter || tagFilter);
+  const hasFilters = !!(search.trim() || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || assignmentFilter || websiteFilter || websiteReasonFilter || historyFilter || tagFilter || contactFilter);
   const clearFilters = () => {
     setSearch(''); setStatusFilter(''); setRegionFilter(''); setPhoneFilter(''); setTypeFilter('');
-    setQualityFilter(''); setAssignmentFilter(''); setWebsiteFilter(''); setWebsiteReasonFilter(''); setHistoryFilter(''); setTagFilter('');
+    setQualityFilter(''); setAssignmentFilter(''); setWebsiteFilter(''); setWebsiteReasonFilter(''); setHistoryFilter(''); setTagFilter(''); setContactFilter('');
   };
   const { confirm, confirmUi } = useConfirm();
   const [showWebsiteChecks, setShowWebsiteChecks] = useState(false);
@@ -264,7 +272,7 @@ export default function AdminLeads() {
     const managerIds = loadedUsers.filter(user => user.role === 'manager').map(user => user.id);
 
     const q = debouncedSearch.replace(/[%,()]/g, ' ').trim();
-    const otherFilters = Boolean(q || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || websiteFilter || websiteReasonFilter || historyFilter || tagFilter);
+    const otherFilters = Boolean(q || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || websiteFilter || websiteReasonFilter || historyFilter || tagFilter || contactFilter);
     // With no filters (or only "Not distributed") the total comes from get_leads_counts, so skip the slow count.
     const countFromRpc = !otherFilters && (assignmentFilter === '' || assignmentFilter === 'unassigned');
 
@@ -283,6 +291,8 @@ export default function AdminLeads() {
     if (typeFilter) leadsQuery = leadsQuery.eq('is_salla_store', typeFilter === 'salla');
     if (tagFilter === '__none__') leadsQuery = leadsQuery.is('tag', null);
     else if (tagFilter) leadsQuery = leadsQuery.eq('tag', tagFilter);
+    if (contactFilter === 'yes') leadsQuery = leadsQuery.not('contacted_at', 'is', null);
+    if (contactFilter === 'no') leadsQuery = leadsQuery.is('contacted_at', null);
     if (qualityFilter) leadsQuery = leadsQuery.eq('data_quality', qualityFilter);
     leadsQuery = applyWebsiteFilters(leadsQuery);
     if (assignmentFilter === 'manager') {
@@ -328,12 +338,13 @@ export default function AdminLeads() {
     setSelected([]);
     loadData(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter, qualityFilter, assignmentFilter, websiteFilter, websiteReasonFilter, historyFilter, tagFilter]);
+  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter, qualityFilter, assignmentFilter, websiteFilter, websiteReasonFilter, historyFilter, tagFilter, contactFilter]);
 
   // Live updates: when anyone changes a lead or a user, this page refreshes by itself
   useRealtimeRefresh(['leads', 'users'], () => loadData(page, true));
 
   // Recipients: telesales, managers and admins (they work their own queue too)
+  const { contacted: myContacts, toggle: toggleContact } = useMyContacts(myId, leads.map(l => l.id));
   const assignableUsers = users.filter(u => ['telesales', 'sales_telesales', 'manager', 'admin'].includes(u.role) && u.status === 'active');
   const recipientAgents = assignableUsers.map(u => ({ id: u.id, fullName: u.fullName, role: u.role }));
 
@@ -454,6 +465,8 @@ export default function AdminLeads() {
       if (typeFilter) query = query.eq('is_salla_store', typeFilter === 'salla');
       if (tagFilter === '__none__') query = query.is('tag', null);
       else if (tagFilter) query = query.eq('tag', tagFilter);
+      if (contactFilter === 'yes') query = query.not('contacted_at', 'is', null);
+      if (contactFilter === 'no') query = query.is('contacted_at', null);
       if (qualityFilter) query = query.eq('data_quality', qualityFilter);
       query = applyWebsiteFilters(query);
       if (assignmentFilter === 'manager') query = managerIds.length ? query.in('assigned_to', managerIds) : query.eq('id', '00000000-0000-0000-0000-000000000000');
@@ -473,6 +486,7 @@ export default function AdminLeads() {
         WEBSITE: row.website ?? '',
         SALLA: row.is_salla_store ? 'Yes' : 'No',
         TAG: row.tag ?? '',
+        CONTACTED: row.contacted_at ? String(row.contacted_at).slice(0, 10) : '',
         QUALITY: row.data_quality ?? '',
         STATUS: row.status ?? '',
         'WEBSITE STATUS': row.website_status === 'working' ? 'Working' : row.website_status === 'not_working' ? 'Not Working' : 'Not Checked',
@@ -688,6 +702,7 @@ export default function AdminLeads() {
         <Select value={statusFilter} onChange={setStatusFilter} options={STATUS_OPTIONS} className="w-40" />
         <Select value={regionFilter} onChange={setRegionFilter} options={REGION_OPTIONS} className="w-48" />
         <Select value={typeFilter} onChange={setTypeFilter} options={TYPE_FILTER_OPTIONS} className="w-36" />
+        <Select value={contactFilter} onChange={setContactFilter} options={CONTACT_FILTER_OPTIONS} className="w-44" />
         {(tagOptions.length > 0 || tagFilter) && (
           <Select value={tagFilter} onChange={setTagFilter} className="w-44"
             options={[{ value: '', label: 'All tags' }, { value: '__none__', label: 'No tag' }, ...tagOptions]} />
@@ -716,7 +731,7 @@ export default function AdminLeads() {
       {/* Table */}
       <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : 'transition-opacity'}>
         <Card>
-          <Table headers={['', 'Code', 'Name', 'Phone', 'Website', 'Website Status', 'Salla', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
+          <Table headers={['', 'Code', 'Name', 'Contacted', 'Phone', 'Website', 'Website Status', 'Salla', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
             <tr className="border-b border-[#262626]">
               <td className="py-3 px-4">
                 <input
@@ -726,7 +741,7 @@ export default function AdminLeads() {
                   className="accent-[#dfff03]"
                 />
               </td>
-              <td colSpan={12} className="py-3 px-2 text-[#6b6b6b] text-xs">
+              <td colSpan={13} className="py-3 px-2 text-[#6b6b6b] text-xs">
                 {t('{a} shown of {b} records', { a: leads.length.toLocaleString('en-US'), b: formatCount(totalLeads) })}
               </td>
             </tr>
@@ -762,6 +777,13 @@ export default function AdminLeads() {
                         {t('Previously distributed')}
                       </span>
                     )}
+                  </Td>
+                  <Td>
+                    <ContactedToggle
+                      on={Boolean(myContacts[lead.id])}
+                      byName={lead.contactedBy && lead.contactedBy !== myId ? users.find(u => u.id === lead.contactedBy)?.fullName : undefined}
+                      onToggle={() => void toggleContact(lead.id).then(r => { if (r !== null) void loadData(page, true); })}
+                    />
                   </Td>
                   <Td><EditablePhoneCell phone={lead.phone} onSave={phone => saveInlinePhone(lead, phone)} /></Td>
                   <Td><WebsiteLink url={lead.website} className="text-[#a0a0a0] text-xs truncate max-w-40 inline-block" /></Td>

@@ -121,8 +121,9 @@ function phonesFromHtml(html, defaultCc) {
   // visible text (tags removed); Arabic digits are converted inside normalizePhone
   const text = h.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#160;/g, ' ');
   for (const m of text.matchAll(/(?:\+|00)\s?(?:966|971|965|974|973|968|20)[\s\-.()]*(?:[\d٠-٩][\s\-.()]*){7,10}/g)) add(m[0], 4);
-  for (const m of text.matchAll(/(?<![\d٠-٩])[0٠][\s\-.]?(?:[\d٠-٩][\s\-.]?){8,9}(?![\d٠-٩])/g)) add(m[0], 3);
-  for (const m of text.matchAll(/(?<![\d٠-٩])(?:9200|920|800)[\s\-.]?(?:[\d٠-٩][\s\-.]?){5,7}(?![\d٠-٩])/g)) add(m[0], 2);
+  // local numbers: only spaces / dashes inside, and never part of a decimal (0.178571429) or a longer number
+  for (const m of text.matchAll(/(?<![\d٠-٩.,])[0٠](?:[\s-]?[\d٠-٩]){8,9}(?![\d٠-٩]|[.,][\d٠-٩])/g)) add(m[0], 3);
+  for (const m of text.matchAll(/(?<![\d٠-٩.,])(?:9200|920|800)(?:[\s-]?[\d٠-٩]){5,7}(?![\d٠-٩]|[.,][\d٠-٩])/g)) add(m[0], 2);
   return found;
 }
 

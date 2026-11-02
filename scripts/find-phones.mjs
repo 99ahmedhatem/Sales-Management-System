@@ -28,6 +28,7 @@
 //   npm run find:phones -- --google --from-start   ask Google (Serper "places", the same key as Lead discovery) for the
 //                                                   business phone by name + website — 1 Serper credit per client
 //   (the two can be used together: --browser --google)
+//   npm run find:phones -- --clean-shared          remove a platform / agency number that got saved on a client (see below)
 import fs from 'node:fs';
 import process from 'node:process';
 import { createClient } from '@supabase/supabase-js';
@@ -270,7 +271,6 @@ async function getSerperKey() {
   return serperKey;
 }
 const GL = { '966': 'sa', '971': 'ae', '965': 'kw', '974': 'qa', '973': 'bh', '968': 'om', '20': 'eg' };
-const bareHost = u => { try { return new URL(homeUrl(u)).hostname.replace(/^www\./, ''); } catch { return ''; } };
 
 async function findPhonesOnGoogle(lead) {
   const key = await getSerperKey();
@@ -311,6 +311,19 @@ async function findPhonesAllWays(lead) {
   return first;
 }
 
+function bareHost(u) { try { return new URL(homeUrl(u)).hostname.replace(/^www\./, ''); } catch { return ''; } }
+
+// ---------- shared numbers (platforms, web agencies) ----------
+// Salla / Zid stores show the platform's own support number in their footer, and web agencies put their number on
+// every site they build. Such a number is not the client's: it is never saved.
+const PLATFORM_NUMBERS = new Set(['920033102']); // key = last 9 digits · Salla support (seen on every Salla store)
+const numberSites = new Map(); // key → Set of sites where this number was found during this run
+function noteNumbers(lead, phones) {
+  const host = bareHost(lead.website);
+  for (const p of phones) { const s = numberSites.get(p.key) ?? new Set(); s.add(host); numberSites.set(p.key, s); }
+}
+const isShared = p => PLATFORM_NUMBERS.has(p.key) || (numberSites.get(p.key)?.size ?? 0) >= 3;
+
 // ---------- database ----------
 async function phoneTakenByOther(key, leadId) {
   const { data } = await supabase.from('leads').select('id').eq('phone_key', key).neq('id', leadId).limit(1);
@@ -318,7 +331,9 @@ async function phoneTakenByOther(key, leadId) {
 }
 
 async function savePhone(lead, phones) {
+  noteNumbers(lead, phones);
   for (const p of phones) {
+    if (isShared(p)) continue;
     if (await phoneTakenByOther(p.key, lead.id)) continue;
     if (DRY) return { saved: p.e164 };
     const update = { phone: p.e164, phone_source: 'auto_scraped', updated_at: new Date().toISOString() };
@@ -330,7 +345,7 @@ async function savePhone(lead, phones) {
     if (!error) return { saved: p.e164 };
     if (error.code !== '23505') return { error: error.message }; // 23505 = taken a moment ago: try the next number
   }
-  return { duplicate: true };
+  return { duplicate: true, onlyShared: phones.every(isShared) };
 }
 
 async function loadBatch(afterId) {
@@ -341,6 +356,33 @@ async function loadBatch(afterId) {
   const { data, error } = await q;
   if (error) throw new Error(error.message);
   return data;
+}
+
+// ---------- clean-up: remove a shared number that was saved before it was recognised ----------
+// npm run find:phones -- --clean-shared   reads the reports in the project folder; a number seen on 3+ sites (or a
+// platform number) is removed from the client it was auto-saved on, so the next run looks for that client's own number.
+if (args.includes('--clean-shared')) {
+  const sites = new Map();
+  for (const f of fs.readdirSync('.').filter(n => n.startsWith('.tmp-find-phones-report-'))) {
+    for (const row of fs.readFileSync(f, 'utf8').split('\n').slice(1)) {
+      const cols = row.match(/"((?:[^"]|"")*)"/g)?.map(c => c.slice(1, -1).replace(/""/g, '"')) ?? [];
+      const [, website, , phone, others] = cols;
+      for (const n of [phone, ...(others ?? '').split(' ')].filter(Boolean)) {
+        const key = n.replace(/\D/g, '').slice(-9);
+        const s = sites.get(key) ?? { e164: n, hosts: new Set() };
+        s.hosts.add(bareHost(website)); sites.set(key, s);
+      }
+    }
+  }
+  const shared = [...sites.entries()].filter(([k, s]) => PLATFORM_NUMBERS.has(k) || s.hosts.size >= 3).map(([, s]) => s.e164);
+  console.log(`Shared numbers found: ${shared.length ? shared.join(', ') : 'none'}`);
+  for (const n of shared) {
+    const { data, error } = DRY ? { data: [] } : await supabase.from('leads')
+      .update({ phone: null, phone_source: null, updated_at: new Date().toISOString() })
+      .eq('phone', n).eq('phone_source', 'auto_scraped').select('id');
+    console.log(`  ${n}: ${error ? `error ${error.message}` : `removed from ${data.length} client(s)`}`);
+  }
+  process.exit(0);
 }
 
 // ---------- run ----------
@@ -367,6 +409,7 @@ outer: while (true) {
         } else {
           const r = await savePhone(lead, phones);
           if (r.saved) { stats.saved++; if (via !== 'site') stats[`saved_via_${via}`] = (stats[`saved_via_${via}`] ?? 0) + 1; line = [lead.id, lead.website, `saved (${via})`, r.saved, phones.filter(p => p.e164 !== r.saved).map(p => p.e164).join(' ')]; }
+          else if (r.onlyShared) { stats.only_platform_number = (stats.only_platform_number ?? 0) + 1; line = [lead.id, lead.website, 'only_platform_number', '', phones.map(p => p.e164).join(' ')]; }
           else if (r.duplicate) { stats.number_belongs_to_other_client++; line = [lead.id, lead.website, 'number_belongs_to_other_client', '', phones.map(p => p.e164).join(' ')]; }
           else { stats.errors++; line = [lead.id, lead.website, `error: ${r.error}`, '', '']; }
           if (DRY) console.log(`  ${lead.website} → ${line[2]} ${line[3]} ${line[4] ? `(others: ${line[4]})` : ''}`);

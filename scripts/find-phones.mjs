@@ -28,6 +28,13 @@
 //   npm run find:phones -- --google --from-start   ask Google (Serper "places", the same key as Lead discovery) for the
 //                                                   business phone by name + website — 1 Serper credit per client
 //   (the two can be used together: --browser --google)
+//   npm run find:phones -- --clean-shared          remove a platform / agency number that got saved on a client (see below)
+//
+// Fix WRONG numbers too (clients that already have a phone):
+//   npm run find:phones -- --check-existing        every client with a website: if the site shows its own number clearly
+//                                                   (store settings, WhatsApp / call button, structured data) and it is
+//                                                   different from the saved one, the site's number replaces it and the old
+//                                                   number is kept in the notes ("الرقم القديم: …"). Add --browser for JS sites.
 import fs from 'node:fs';
 import process from 'node:process';
 import { createClient } from '@supabase/supabase-js';
@@ -54,9 +61,10 @@ const FROM_START = args.includes('--from-start');
 const EXTRA_TO_NOTES = args.includes('--extra-to-notes');
 const BROWSER = args.includes('--browser');
 const GOOGLE = args.includes('--google');
-const CONCURRENCY = Number(argValue('--parallel')) || (BROWSER ? 4 : 8);
+const CHECK_EXISTING = args.includes('--check-existing');
+const CONCURRENCY = Number(argValue('--parallel')) || (BROWSER ? 6 : 8);
 const TIMEOUT_MS = 20_000;
-const CHECKPOINT = 'scripts/find-phones.checkpoint.json';
+const CHECKPOINT = CHECK_EXISTING ? 'scripts/find-phones-existing.checkpoint.json' : 'scripts/find-phones.checkpoint.json';
 const REPORT = `.tmp-find-phones-report-${new Date().toISOString().slice(0, 10)}.csv`;
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
@@ -128,6 +136,13 @@ function phonesFromHtml(html, defaultCc) {
   for (const m of h.matchAll(/href\s*=\s*["']\s*tel:([^"'<>]{6,30})/gi)) add(decodeURIComponent(m[1]), 10);
   for (const m of h.matchAll(/(?:wa\.me\/|api\.whatsapp\.com\/send\/?\?phone=|web\.whatsapp\.com\/send\/?\?phone=|whatsapp:\/\/send\/?\?phone=)\+?([\d%]{8,20})/gi)) add(`+${decodeURIComponent(m[1])}`, 12);
   for (const m of h.matchAll(/"telephone"\s*:\s*"([^"]{6,30})"/gi)) add(m[1], 8);
+  // Salla stores: the store's own contacts are in the page settings — "contacts":{"whatsapp":"+9665…","mobile":"+9665…"}
+  for (const block of h.matchAll(/\\?"contacts\\?"\s*:\s*\{([^{}]{0,600})\}/gi)) {
+    for (const m of block[1].matchAll(/\\?"(?:whatsapp|mobile|phone|telephone)\\?"\s*:\s*\\?"(\+?[\d\s()-]{8,20})\\?"/gi)) add(m[1], 15);
+  }
+  // Zid and other stores / site builders: "phone": "9665…", "mobile": …, and the business contact meta tag
+  for (const m of h.matchAll(/\\?"(?:phone|mobile|whatsapp|phone_number|phoneNumber|contact_phone|mobile_number)\\?"\s*:\s*\\?"(\+?[\d\s()-]{8,20})\\?"/gi)) add(m[1], 10);
+  for (const m of h.matchAll(/business:contact_data:phone_number"\s+content\s*=\s*"([^"]{6,30})"/gi)) add(m[1], 10);
   // visible text (tags removed); Arabic digits are converted inside normalizePhone
   const text = h.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#160;/g, ' ');
   for (const m of text.matchAll(/(?:\+|00)\s?(?:966|971|965|974|973|968|20)[\s\-.()]*(?:[\d٠-٩][\s\-.()]*){7,10}/g)) add(m[0], 4);
@@ -227,8 +242,8 @@ async function browserPage() {
 
 async function renderedHtml(page, url) {
   try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 });
+    await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {});
     await page.mouse.wheel(0, 20_000).catch(() => {});      // footers often load on scroll
     await page.waitForTimeout(1_500);
     const hrefs = await page.$$eval('a[href]', as => as.map(a => `<a href="${a.getAttribute('href')}">${(a.textContent || '').slice(0, 60)}</a>`).join(' ')).catch(() => '');
@@ -247,7 +262,7 @@ async function findPhonesInBrowser(lead) {
     if (html === null) return null;
     const all = phonesFromHtml(html, cc);
     if (![...all.values()].some(p => p.score >= 8)) {
-      for (const link of contactLinks(html, page.url() || base).slice(0, 3)) {
+      for (const link of contactLinks(html, page.url() || base).slice(0, 2)) {
         const more = await renderedHtml(page, link);
         if (!more) continue;
         for (const [e164, p] of phonesFromHtml(more, cc)) { const cur = all.get(e164); if (cur) cur.score += p.score; else all.set(e164, p); }
@@ -270,7 +285,6 @@ async function getSerperKey() {
   return serperKey;
 }
 const GL = { '966': 'sa', '971': 'ae', '965': 'kw', '974': 'qa', '973': 'bh', '968': 'om', '20': 'eg' };
-const bareHost = u => { try { return new URL(homeUrl(u)).hostname.replace(/^www\./, ''); } catch { return ''; } };
 
 async function findPhonesOnGoogle(lead) {
   const key = await getSerperKey();
@@ -300,7 +314,8 @@ async function findPhonesOnGoogle(lead) {
 async function findPhonesAllWays(lead) {
   const first = await findPhones(lead);
   if (first.result === 'found') return first;
-  if (BROWSER) {
+  // a site that did not open in 3 tries (DNS / timeout / refused) won't open in Chrome either: skip the slow pass
+  if (BROWSER && first.result !== 'site_not_opening') {
     const phones = await findPhonesInBrowser(lead);
     if (phones?.length) return { result: 'found', phones, via: 'browser' };
   }
@@ -311,14 +326,46 @@ async function findPhonesAllWays(lead) {
   return first;
 }
 
+function bareHost(u) { try { return new URL(homeUrl(u)).hostname.replace(/^www\./, ''); } catch { return ''; } }
+
+// ---------- shared numbers (platforms, web agencies) ----------
+// Salla / Zid stores show the platform's own support number in their footer, and web agencies put their number on
+// every site they build. Such a number is not the client's: it is never saved.
+const PLATFORM_NUMBERS = new Set(['920033102']); // key = last 9 digits · Salla support (seen on every Salla store)
+const numberSites = new Map(); // key → Set of sites where this number was found during this run
+function noteNumbers(lead, phones) {
+  const host = bareHost(lead.website);
+  for (const p of phones) { const s = numberSites.get(p.key) ?? new Set(); s.add(host); numberSites.set(p.key, s); }
+}
+const isShared = p => PLATFORM_NUMBERS.has(p.key) || (numberSites.get(p.key)?.size ?? 0) >= 3;
+
 // ---------- database ----------
 async function phoneTakenByOther(key, leadId) {
   const { data } = await supabase.from('leads').select('id').eq('phone_key', key).neq('id', leadId).limit(1);
   return Boolean(data?.length);
 }
 
+const phoneKeyOf = v => String(v ?? '').replace(/\D/g, '').slice(-9);
+
 async function savePhone(lead, phones) {
+  noteNumbers(lead, phones);
+  const current = phoneKeyOf(lead.phone);
+  if (current) {
+    // the client already has a number: change it only for a clear number of the site itself
+    const best = phones.find(p => !isShared(p) && p.score >= 8);
+    if (!best) return { kept: true };
+    if (best.key === current || phones.some(p => p.key === current && p.score >= 8)) return { correct: true };
+    if (await phoneTakenByOther(best.key, lead.id)) return { duplicate: true };
+    if (DRY) return { replaced: best.e164, old: lead.phone };
+    const { error } = await supabase.from('leads').update({
+      phone: best.e164, phone_source: 'auto_scraped', updated_at: new Date().toISOString(),
+      notes: [lead.notes, `الرقم القديم: ${lead.phone}`].filter(Boolean).join('\n'),
+    }).eq('id', lead.id);
+    if (error) return error.code === '23505' ? { duplicate: true } : { error: error.message };
+    return { replaced: best.e164, old: lead.phone };
+  }
   for (const p of phones) {
+    if (isShared(p)) continue;
     if (await phoneTakenByOther(p.key, lead.id)) continue;
     if (DRY) return { saved: p.e164 };
     const update = { phone: p.e164, phone_source: 'auto_scraped', updated_at: new Date().toISOString() };
@@ -330,17 +377,45 @@ async function savePhone(lead, phones) {
     if (!error) return { saved: p.e164 };
     if (error.code !== '23505') return { error: error.message }; // 23505 = taken a moment ago: try the next number
   }
-  return { duplicate: true };
+  return { duplicate: true, onlyShared: phones.every(isShared) };
 }
 
 async function loadBatch(afterId) {
   let q = supabase.from('leads').select('id, name, website, region, notes, phone')
-    .not('website', 'is', null).neq('website', '').or('phone.is.null,phone.eq.')
+    .not('website', 'is', null).neq('website', '')
     .order('id').limit(500);
+  if (!CHECK_EXISTING) q = q.or('phone.is.null,phone.eq.');
   if (afterId) q = q.gt('id', afterId);
   const { data, error } = await q;
   if (error) throw new Error(error.message);
   return data;
+}
+
+// ---------- clean-up: remove a shared number that was saved before it was recognised ----------
+// npm run find:phones -- --clean-shared   reads the reports in the project folder; a number seen on 3+ sites (or a
+// platform number) is removed from the client it was auto-saved on, so the next run looks for that client's own number.
+if (args.includes('--clean-shared')) {
+  const sites = new Map();
+  for (const f of fs.readdirSync('.').filter(n => n.startsWith('.tmp-find-phones-report-'))) {
+    for (const row of fs.readFileSync(f, 'utf8').split('\n').slice(1)) {
+      const cols = row.match(/"((?:[^"]|"")*)"/g)?.map(c => c.slice(1, -1).replace(/""/g, '"')) ?? [];
+      const [, website, , phone, others] = cols;
+      for (const n of [phone, ...(others ?? '').split(' ')].filter(Boolean)) {
+        const key = n.replace(/\D/g, '').slice(-9);
+        const s = sites.get(key) ?? { e164: n, hosts: new Set() };
+        s.hosts.add(bareHost(website)); sites.set(key, s);
+      }
+    }
+  }
+  const shared = [...sites.entries()].filter(([k, s]) => PLATFORM_NUMBERS.has(k) || s.hosts.size >= 3).map(([, s]) => s.e164);
+  console.log(`Shared numbers found: ${shared.length ? shared.join(', ') : 'none'}`);
+  for (const n of shared) {
+    const { data, error } = DRY ? { data: [] } : await supabase.from('leads')
+      .update({ phone: null, phone_source: null, updated_at: new Date().toISOString() })
+      .eq('phone', n).eq('phone_source', 'auto_scraped').select('id');
+    console.log(`  ${n}: ${error ? `error ${error.message}` : `removed from ${data.length} client(s)`}`);
+  }
+  process.exit(0);
 }
 
 // ---------- run ----------
@@ -348,7 +423,7 @@ const checkpoint = !FROM_START && !DRY && fs.existsSync(CHECKPOINT) ? JSON.parse
 let afterId = checkpoint.lastId ?? null;
 const stats = { checked: 0, saved: 0, no_number_on_site: 0, site_not_opening: 0, number_belongs_to_other_client: 0, errors: 0 };
 const report = ['client_id,website,result,phone,other_numbers'];
-console.log(`Finding phones for clients without a phone${DRY ? ' (dry run: nothing is saved)' : ''}${afterId ? ' — continuing after the last stop' : ''}…`);
+console.log(`${CHECK_EXISTING ? 'Checking the numbers of ALL clients with a website' : 'Finding phones for clients without a phone'}${DRY ? ' (dry run: nothing is saved)' : ''}${afterId ? ' — continuing after the last stop' : ''}…`);
 
 outer: while (true) {
   const batch = await loadBatch(afterId);
@@ -366,7 +441,11 @@ outer: while (true) {
           line = [lead.id, lead.website, result, '', ''];
         } else {
           const r = await savePhone(lead, phones);
-          if (r.saved) { stats.saved++; if (via !== 'site') stats[`saved_via_${via}`] = (stats[`saved_via_${via}`] ?? 0) + 1; line = [lead.id, lead.website, `saved (${via})`, r.saved, phones.filter(p => p.e164 !== r.saved).map(p => p.e164).join(' ')]; }
+          if (r.replaced) { stats.wrong_number_replaced = (stats.wrong_number_replaced ?? 0) + 1; line = [lead.id, lead.website, `replaced (${via})`, r.replaced, `old: ${r.old}`]; }
+          else if (r.correct) { stats.number_already_correct = (stats.number_already_correct ?? 0) + 1; line = [lead.id, lead.website, 'already_correct', lead.phone, '']; }
+          else if (r.kept) { stats.kept_no_clear_site_number = (stats.kept_no_clear_site_number ?? 0) + 1; line = [lead.id, lead.website, 'kept (site number not clear)', lead.phone, phones.map(p => p.e164).join(' ')]; }
+          else if (r.saved) { stats.saved++; if (via !== 'site') stats[`saved_via_${via}`] = (stats[`saved_via_${via}`] ?? 0) + 1; line = [lead.id, lead.website, `saved (${via})`, r.saved, phones.filter(p => p.e164 !== r.saved).map(p => p.e164).join(' ')]; }
+          else if (r.onlyShared) { stats.only_platform_number = (stats.only_platform_number ?? 0) + 1; line = [lead.id, lead.website, 'only_platform_number', '', phones.map(p => p.e164).join(' ')]; }
           else if (r.duplicate) { stats.number_belongs_to_other_client++; line = [lead.id, lead.website, 'number_belongs_to_other_client', '', phones.map(p => p.e164).join(' ')]; }
           else { stats.errors++; line = [lead.id, lead.website, `error: ${r.error}`, '', '']; }
           if (DRY) console.log(`  ${lead.website} → ${line[2]} ${line[3]} ${line[4] ? `(others: ${line[4]})` : ''}`);

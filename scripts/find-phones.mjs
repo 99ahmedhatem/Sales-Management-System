@@ -134,7 +134,10 @@ function phonesFromHtml(html, defaultCc) {
   };
   const h = html.slice(0, 600_000);
   for (const m of h.matchAll(/href\s*=\s*["']\s*tel:([^"'<>]{6,30})/gi)) add(decodeURIComponent(m[1]), 10);
-  for (const m of h.matchAll(/(?:wa\.me\/|api\.whatsapp\.com\/send\/?\?phone=|web\.whatsapp\.com\/send\/?\?phone=|whatsapp:\/\/send\/?\?phone=)\+?([\d%]{8,20})/gi)) add(`+${decodeURIComponent(m[1])}`, 12);
+  // WhatsApp buttons / icons: wa.me/9665…, api.whatsapp.com/send?text=…&phone=9665…, whatsapp://send?phone=…
+  for (const m of h.matchAll(/(?:wa\.me\/|whatsapp\.com\/send\/?\?(?:[^"'<>\s]*?&(?:amp;)?)?phone=|whatsapp:\/\/send\/?\?(?:[^"'<>\s]*?&(?:amp;)?)?phone=)(?:%2B|\+)?([\d%]{8,20})/gi)) {
+    add(`+${decodeURIComponent(m[1]).replace(/^\+/, '')}`, 12);
+  }
   for (const m of h.matchAll(/"telephone"\s*:\s*"([^"]{6,30})"/gi)) add(m[1], 8);
   // Salla stores: the store's own contacts are in the page settings — "contacts":{"whatsapp":"+9665…","mobile":"+9665…"}
   for (const block of h.matchAll(/\\?"contacts\\?"\s*:\s*\{([^{}]{0,600})\}/gi)) {
@@ -150,6 +153,25 @@ function phonesFromHtml(html, defaultCc) {
   for (const m of text.matchAll(/(?<![\d٠-٩.,])[0٠](?:[\s-]?[\d٠-٩]){8,9}(?![\d٠-٩]|[.,][\d٠-٩])/g)) add(m[0], 3);
   for (const m of text.matchAll(/(?<![\d٠-٩.,])(?:9200|920|800)(?:[\s-]?[\d٠-٩]){5,7}(?![\d٠-٩]|[.,][\d٠-٩])/g)) add(m[0], 2);
   return found;
+}
+
+async function phonesFromWhatsAppShortLinks(html, cc) {
+  const links = [...new Set([...html.matchAll(/https?:\/\/(?:wa\.link\/[\w-]+|wa\.me\/message\/[\w-]+|api\.whatsapp\.com\/message\/[\w-]+)/gi)].map(m => m[0]))].slice(0, 2);
+  const out = [];
+  for (const link of links) {
+    try {
+      let url = link;
+      for (let hop = 0; hop < 4; hop++) {      // follow the redirects by hand and read where they go
+        const res = await fetch(url, { redirect: 'manual', headers: HEADERS, signal: AbortSignal.timeout(10_000) });
+        const next = res.headers.get('location');
+        const found = phonesFromHtml(`<a href="${next ?? ''}"></a>` + (next ? '' : await res.text().catch(() => '')), cc);
+        out.push(...found.values());
+        if (found.size || !next) break;
+        url = new URL(next, url).href;
+      }
+    } catch { /* link not reachable */ }
+  }
+  return out;
 }
 
 function contactLinks(html, base) {
@@ -217,6 +239,10 @@ async function findPhones(lead) {
   const home = await openHome(lead.website);
   if (!home) return { result: 'site_not_opening', phones: [] };
   const all = phonesFromHtml(home.html, cc);
+  // WhatsApp short links (wa.link/abc, wa.me/message/abc): open them and read the number they lead to
+  if (![...all.values()].some(p => p.score >= 12)) {
+    for (const p of await phonesFromWhatsAppShortLinks(home.html, cc)) { const cur = all.get(p.e164); if (cur) cur.score += p.score; else all.set(p.e164, p); }
+  }
   if (![...all.values()].some(p => p.score >= 8)) {
     for (const link of contactLinks(home.html, home.finalUrl)) {
       const page = await fetchHtml(link);
@@ -454,7 +480,10 @@ outer: while (true) {
         stats.errors++; line = [lead.id, lead.website, `error: ${e?.message || e}`, '', ''];
       }
       report.push(line.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
-      if (stats.checked % 25 === 0) process.stdout.write(`\r  checked ${stats.checked} · saved ${stats.saved} · no number ${stats.no_number_on_site} · not opening ${stats.site_not_opening}   `);
+      if (stats.checked % 25 === 0) {
+        const fixed = CHECK_EXISTING ? ` · wrong fixed ${stats.wrong_number_replaced ?? 0} · already correct ${stats.number_already_correct ?? 0}` : '';
+        process.stdout.write(`\r  checked ${stats.checked} · new numbers ${stats.saved}${fixed} · no number ${stats.no_number_on_site} · not opening ${stats.site_not_opening}   `);
+      }
     }
   }));
   afterId = batch[batch.length - 1].id;

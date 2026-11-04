@@ -9,11 +9,9 @@ import {
   SalesPackageRow,
 } from "../../data/packages"
 
-import { Button, Card } from "../ui"
+import { Card } from "../ui"
 
 import { useI18n } from "../../i18n/I18nProvider"
-
-const PAGE_SIZE = 12
 
 const formatSar = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -28,10 +26,6 @@ export default function PackagesList() {
 
   const [packages, setPackages] = useState<ListedPackage[]>([])
 
-  const [page, setPage] = useState(0)
-
-  const [hasMore, setHasMore] = useState(false)
-
   const [loading, setLoading] = useState(true)
 
   const [error, setError] = useState("")
@@ -43,8 +37,6 @@ export default function PackagesList() {
       setLoading(true)
 
       setError("")
-
-      const from = page * PAGE_SIZE
 
       // Read-only for every role with packages.view; sensitive columns are hidden by the RPC
       const { data, error: queryError } = await supabase.rpc("list_packages")
@@ -60,10 +52,9 @@ export default function PackagesList() {
           .filter((row) => row.is_active)
           .sort((a, b) => Number(a.price_sar) - Number(b.price_sar) || a.name.localeCompare(b.name))
 
-        setHasMore(rows.length > from + PAGE_SIZE)
-
+        // All packages on one page (about 23; no paging)
         setPackages(
-          rows.slice(from, from + PAGE_SIZE).map((row) => ({
+          rows.map((row) => ({
             ...mapSalesPackage({ ...row, min_price_sar: row.min_price_sar ?? 0 }),
             minPriceVisible: row.min_price_sar == null ? null : Number(row.min_price_sar),
           })),
@@ -78,7 +69,7 @@ export default function PackagesList() {
     return () => {
       active = false
     }
-  }, [page])
+  }, [])
 
   return (
     <div className="p-6 space-y-5">
@@ -150,30 +141,6 @@ export default function PackagesList() {
               </div>
             </Card>
           ))}
-        </div>
-      )}
-
-      {!loading && !error && (page > 0 || hasMore) && (
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-[#6b6b6b]">{t("Page {n}", { n: page + 1 })}</span>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={page === 0}
-              onClick={() => setPage((current) => current - 1)}
-            >
-              {t("Previous")}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={!hasMore}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              {t("Next")}
-            </Button>
-          </div>
         </div>
       )}
     </div>

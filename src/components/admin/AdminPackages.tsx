@@ -15,7 +15,6 @@ import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 
 import { useI18n } from "../../i18n/I18nProvider"
 
-const PAGE_SIZE = 25
 
 const formatSar = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -79,10 +78,6 @@ export default function AdminPackages() {
   const { t } = useI18n()
 
   const [packages, setPackages] = useState<SalesPackage[]>([])
-
-  const [page, setPage] = useState(0)
-
-  const [hasMore, setHasMore] = useState(false)
 
   const [loading, setLoading] = useState(true)
 
@@ -169,8 +164,6 @@ export default function AdminPackages() {
 
     const grouped = await loadAccess()
 
-    const from = page * PAGE_SIZE
-
     let query = supabase
 
       .from("packages")
@@ -179,9 +172,8 @@ export default function AdminPackages() {
         "id, name, description, features, duration_months, price_sar, min_price_sar, is_active",
       )
 
+      // All packages on one page (about 23 rows; PostgREST returns up to 1000)
       .order("created_at", { ascending: false })
-
-      .range(from, from + PAGE_SIZE)
 
     // "Show packages of manager": hide the packages limited to other managers only
     if (managerFilter && grouped) {
@@ -198,14 +190,8 @@ export default function AdminPackages() {
       setError(queryError.message)
 
       setPackages([])
-
-      setHasMore(false)
     } else {
-      const rows = (data ?? []) as SalesPackageRow[]
-
-      setHasMore(rows.length > PAGE_SIZE)
-
-      setPackages(rows.slice(0, PAGE_SIZE).map(mapSalesPackage))
+      setPackages(((data ?? []) as SalesPackageRow[]).map(mapSalesPackage))
     }
 
     setLoading(false)
@@ -215,7 +201,7 @@ export default function AdminPackages() {
     setSelected([])
 
     loadPackages()
-  }, [page, managerFilter])
+  }, [managerFilter])
 
   useRealtimeRefresh(["packages"], loadPackages)
 
@@ -415,11 +401,7 @@ export default function AdminPackages() {
           {t("Show packages of manager:")}
           <select
             value={managerFilter}
-            onChange={(event) => {
-              setPage(0)
-
-              setManagerFilter(event.target.value)
-            }}
+            onChange={(event) => setManagerFilter(event.target.value)}
             className="rounded border border-[#2a2a2a] bg-[#1a1a1a] px-2 py-1.5 text-sm text-white focus:border-[#dfff03]/60 focus:outline-none"
           >
             <option value="">{t("All packages")}</option>
@@ -441,7 +423,7 @@ export default function AdminPackages() {
               }
               className="accent-[#dfff03]"
             />
-            {t("Select all on this page")}
+            {t("Select all")}
           </label>
         )}
 
@@ -500,6 +482,7 @@ export default function AdminPackages() {
           </div>
         ) : (
           <Table
+            pageScroll
             headers={[
               "",
               "Package",
@@ -603,30 +586,6 @@ export default function AdminPackages() {
           </Table>
         )}
       </Card>
-
-      {!loading && !error && (page > 0 || hasMore) && (
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-[#6b6b6b]">{t("Page {n}", { n: page + 1 })}</span>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={page === 0}
-              onClick={() => setPage((current) => current - 1)}
-            >
-              {t("Previous")}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={!hasMore}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              {t("Next")}
-            </Button>
-          </div>
-        </div>
-      )}
 
       <Modal
         open={Boolean(accessFor)}

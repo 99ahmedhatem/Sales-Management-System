@@ -160,8 +160,7 @@ export default function DealCreateModal({
                 "id, name, description, features, duration_months, price_sar, min_price_sar, is_active",
               )
               .eq("is_active", true)
-              .order("price_sar")
-              .range(0, 99),
+              .order("price_sar"),
             meetingQuery,
           ])
         if (!active) return

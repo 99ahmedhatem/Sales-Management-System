@@ -311,12 +311,13 @@ export const stickyHead = 'sticky top-0 z-[1] bg-[#161616] shadow-[inset_0_-1px_
 /** Long lists scroll inside their card so the header row (and the page's action bar) stay in view. */
 export const tableScroll = 'overflow-auto max-h-[calc(100vh-12rem)]';
 
-export function Table({ headers, children }: { headers: string[]; children: ReactNode }) {
+/** `pageScroll`: short lists that should grow with the page (no inner scroll, header not sticky). */
+export function Table({ headers, children, pageScroll = false }: { headers: string[]; children: ReactNode; pageScroll?: boolean }) {
   const { t } = useI18n();
   return (
-    <div className={tableScroll}>
+    <div className={pageScroll ? 'overflow-x-auto' : tableScroll}>
       <table className="w-full text-sm anim-rows">
-        <thead className={stickyHead}>
+        <thead className={pageScroll ? undefined : stickyHead}>
           <tr className="border-b border-[#262626]">
             {headers.map((h, i) => (
               <th key={i} className="text-start text-[#6b6b6b] font-medium text-xs uppercase tracking-wider py-3 px-4">{t(h)}</th>

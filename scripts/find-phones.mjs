@@ -417,6 +417,90 @@ async function loadBatch(afterId) {
   return data;
 }
 
+// ---------- delete clients whose website does not open ----------
+// npm run find:phones -- --delete-dead [--dry-run] [--even-with-phone]
+// Takes every client marked "site_not_opening" in the reports, checks the site once more (3 addresses, 2 tries each,
+// and repairs links like www.el/seif.com.sa → www.el-seif.com.sa first), and deletes the client only if:
+//   · the site is still dead, and
+//   · the client has no phone (unless --even-with-phone), no deal, no meeting and no meeting request.
+// Every deleted client is saved first in .tmp-deleted-dead-clients-<date>.csv (all columns) so nothing is lost for good.
+function repairDashUrl(raw) {
+  let s = String(raw ?? '').trim(); let scheme = 'https://'; let www = '';
+  const m = /^(https?:\/\/)/i.exec(s); if (m) { scheme = m[1].toLowerCase(); s = s.slice(m[1].length); }
+  const parts = s.replace(/[?#].*$/, '').split('/');
+  if (/^www\d*\./i.test(parts[0])) { www = parts[0].match(/^www\d*\./i)[0].toLowerCase(); parts[0] = parts[0].slice(www.length); }
+  if (!parts[0] || parts[0].includes('.')) return null;
+  for (let k = 1; k < Math.min(parts.length, 6); k++) {
+    if (parts[k].includes('.')) return `${scheme}${www}${parts.slice(0, k + 1).join('-').toLowerCase()}/`;
+    if (!/^[a-z0-9؀-ۿ]+$/i.test(parts[k])) return null;
+  }
+  return null;
+}
+
+if (args.includes('--delete-dead')) {
+  const EVEN_WITH_PHONE = args.includes('--even-with-phone');
+  const deadIds = new Set();
+  for (const f of fs.readdirSync('.').filter(n => n.startsWith('.tmp-find-phones-report-'))) {
+    for (const row of fs.readFileSync(f, 'utf8').split('\n').slice(1)) {
+      const cols = row.match(/"((?:[^"]|"")*)"/g)?.map(c => c.slice(1, -1)) ?? [];
+      if (cols[2] === 'site_not_opening') deadIds.add(cols[0]);
+    }
+  }
+  console.log(`Clients marked "not opening" in the reports: ${deadIds.size}. Checking each site again…`);
+  const ids = [...deadIds];
+  const rows = [];
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await supabase.from('leads').select('*').in('id', ids.slice(i, i + 200));
+    if (error) { console.error(error.message); process.exit(1); }
+    rows.push(...data);
+  }
+  const busy = new Set();
+  for (const table of ['deals', 'meetings', 'meeting_requests']) {
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data } = await supabase.from(table).select('lead_id').in('lead_id', ids.slice(i, i + 200));
+      for (const r of data ?? []) busy.add(r.lead_id);
+    }
+  }
+  const toDelete = []; const kept = { has_phone: 0, has_deal_or_meeting: 0, site_opens_now: 0, link_repaired: 0 };
+  const queue = rows.filter(l => {
+    if (busy.has(l.id)) { kept.has_deal_or_meeting++; return false; }
+    if (!EVEN_WITH_PHONE && String(l.phone ?? '').trim()) { kept.has_phone++; return false; }
+    return true;
+  });
+  let done = 0;
+  await Promise.all(Array.from({ length: 12 }, async () => {
+    for (let l = queue.shift(); l; l = queue.shift()) {
+      const repaired = repairDashUrl(l.website);
+      if (repaired && await openHome(repaired)) {
+        kept.link_repaired++;
+        if (!DRY) await supabase.from('leads').update({ website: repaired }).eq('id', l.id);
+      } else if (await openHome(l.website)) {
+        kept.site_opens_now++;
+      } else {
+        toDelete.push(l);
+      }
+      if (++done % 25 === 0) process.stdout.write(`\r  re-checked ${done} · will delete ${toDelete.length}   `);
+    }
+  }));
+  const backup = `.tmp-deleted-dead-clients-${new Date().toISOString().slice(0, 10)}.csv`;
+  if (toDelete.length) {
+    const cols = Object.keys(toDelete[0]);
+    fs.writeFileSync(backup, [cols.join(','), ...toDelete.map(r => cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n'));
+  }
+  let deleted = 0;
+  if (!DRY) {
+    for (let i = 0; i < toDelete.length; i += 200) {
+      const { error, count } = await supabase.from('leads').delete({ count: 'exact' }).in('id', toDelete.slice(i, i + 200).map(l => l.id));
+      if (error) console.error(`\n  delete failed: ${error.message}`); else deleted += count ?? 0;
+    }
+  }
+  console.log('\n');
+  console.table({ ...kept, [DRY ? 'would_delete' : 'deleted']: DRY ? toDelete.length : deleted });
+  if (toDelete.length) console.log(`List of ${DRY ? 'clients that would be deleted' : 'deleted clients (all their data)'}: ${backup}`);
+  if (DRY) console.log('(dry run: nothing was deleted — run again without --dry-run to delete)');
+  process.exit(0);
+}
+
 // ---------- clean-up: remove a shared number that was saved before it was recognised ----------
 // npm run find:phones -- --clean-shared   reads the reports in the project folder; a number seen on 3+ sites (or a
 // platform number) is removed from the client it was auto-saved on, so the next run looks for that client's own number.

@@ -1225,4 +1225,11 @@ export const ar: Record<string, string> = {
   "I contacted": "تواصلت",
   "Not contacted yet": "لسه ما اتواصلتش",
   "Marked contacted": "تم التواصل",
+  "Export selected ({n})": "تصدير المحدد ({n})",
+  "Number of clients": "عدد العملاء",
+  "e.g. 100": "مثلاً 100",
+  "Select first {n}": "حدد أول {n}",
+  "Selecting...": "جارِ التحديد...",
+  "{n} clients selected": "تم تحديد {n} عميل",
+  "Could not select clients.": "تعذّر تحديد العملاء.",
 };

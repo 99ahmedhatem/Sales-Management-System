@@ -8,6 +8,7 @@ import { dateLocale } from '../../i18n/locale';
 import { Avatar, Button, RoleBadge, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr, WebsiteLink } from '../ui';
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
 import { exportRowsToExcel } from '../shared/exportExcel';
+import { SelectFirstN, fetchAllPages, fetchLeadsByIds } from '../shared/LeadSelection';
 import DistributeLeadsModal from '../shared/DistributeLeadsModal';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { recordActivity } from '../../data/activityLog';
@@ -295,8 +296,11 @@ export default function ManagerDashboard({ userId }: Props) {
   const togglePoolLead = (leadId: string) => {
     setSelectedPoolLeads(prev => prev.includes(leadId) ? prev.filter(id => id !== leadId) : [...prev, leadId]);
   };
+  // "Select all" = the leads on the current page only; selections on other pages stay.
+  const allPoolSelected = poolLeads.length > 0 && poolLeads.every(lead => selectedPoolLeads.includes(lead.id));
   const toggleAllPoolLeads = () => {
-    setSelectedPoolLeads(prev => prev.length === poolLeads.length ? [] : poolLeads.map(lead => lead.id));
+    const pageIds = new Set(poolLeads.map(lead => lead.id));
+    setSelectedPoolLeads(prev => allPoolSelected ? prev.filter(id => !pageIds.has(id)) : [...new Set([...prev, ...pageIds])]);
   };
 
   /** Manager adds a client himself: it is assigned to him, so he can work it or distribute it to his team. */
@@ -331,28 +335,43 @@ export default function ManagerDashboard({ userId }: Props) {
     setRefreshVersion(version => version + 1);
   };
 
+  /** Same conditions as the pool filters, on raw database rows. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rowMatchesFilters = (row: Record<string, any>) => {
+    const searchQuery = leadSearch.toLowerCase();
+    return matchesAssignment(row.assigned_to as string | null)
+      && (!searchQuery || String(row.name ?? '').toLowerCase().includes(searchQuery) || String(row.phone ?? '').includes(searchQuery) || String(row.company ?? '').toLowerCase().includes(searchQuery))
+      && (!leadStatus || row.status === leadStatus)
+      && (!leadCountry || row.region === leadCountry)
+      && (!leadType || (leadType === 'salla' ? row.is_salla_store : !row.is_salla_store))
+      && (!leadQuality || row.data_quality === leadQuality)
+      && (!leadPhone || (leadPhone === 'has' ? Boolean(row.phone) : !row.phone));
+  };
+  /** Every lead the manager can see (RLS) that matches the filters, newest first. */
+  const loadFilteredRows = async (columns: string) => {
+    const data = await fetchAllPages((from, to) => supabase.from('leads').select(columns)
+      .order('created_at', { ascending: false }).order('id', { ascending: false }).range(from, to));
+    return data.filter(rowMatchesFilters);
+  };
+  /** "Select first N": n larger than the filter results = all of them. */
+  const selectFirstN = async (n: number) => {
+    setErrorMsg('');
+    try {
+      const rows = await loadFilteredRows('id, created_at, assigned_to, name, phone, company, status, region, is_salla_store, data_quality');
+      setSelectedPoolLeads(rows.slice(0, n).map(row => row.id as string));
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Could not select clients.');
+    }
+  };
+
   const exportLeads = async () => {
     setExporting(true);
     setErrorMsg('');
     try {
-      const queryBuilder = supabase.from('leads').select('*').order('created_at', { ascending: false }).order('id', { ascending: false });
-      const data: any[] = [];
-      for (let from = 0; ; from += 1000) {
-        const { data: pageRows, error } = await queryBuilder.range(from, from + 999);
-        if (error) throw error;
-        data.push(...(pageRows ?? []));
-        if (!pageRows || pageRows.length < 1000) break;
-      }
-      const searchQuery = leadSearch.toLowerCase();
-      const rows = (data ?? []).filter(row => {
-        return matchesAssignment(row.assigned_to as string | null)
-          && (!searchQuery || String(row.name ?? '').toLowerCase().includes(searchQuery) || String(row.phone ?? '').includes(searchQuery) || String(row.company ?? '').toLowerCase().includes(searchQuery))
-          && (!leadStatus || row.status === leadStatus)
-          && (!leadCountry || row.region === leadCountry)
-          && (!leadType || (leadType === 'salla' ? row.is_salla_store : !row.is_salla_store))
-          && (!leadQuality || row.data_quality === leadQuality)
-          && (!leadPhone || (leadPhone === 'has' ? Boolean(row.phone) : !row.phone));
-      });
+      // Selected clients only (filters ignored); otherwise every filter result
+      const rows = selectedPoolLeads.length > 0
+        ? await fetchLeadsByIds(selectedPoolLeads)
+        : await loadFilteredRows('*');
       exportRowsToExcel(rows.map(row => ({
         'NO.': row.customer_number ?? '',
         CODE: row.client_code,
@@ -466,11 +485,11 @@ export default function ManagerDashboard({ userId }: Props) {
           <h3 className="text-white font-semibold">{t('My Leads Pool ({n} unassigned to agents)', { n: poolLeads.length })}</h3>
           {poolLeads.length > 0 && (
             <button onClick={toggleAllPoolLeads} className="text-[#dfff03] text-xs hover:underline">
-              {selectedPoolLeads.length === poolLeads.length ? t('Clear selection') : t('Select all')}
+              {allPoolSelected ? t('Clear selection') : t('Select all')}
             </button>
           )}
         </div>
-        <div className="flex gap-3 mb-4">
+        <div className="flex flex-wrap items-start gap-3 mb-4">
           <SearchInput value={leadSearch} onChange={setLeadSearch} placeholder="Search name, phone, company..." />
           <Select value={leadStatus} onChange={setLeadStatus} options={[{ value: '', label: 'All Statuses' }, { value: 'New', label: 'New' }, { value: 'Assigned', label: 'Assigned' }, { value: 'Contacted', label: 'Contacted' }, { value: 'Interested', label: 'Interested' }]} className="w-40" />
           <Select value={leadCountry} onChange={setLeadCountry} options={ROLE_REGION_OPTIONS} className="w-40" />
@@ -479,7 +498,12 @@ export default function ManagerDashboard({ userId }: Props) {
           <Select value={leadPhone} onChange={setLeadPhone} options={ROLE_PHONE_OPTIONS} className="w-36" />
           <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: 'all', label: 'All' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'team', label: 'My team' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
           <Button variant="primary" size="sm" onClick={() => { setAddClientError(''); setAddClientOpen(true); }}>{t('+ Add Lead')}</Button>
-          {can('leads.export') && <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? t('Exporting...') : t('Export Excel')}</Button>}
+          {can('leads.export') && (
+            <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>
+              {exporting ? t('Exporting...') : selectedPoolLeads.length > 0 ? t('Export selected ({n})', { n: selectedPoolLeads.length }) : t('Export Excel')}
+            </Button>
+          )}
+          <SelectFirstN selectedCount={selectedPoolLeads.length} max={null} onSelect={selectFirstN} onClear={() => setSelectedPoolLeads([])} />
         </div>
         {poolLeads.length === 0 ? (
           <p className="text-[#4a4a4a] text-sm py-4">{t('All leads have been distributed to your team members.')}</p>
@@ -517,7 +541,7 @@ export default function ManagerDashboard({ userId }: Props) {
                 </Tr>
               ))}
             </Table>
-            <Pagination page={leadPage} pageSize={pageSize} total={totalTeamLeads} onChange={nextPage => { setSelectedPoolLeads([]); setLeadPage(nextPage); }} />
+            <Pagination page={leadPage} pageSize={pageSize} total={totalTeamLeads} onChange={setLeadPage} />
           </div>
         )}
       </Card>

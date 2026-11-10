@@ -12,6 +12,7 @@ import { CONTACT_FILTER_OPTIONS, ContactedToggle } from '../shared/Contacted';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
 import { exportRowsToExcel } from '../shared/exportExcel';
+import { SelectFirstN, fetchAllPages, fetchLeadsByIds } from '../shared/LeadSelection';
 import DistributeLeadsModal, { QUALITY_FILTER_OPTIONS, REGION_OPTIONS } from '../shared/DistributeLeadsModal';
 import AutoDistributionCard from './AutoDistributionCard';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
@@ -262,6 +263,28 @@ export default function AdminLeads() {
     return q;
   }
 
+  /** Every list filter (search, status, …, assignment). Shared by the list, the Excel export and "Select first N". */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function applyListFilters(query: any, managerIds: string[]) {
+    let q = query;
+    const s = debouncedSearch.replace(/[%,()]/g, ' ').trim();
+    if (s) q = q.or(`name.ilike.%${s}%,phone.ilike.%${s}%,company.ilike.%${s}%`);
+    if (statusFilter) q = q.eq('status', statusFilter);
+    if (regionFilter) q = q.eq('region', regionFilter);
+    if (phoneFilter === 'missing') q = q.is('phone', null);
+    if (phoneFilter === 'has') q = q.not('phone', 'is', null);
+    if (typeFilter) q = q.eq('is_salla_store', typeFilter === 'salla');
+    if (tagFilter === '__none__') q = q.is('tag', null);
+    else if (tagFilter) q = q.eq('tag', tagFilter);
+    if (contactFilter === 'yes') q = q.not('contacted_at', 'is', null);
+    if (contactFilter === 'no') q = q.is('contacted_at', null);
+    if (qualityFilter) q = q.eq('data_quality', qualityFilter);
+    q = applyWebsiteFilters(q);
+    if (assignmentFilter === 'manager') q = managerIds.length ? q.in('assigned_to', managerIds) : q.eq('id', '00000000-0000-0000-0000-000000000000');
+    if (assignmentFilter === 'unassigned') q = q.is('assigned_to', null);
+    return q;
+  }
+
   async function loadData(nextPage = page, silent = false) {
     const reqId = ++requestId.current;
     if (!silent) setLoading(true);
@@ -276,33 +299,15 @@ export default function AdminLeads() {
     // With no filters (or only "Not distributed") the total comes from get_leads_counts, so skip the slow count.
     const countFromRpc = !otherFilters && (assignmentFilter === '' || assignmentFilter === 'unassigned');
 
-    let leadsQuery = supabase
+    const leadsQuery = applyListFilters(supabase
       .from('leads')
       .select('*', countFromRpc ? undefined : { count: 'exact' })
       .order('created_at', { ascending: false })
       .order('id', { ascending: false }) // stable order so pages never overlap
-      .range(nextPage * pageSize, (nextPage + 1) * pageSize - 1);
-
-    if (q) leadsQuery = leadsQuery.or(`name.ilike.%${q}%,phone.ilike.%${q}%,company.ilike.%${q}%`);
-    if (statusFilter) leadsQuery = leadsQuery.eq('status', statusFilter);
-    if (regionFilter) leadsQuery = leadsQuery.eq('region', regionFilter);
-    if (phoneFilter === 'missing') leadsQuery = leadsQuery.is('phone', null);
-    if (phoneFilter === 'has') leadsQuery = leadsQuery.not('phone', 'is', null);
-    if (typeFilter) leadsQuery = leadsQuery.eq('is_salla_store', typeFilter === 'salla');
-    if (tagFilter === '__none__') leadsQuery = leadsQuery.is('tag', null);
-    else if (tagFilter) leadsQuery = leadsQuery.eq('tag', tagFilter);
-    if (contactFilter === 'yes') leadsQuery = leadsQuery.not('contacted_at', 'is', null);
-    if (contactFilter === 'no') leadsQuery = leadsQuery.is('contacted_at', null);
-    if (qualityFilter) leadsQuery = leadsQuery.eq('data_quality', qualityFilter);
-    leadsQuery = applyWebsiteFilters(leadsQuery);
-    if (assignmentFilter === 'manager') {
-      if (managerIds.length) leadsQuery = leadsQuery.in('assigned_to', managerIds);
-      else leadsQuery = leadsQuery.eq('id', '00000000-0000-0000-0000-000000000000');
-    }
-    if (assignmentFilter === 'unassigned') leadsQuery = leadsQuery.is('assigned_to', null);
+      .range(nextPage * pageSize, (nextPage + 1) * pageSize - 1), managerIds);
 
     const [leadsRes, countsRes] = await Promise.all([
-      leadsQuery,
+      leadsQuery as PromiseLike<{ data: any[] | null; error: { message: string } | null; count: number | null }>,
       supabase.rpc('get_leads_counts'),
     ]);
 
@@ -334,8 +339,8 @@ export default function AdminLeads() {
     return () => clearTimeout(timer);
   }, [search]);
 
+  // The selection survives filter and page changes; only "Clear selection" (or a bulk action) empties it.
   useEffect(() => {
-    setSelected([]);
     loadData(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter, qualityFilter, assignmentFilter, websiteFilter, websiteReasonFilter, historyFilter, tagFilter, contactFilter]);
@@ -351,9 +356,11 @@ export default function AdminLeads() {
   const toggleSelect = (id: string) => {
     setSelected(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
   };
+  // Header checkbox: current page only; other pages' selections stay.
+  const allOnPage = leads.length > 0 && leads.every(l => selected.includes(l.id));
   const toggleAll = () => {
-    if (selected.length === leads.length) setSelected([]);
-    else setSelected(leads.map(l => l.id));
+    const pageIds = new Set(leads.map(l => l.id));
+    setSelected(prev => (allOnPage ? prev.filter(id => !pageIds.has(id)) : [...new Set([...prev, ...pageIds])]));
   };
 
   const handleAssign = async () => {
@@ -450,34 +457,31 @@ export default function AdminLeads() {
     }
   };
 
+  /** Current filters, newest first — same conditions as the list. */
+  const filteredLeadsQuery = (columns: string) => applyListFilters(
+    supabase.from('leads').select(columns).order('created_at', { ascending: false }).order('id', { ascending: false }),
+    users.filter(user => user.role === 'manager').map(user => user.id),
+  );
+
+  /** "Select first N": ids of the first n clients of the current filters. */
+  const selectFirstN = async (n: number) => {
+    setErrorMsg('');
+    try {
+      const rows = await fetchAllPages((from, to) => filteredLeadsQuery('id').range(from, to), n);
+      setSelected(rows.map(row => row.id as string));
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Could not select clients.');
+    }
+  };
+
   const exportLeads = async () => {
     setExporting(true);
     setErrorMsg('');
     try {
-      const managerIds = users.filter(user => user.role === 'manager').map(user => user.id);
-      let query = supabase.from('leads').select('*').order('created_at', { ascending: false }).order('id', { ascending: false });
-      const q = debouncedSearch.replace(/[%,()]/g, ' ').trim();
-      if (q) query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%,company.ilike.%${q}%`);
-      if (statusFilter) query = query.eq('status', statusFilter);
-      if (regionFilter) query = query.eq('region', regionFilter);
-      if (phoneFilter === 'missing') query = query.is('phone', null);
-      if (phoneFilter === 'has') query = query.not('phone', 'is', null);
-      if (typeFilter) query = query.eq('is_salla_store', typeFilter === 'salla');
-      if (tagFilter === '__none__') query = query.is('tag', null);
-      else if (tagFilter) query = query.eq('tag', tagFilter);
-      if (contactFilter === 'yes') query = query.not('contacted_at', 'is', null);
-      if (contactFilter === 'no') query = query.is('contacted_at', null);
-      if (qualityFilter) query = query.eq('data_quality', qualityFilter);
-      query = applyWebsiteFilters(query);
-      if (assignmentFilter === 'manager') query = managerIds.length ? query.in('assigned_to', managerIds) : query.eq('id', '00000000-0000-0000-0000-000000000000');
-      if (assignmentFilter === 'unassigned') query = query.is('assigned_to', null);
-      const data: any[] = [];
-      for (let from = 0; ; from += 1000) {
-        const { data: pageRows, error } = await query.range(from, from + 999);
-        if (error) throw error;
-        data.push(...(pageRows ?? []));
-        if (!pageRows || pageRows.length < 1000) break;
-      }
+      // Selected clients only (the selection is the reference, filters are ignored); otherwise every filter result
+      const data = selected.length > 0
+        ? await fetchLeadsByIds(selected)
+        : await fetchAllPages((from, to) => filteredLeadsQuery('*').range(from, to));
       const assignedNames = new Map(users.map(user => [user.id, user.fullName]));
       exportRowsToExcel((data ?? []).map(row => ({
         CODE: row.client_code,
@@ -713,9 +717,14 @@ export default function AdminLeads() {
         <Select value={websiteReasonFilter} onChange={setWebsiteReasonFilter} options={WEBSITE_REASON_FILTER_OPTIONS} className="w-52" />
         <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: '', label: 'All Assignments' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
         <Select value={historyFilter} onChange={setHistoryFilter} options={HISTORY_FILTER_OPTIONS} className="w-44" />
-        {can('leads.export') && <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>{exporting ? t('Exporting...') : t('Export Excel')}</Button>}
+        {can('leads.export') && (
+          <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>
+            {exporting ? t('Exporting...') : selected.length > 0 ? t('Export selected ({n})', { n: selected.length }) : t('Export Excel')}
+          </Button>
+        )}
         {can('leads.distribute') && <Button variant="secondary" size="sm" onClick={() => setDistributeModal(true)}>{t('Distribute evenly')}</Button>}
         {hasFilters && <Button variant="ghost" size="sm" onClick={clearFilters}>{t('Clear filters')}</Button>}
+        <SelectFirstN selectedCount={selected.length} max={totalLeads} onSelect={selectFirstN} onClear={() => setSelected([])} />
       </div>
 
       {/* Bulk actions: stay under the top bar while scrolling */}
@@ -736,7 +745,7 @@ export default function AdminLeads() {
               <td className="py-3 px-4">
                 <input
                   type="checkbox"
-                  checked={selected.length === leads.length && leads.length > 0}
+                  checked={allOnPage}
                   onChange={toggleAll}
                   className="accent-[#dfff03]"
                 />
@@ -840,10 +849,7 @@ export default function AdminLeads() {
             page={page}
             pageSize={pageSize}
             total={totalLeads ?? leads.length}
-            onChange={nextPage => {
-              setSelected([]);
-              loadData(nextPage);
-            }}
+            onChange={nextPage => { void loadData(nextPage); }}
           />
         </Card>
       </div>

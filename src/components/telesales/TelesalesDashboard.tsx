@@ -40,6 +40,12 @@ import DealCreateModal from "../shared/DealCreateModal"
 
 import { exportRowsToExcel } from "../shared/exportExcel"
 
+import {
+  SelectFirstN,
+  fetchAllPages,
+  fetchLeadsByIds,
+} from "../shared/LeadSelection"
+
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh"
 
 import { useI18n } from "../../i18n/I18nProvider"
@@ -154,6 +160,9 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
   const [refreshVersion, setRefreshVersion] = useState(0)
 
   const [exporting, setExporting] = useState(false)
+
+  // Selected clients for the Excel export; kept across pages, emptied only by "Clear selection"
+  const [selected, setSelected] = useState<string[]>([])
 
   const pageSize = 100
 
@@ -586,6 +595,24 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
     )
   })
 
+  // Header checkbox: the rows shown on this page only
+  const allShownSelected =
+    filtered.length > 0 && filtered.every((l) => selected.includes(l.id))
+
+  const toggleSelect = (id: string) =>
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    )
+
+  const toggleAllShown = () => {
+    const shown = new Set(filtered.map((l) => l.id))
+    setSelected((prev) =>
+      allShownSelected
+        ? prev.filter((id) => !shown.has(id))
+        : [...new Set([...prev, ...shown])],
+    )
+  }
+
   const updateLead = (id: string, patch: Partial<Lead>) => {
     setLeads((prev) =>
       prev.map((l) =>
@@ -596,67 +623,78 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
     )
   }
 
+  const EXPORT_COLUMNS =
+    "id, customer_number, website, website_status, phone_source, quantity, client_code, name, phone, company, region, source, is_salla_store, data_quality, status, assigned_to, notes, callback_date, free_trial_end_date, needs_meeting, created_at, updated_at"
+
+  /** All my leads that match the current tab + filters, newest first (same conditions as the table). */
+  const loadFilteredRows = async (columns: string) => {
+    const data = await fetchAllPages((from, to) =>
+      supabase
+        .from("leads")
+        .select(columns)
+        .eq("assigned_to", userId)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to),
+    )
+
+    const searchQuery = search.toLowerCase()
+
+    const contactIds = contactFilter ? await loadAllMyContactIds(userId) : null
+
+    return data.filter((row) => {
+      const isDone = ["Subscribed", "Converted", "Did Not Subscribe"].includes(
+        row.status,
+      )
+
+      return (
+        (tab === "done" ? isDone : !isDone) &&
+        (!searchQuery ||
+          String(row.name ?? "")
+            .toLowerCase()
+            .includes(searchQuery) ||
+          String(row.phone ?? "").includes(searchQuery)) &&
+        (!statusFilter || row.status === statusFilter) &&
+        (!countryFilter || row.region === countryFilter) &&
+        (!typeFilter ||
+          (typeFilter === "salla" ? row.is_salla_store : !row.is_salla_store)) &&
+        (!qualityFilter || row.data_quality === qualityFilter) &&
+        (!phoneFilter ||
+          (phoneFilter === "has" ? Boolean(row.phone) : !row.phone)) &&
+        (!needsMeetingFilter || row.needs_meeting) &&
+        (!contactIds || (contactFilter === "yes") === contactIds.has(row.id))
+      )
+    })
+  }
+
+  /** "Select first N": n larger than the filter results = all of them. */
+  const selectFirstN = async (n: number) => {
+    setLoadError("")
+
+    try {
+      const rows = await loadFilteredRows(
+        "id, created_at, name, phone, region, is_salla_store, data_quality, status, needs_meeting",
+      )
+
+      setSelected(rows.slice(0, n).map((row) => row.id as string))
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : "Could not select clients.",
+      )
+    }
+  }
+
   const exportLeads = async () => {
     setExporting(true)
 
     setLoadError("")
 
     try {
-      const queryBuilder = supabase
-        .from("leads")
-        .select(
-          "id, customer_number, website, website_status, phone_source, quantity, client_code, name, phone, company, region, source, is_salla_store, data_quality, status, assigned_to, notes, callback_date, free_trial_end_date, needs_meeting, created_at, updated_at",
-        )
-        .eq("assigned_to", userId)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-
-      const data: any[] = []
-
-      for (let from = 0; ; from += 1000) {
-        const { data: pageRows, error } = await queryBuilder.range(
-          from,
-          from + 999,
-        )
-
-        if (error) throw error
-
-        data.push(...(pageRows ?? []))
-
-        if (!pageRows || pageRows.length < 1000) break
-      }
-
-      const searchQuery = search.toLowerCase()
-
-      const contactIds = contactFilter ? await loadAllMyContactIds(userId) : null
-
-      const rows = (data ?? []).filter((row) => {
-        const isDone = [
-          "Subscribed",
-          "Converted",
-          "Did Not Subscribe",
-        ].includes(row.status)
-
-        return (
-          (tab === "done" ? isDone : !isDone) &&
-          (!searchQuery ||
-            String(row.name ?? "")
-              .toLowerCase()
-              .includes(searchQuery) ||
-            String(row.phone ?? "").includes(searchQuery)) &&
-          (!statusFilter || row.status === statusFilter) &&
-          (!countryFilter || row.region === countryFilter) &&
-          (!typeFilter ||
-            (typeFilter === "salla"
-              ? row.is_salla_store
-              : !row.is_salla_store)) &&
-          (!qualityFilter || row.data_quality === qualityFilter) &&
-          (!phoneFilter ||
-            (phoneFilter === "has" ? Boolean(row.phone) : !row.phone)) &&
-          (!needsMeetingFilter || row.needs_meeting) &&
-          (!contactIds || (contactFilter === "yes") === contactIds.has(row.id))
-        )
-      })
+      // Selected clients only (filters ignored); otherwise every filter result
+      const rows =
+        selected.length > 0
+          ? await fetchLeadsByIds(selected, EXPORT_COLUMNS)
+          : await loadFilteredRows(EXPORT_COLUMNS)
 
       exportRowsToExcel(
         rows.map((row) => ({
@@ -1041,7 +1079,7 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
         ))}
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <SearchInput
           value={search}
           onChange={setSearch}
@@ -1105,14 +1143,27 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
             disabled={exporting}
             onClick={exportLeads}
           >
-            {exporting ? t("Exporting...") : t("Export Excel")}
+            {exporting
+              ? t("Exporting...")
+              : selected.length > 0
+                ? t("Export selected ({n})", { n: selected.length })
+                : t("Export Excel")}
           </Button>
+        )}
+        {can("leads.export") && (
+          <SelectFirstN
+            selectedCount={selected.length}
+            max={null}
+            onSelect={selectFirstN}
+            onClear={() => setSelected([])}
+          />
         )}
       </div>
 
       <Card>
         <Table
           headers={[
+            "",
             "No.",
             "Code",
             "Lead",
@@ -1127,8 +1178,31 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
             "Actions",
           ]}
         >
+          {filtered.length > 0 && (
+            <tr className="border-b border-[#262626]">
+              <td className="py-3 px-4">
+                <input
+                  type="checkbox"
+                  checked={allShownSelected}
+                  onChange={toggleAllShown}
+                  aria-label={t("Select all")}
+                  className="accent-[#dfff03]"
+                />
+              </td>
+              <td colSpan={12} />
+            </tr>
+          )}
           {filtered.map((lead) => (
             <Tr key={lead.id} onClick={() => setDetailModal(lead)}>
+              <Td>
+                <input
+                  type="checkbox"
+                  checked={selected.includes(lead.id)}
+                  onChange={() => toggleSelect(lead.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="accent-[#dfff03]"
+                />
+              </Td>
               <Td>
                 <div
                   onDoubleClick={(e) => {

@@ -56,7 +56,8 @@ export default function AdminPermissions() {
     const err = usersRes.error?.message || catalogRes.error?.message || defaultsRes.error?.message || '';
     setError(err);
     if (!usersRes.error) setUsers((usersRes.data ?? []) as UserPermissions[]);
-    if (!catalogRes.error) setCatalog((catalogRes.data ?? []) as CatalogItem[]);
+    // Excel export is admin-only now, so the per-user "export clients" permission is hidden
+    if (!catalogRes.error) setCatalog(((catalogRes.data ?? []) as CatalogItem[]).filter(item => item.key !== 'leads.export'));
     if (!defaultsRes.error) {
       const map: Record<string, Set<string>> = {};
       for (const r of (defaultsRes.data ?? []) as { role: string; permission_key: string }[]) (map[r.role] ??= new Set()).add(r.permission_key);

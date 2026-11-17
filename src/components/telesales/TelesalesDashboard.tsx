@@ -1136,7 +1136,8 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
           options={CONTACT_FILTER_OPTIONS}
           className="w-44"
         />
-        {can("leads.export") && (
+        {/* Excel export is admin-only (admins open this queue as "My queue") */}
+        {role === "admin" && (
           <Button
             variant="secondary"
             size="sm"
@@ -1150,7 +1151,7 @@ export default function TelesalesDashboard({ userId, role = "telesales" }: Props
                 : t("Export Excel")}
           </Button>
         )}
-        {can("leads.export") && (
+        {role === "admin" && (
           <SelectFirstN
             selectedCount={selected.length}
             max={null}

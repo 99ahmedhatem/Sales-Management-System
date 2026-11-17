@@ -7,8 +7,7 @@ import { loadMeetingsPage, Meeting } from '../../data/meetings';
 import { dateLocale } from '../../i18n/locale';
 import { Avatar, Button, RoleBadge, Card, KpiCard, Modal, Pagination, SearchInput, Select, StatusBadge, Table, Td, Tr, WebsiteLink } from '../ui';
 import { EditablePhoneCell, WebsiteStatusToggle } from '../shared/LeadRowControls';
-import { exportRowsToExcel } from '../shared/exportExcel';
-import { SelectFirstN, fetchAllPages, fetchLeadsByIds } from '../shared/LeadSelection';
+import { SelectFirstN, fetchAllPages } from '../shared/LeadSelection';
 import DistributeLeadsModal from '../shared/DistributeLeadsModal';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { recordActivity } from '../../data/activityLog';
@@ -91,7 +90,6 @@ export default function ManagerDashboard({ userId }: Props) {
   const [distributedCount, setDistributedCount] = useState(0);
     const [workedClientCount, setWorkedClientCount] = useState(0);
   const [refreshVersion, setRefreshVersion] = useState(0);
-  const [exporting, setExporting] = useState(false);
   const [addClientOpen, setAddClientOpen] = useState(false);
   const [newClient, setNewClient] = useState(EMPTY_CLIENT);
   const [addingClient, setAddingClient] = useState(false);
@@ -364,32 +362,6 @@ export default function ManagerDashboard({ userId }: Props) {
     }
   };
 
-  const exportLeads = async () => {
-    setExporting(true);
-    setErrorMsg('');
-    try {
-      // Selected clients only (filters ignored); otherwise every filter result
-      const rows = selectedPoolLeads.length > 0
-        ? await fetchLeadsByIds(selectedPoolLeads)
-        : await loadFilteredRows('*');
-      exportRowsToExcel(rows.map(row => ({
-        'NO.': row.customer_number ?? '',
-        CODE: row.client_code,
-        NAME: row.name,
-        PHONE: row.phone ?? '',
-        COMPANY: row.company ?? '',
-        WEBSITE: row.website ?? '',
-        'WEBSITE STATUS': row.website_status === 'working' ? 'Working' : row.website_status === 'not_working' ? 'Not Working' : 'Not Checked',
-        QUANTITY: row.quantity ?? 0,
-        STATUS: row.status ?? '',
-      })), 'manager-leads-export');
-    } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : 'Could not export leads.');
-    } finally {
-      setExporting(false);
-    }
-  };
-
   if (loading) {
     return <div className="p-6 text-[#a0a0a0] text-sm"><TableSkeleton /></div>;
   }
@@ -498,11 +470,6 @@ export default function ManagerDashboard({ userId }: Props) {
           <Select value={leadPhone} onChange={setLeadPhone} options={ROLE_PHONE_OPTIONS} className="w-36" />
           <Select value={assignmentFilter} onChange={setAssignmentFilter} options={[{ value: 'all', label: 'All' }, { value: 'manager', label: 'Distributed to a manager' }, { value: 'team', label: 'My team' }, { value: 'unassigned', label: 'Not distributed' }]} className="w-48" />
           <Button variant="primary" size="sm" onClick={() => { setAddClientError(''); setAddClientOpen(true); }}>{t('+ Add Lead')}</Button>
-          {can('leads.export') && (
-            <Button variant="secondary" size="sm" disabled={exporting} onClick={exportLeads}>
-              {exporting ? t('Exporting...') : selectedPoolLeads.length > 0 ? t('Export selected ({n})', { n: selectedPoolLeads.length }) : t('Export Excel')}
-            </Button>
-          )}
           <SelectFirstN selectedCount={selectedPoolLeads.length} max={null} onSelect={selectFirstN} onClear={() => setSelectedPoolLeads([])} />
         </div>
         {poolLeads.length === 0 ? (

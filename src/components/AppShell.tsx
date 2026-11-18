@@ -590,7 +590,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
 
       {/* Sidebar: fixed full height; only the nav list scrolls when it is taller than the screen */}
       <aside
-        className={`fixed inset-y-0 start-0 z-40 h-screen w-64 bg-[#0e0e0e] border-e border-[#1e1e1e] flex flex-col transition-transform ${
+        className={`fixed top-[var(--imp-h,0px)] bottom-0 start-0 z-40 h-[calc(100vh-var(--imp-h,0px))] w-64 bg-[#0e0e0e] border-e border-[#1e1e1e] flex flex-col transition-transform ${
           sidebarOpen ? "translate-x-0 anim-drawer lg:animate-none" : "-translate-x-full rtl:translate-x-full"
         } lg:translate-x-0 lg:rtl:translate-x-0`}
       >
@@ -667,7 +667,7 @@ export default function AppShell({ role, userId, onLogout, children }: Props) {
       {/* Main */}
       <div className="lg:ms-64 flex min-h-screen min-w-0 flex-col">
         {/* Top bar: stays on top while the page scrolls */}
-        <header className="sticky top-0 z-20 h-14 bg-[#0e0e0e] border-b border-[#1e1e1e] flex items-center justify-between px-4">
+        <header className="sticky top-[var(--imp-h,0px)] z-20 h-14 bg-[#0e0e0e] border-b border-[#1e1e1e] flex items-center justify-between px-4">
           <button
             onClick={() => setSidebarOpen(true)}
             aria-label={t("Menu")}

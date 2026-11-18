@@ -17,6 +17,7 @@ import { TableSkeleton } from "./components/shared/motion"
 import { AppOverlaysProvider } from "./components/shared/AppOverlays"
 import { registerServiceWorker } from "./lib/push"
 import { PermissionsProvider } from "./hooks/usePermissions"
+import ImpersonationBanner from "./components/shared/ImpersonationBanner"
 
 const AdminDashboard = lazy(() => import("./components/admin/AdminDashboard"))
 
@@ -69,7 +70,22 @@ const MeetingRequestsManagement = lazy(
 interface AppSession {
   role: Role
 
+  // The effective user: the person an admin is browsing as (View as), otherwise the signed-in user
   userId: string
+
+  impersonating: boolean
+  effectiveName: string
+  realName: string
+  realRole: Role | null
+}
+
+interface EffectiveProfile {
+  id: string
+  full_name: string
+  role: Role
+  real_name: string | null
+  real_role: Role | null
+  impersonating: boolean
 }
 
 export default function App() {
@@ -83,6 +99,27 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false)
 
   async function loadProfile(authId: string, email: string) {
+    // The database decides who we are: during View as it returns the target user, and RLS follows it.
+    const { data: eff, error: effError } = await supabase.rpc("get_effective_profile")
+    const effective = eff as EffectiveProfile | null
+    if (effError) console.warn("Effective profile lookup failed:", effError.message)
+
+    if (effective?.id) {
+      setSession({
+        role: effective.role,
+        userId: effective.id,
+        impersonating: !!effective.impersonating,
+        effectiveName: effective.full_name,
+        realName: effective.real_name ?? effective.full_name,
+        realRole: effective.real_role ?? effective.role,
+      })
+      void registerServiceWorker()
+      setNeedsProfile(null)
+      setAuthChecked(true)
+      return
+    }
+
+    // Fallback (no row for this auth id, or the function failed): the old lookup, incl. match by email
     const { data, error } = await supabase
       .from("users")
       .select("*")
@@ -106,7 +143,14 @@ export default function App() {
     }
 
     if (profile) {
-      setSession({ role: profile.role, userId: profile.id })
+      setSession({
+        role: profile.role,
+        userId: profile.id,
+        impersonating: false,
+        effectiveName: profile.full_name ?? "",
+        realName: profile.full_name ?? "",
+        realRole: profile.role,
+      })
 
       // Needed for push notifications (enabled per device from My profile)
       void registerServiceWorker()
@@ -192,6 +236,10 @@ export default function App() {
   }
 
   return (
+    <>
+    {session.impersonating && (
+      <ImpersonationBanner name={session.effectiveName} role={session.role} />
+    )}
     <PermissionsProvider role={session.role} userId={session.userId}>
     <AppOverlaysProvider role={session.role}>
     <AppShell
@@ -218,9 +266,9 @@ export default function App() {
           {(session.role === "sales" || session.role === "telesales" || session.role === "sales_telesales") && page === "earnings" && (
             <TeamPerformance mode="mine" userId={session.userId} role={session.role} />
           )}
-          {session.role === "admin" && page === "leads" && <AdminLeads />}
+          {session.role === "admin" && page === "leads" && <AdminLeads userId={session.userId} />}
           {session.role === "admin" && page === "activity" && <AdminActivity />}
-          {session.role === "admin" && page === "users" && <AdminUsers />}
+          {session.role === "admin" && page === "users" && <AdminUsers userId={session.userId} />}
           {session.role === "admin" && page === "meetings" && (
             <AdminMeetings userId={session.userId} />
           )}
@@ -280,5 +328,6 @@ export default function App() {
     </AppShell>
     </AppOverlaysProvider>
     </PermissionsProvider>
+    </>
   )
 }

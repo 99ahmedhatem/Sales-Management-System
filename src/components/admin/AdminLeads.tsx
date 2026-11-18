@@ -133,7 +133,7 @@ function mapUser(row: any): User {
   };
 }
 
-export default function AdminLeads() {
+export default function AdminLeads({ userId: myId }: { userId: string }) {
   const { t } = useI18n();
   const openLead = useLeadCard();
   const { can } = usePermissions();
@@ -158,8 +158,6 @@ export default function AdminLeads() {
   const [tagFilter, setTagFilter] = usePersistentState('leads.tag', '');
   // "تواصلت" (070): '' | 'yes' | 'no' — contacted by anyone
   const [contactFilter, setContactFilter] = usePersistentState('leads.contacted', '');
-  const [myId, setMyId] = useState('');
-  useEffect(() => { void supabase.auth.getUser().then(({ data }) => setMyId(data.user?.id ?? '')); }, []);
   const [tagOptions, setTagOptions] = useState<{ value: string; label: string }[]>([]);
   useEffect(() => {
     void supabase.rpc('discovery_tags').then(({ data, error }) => {
@@ -371,7 +369,7 @@ export default function AdminLeads() {
     const moved = new Set(selected);
     setLeads(prev => prev.map(l => (moved.has(l.id) ? { ...l, assignedTo: assignTo, status: 'Assigned' as LeadStatus } : l)));
     toast(t('Assigned {n} clients to {name}', { n: selected.length, name: assignee?.fullName ?? '' }));
-    const authUserId = (await supabase.auth.getUser()).data.user?.id || '';
+    const authUserId = myId;
     const admin = (await supabase.from('users').select('full_name').eq('id', authUserId).maybeSingle()).data;
     await Promise.all(selected.map(leadId => recordActivity({
       leadId,

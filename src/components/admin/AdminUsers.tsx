@@ -24,7 +24,7 @@ function mapUser(row: any): User {
   };
 }
 
-export default function AdminUsers() {
+export default function AdminUsers({ userId: myId }: { userId: string }) {
   const { t, lang } = useI18n();
   const openProfile = useProfileViewer();
   const [users, setUsers] = useState<User[]>([]);
@@ -55,12 +55,7 @@ export default function AdminUsers() {
   const [editLoading, setEditLoading] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
-  const [myId, setMyId] = useState('');
   const [rates, setRates] = useState<Record<string, Rates>>({});
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setMyId(data.user?.id ?? ''));
-  }, []);
 
   const saveAssignedLeadPhone = async (lead: AssignedLead, value: string) => {
     const phone = value.replace(/[^\d+]/g, '');
@@ -321,6 +316,26 @@ export default function AdminUsers() {
     await loadUsers();
   };
 
+  // View as: the database switches who we are; after reload App.tsx loads that user's whole system
+  const [entering, setEntering] = useState('');
+  const enterAs = async (u: User) => {
+    const ok = await confirm({
+      title: 'Enter their system',
+      message: t("You will enter {name}'s system. Any change you make will be recorded under their name. Continue?", { name: u.fullName }),
+      confirmLabel: 'Enter',
+    });
+    if (!ok) return;
+    setErrorMsg('');
+    setEntering(u.id);
+    const { error } = await supabase.rpc('start_impersonation', { p_target: u.id });
+    if (error) {
+      setErrorMsg(error.message);
+      setEntering('');
+      return;
+    }
+    window.location.reload();
+  };
+
   const roleLabel: Record<Role, string> = { admin: 'Admin', manager: 'Manager', telesales: 'Telesales', sales: 'Sales', sales_telesales: 'Telesales + Sales' };
   const roleColor: Record<Role, string> = {
     admin: 'bg-purple-500/10 text-purple-300',
@@ -412,6 +427,11 @@ export default function AdminUsers() {
               <Td><span className="font-mono text-xs text-[#6b6b6b]">{u.lastLogin ? u.lastLogin.slice(0, 10) : t('Never')}</span></Td>
               <Td>
                 <div className="flex items-center gap-1" onClick={event => event.stopPropagation()}>
+                  {u.role !== 'admin' && (
+                    <Button variant="secondary" size="sm" disabled={!!entering} onClick={() => void enterAs(u)}>
+                      {entering === u.id ? t('Entering…') : t('Enter their system')}
+                    </Button>
+                  )}
                   <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>{t('Edit')}</Button>
                   <ActionMenu items={[
                     { label: 'Profile', onClick: () => openProfile(u.id), hidden: u.role === 'admin' },

@@ -1262,4 +1262,12 @@ export const ar: Record<string, string> = {
   "Website already in the system": "الموقع موجود بالفعل في النظام",
   "Phone already used by another client": "الرقم مستخدَم عند عميل آخر",
   "Customer number already used": "رقم العميل مستخدَم بالفعل",
+  // View as (admin enters a user's system)
+  "Enter their system": "ادخل على سيستمه",
+  "Entering…": "جارٍ الدخول…",
+  "Enter": "ادخل",
+  "You will enter {name}'s system. Any change you make will be recorded under their name. Continue?": "هتدخل على سيستم {name}. أي تعديل هتعمله هيتسجل باسمه. تكمل؟",
+  "You are browsing as «{name}» ({role})": "أنت تتصفح الآن كـ «{name}» ({role})",
+  "Back to your account": "الرجوع لحسابك",
+  "Returning…": "جارٍ الرجوع…",
 };

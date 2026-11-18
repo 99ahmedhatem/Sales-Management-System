@@ -1,5 +1,5 @@
 import { TableSkeleton } from '../shared/motion';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../supabaseClient';
 import { recordActivity } from '../../data/activityLog';
@@ -18,6 +18,11 @@ import AutoDistributionCard from './AutoDistributionCard';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { useI18n } from '../../i18n/I18nProvider';
 import { normalizeWebsite } from '../../lib/websiteKey';
+import {
+  analyzeMatrix, buildImportRows, countRows, hasPhoneLikeColumn, rowValues, sheetToMatrix,
+  parseCustomerNumber, parseQuantity, IMPORT_FIELDS, IMPORT_FIELD_LABELS,
+  type ColumnMapping, type ImportField, type ImportLeadRow, type SheetAnalysis,
+} from '../../lib/smartImport';
 import { useLeadCard } from '../shared/AppOverlays';
 import WebsiteChecks, { WEBSITE_REASON_FILTER_OPTIONS, WEBSITE_STATUS_FILTER_OPTIONS, websiteCategoryLabel } from '../shared/WebsiteChecks';
 import WhatsAppButton from '../shared/WhatsAppButton';
@@ -41,15 +46,6 @@ const STATUS_OPTIONS = [
   { value: 'No Answer', label: 'No Answer' },
 ];
 
-// Different ways a country can be written in a sheet, mapped to the names above
-const COUNTRY_ALIASES: Record<string, string[]> = {
-  'Saudi Arabia': ['saudi arabia', 'saudi', 'ksa', 'sa', 'السعودية', 'السعوديه', 'المملكة العربية السعودية'],
-  Oman: ['oman', 'om', 'omn', 'عمان', 'سلطنة عمان'],
-  Iraq: ['iraq', 'iq', 'irq', 'العراق'],
-  UAE: ['uae', 'ae', 'united arab emirates', 'emirates', 'الامارات', 'الإمارات', 'dubai', 'abu dhabi', 'sharjah', 'ajman', 'fujairah', 'rak', 'ras al khaimah', 'دبي', 'ابوظبي', 'أبوظبي', 'الشارقة'],
-  Egypt: ['egypt', 'eg', 'مصر'],
-};
-
 const TYPE_FILTER_OPTIONS = [
   { value: '', label: 'All Types' },
   { value: 'software', label: 'Software' },
@@ -68,53 +64,27 @@ const REGION_FORM_OPTIONS = [
   ...REGION_OPTIONS.slice(1),
 ];
 
-// Turns "ksa", "KSA", "السعودية" ... into "Saudi Arabia". Unknown values are kept as written.
-function normalizeCountry(value: string): string {
-  const key = value.trim().toLowerCase();
-  if (!key) return '';
-  for (const [country, aliases] of Object.entries(COUNTRY_ALIASES)) {
-    if (aliases.includes(key)) return country;
-  }
-  return value.trim();
-}
-
-interface ImportLeadRow {
-  customerNumber?: number;
-  website?: string;
-  websiteKey?: string;
-  name: string;
-  phone: string; // already cleaned, may be empty
-  company: string;
-  region: string;
-  source: string;
-  notes: string;
-  quantity: number;
-}
-
-function readImportValue(row: Record<string, unknown>, names: string[]): string {
-  const normalized = Object.entries(row).reduce<Record<string, unknown>>((result, [key, value]) => {
-    result[key.trim().toLowerCase().replace(/[\s_-]+/g, '')] = value;
-    return result;
-  }, {});
-  const value = names
-    .map(name => normalized[name.replace(/[\s_-]+/g, '').toLowerCase()])
-    .find(value => value !== undefined && value !== '');
-  return String(value ?? '').trim();
-}
-
-function parseCustomerNumber(value: string): number | undefined {
-  const parsed = Number(value.replace(/[,\s]/g, ''));
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
-
-function parseQuantity(value: string): number {
-  const parsed = Number(value.replace(/[,\s]/g, ''));
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
-}
-
 // Keeps digits and a leading +. A dash or empty cell becomes '' (no phone).
 function cleanPhone(value: string): string {
   return value.replace(/[^\d+]/g, '');
+}
+
+// Same as public.phone_key() on the server: the last 9 digits
+function phoneKeyOf(phone: string): string {
+  return (phone || '').replace(/\D/g, '').slice(-9);
+}
+
+// A row that was not imported, as it goes into the "skipped rows" Excel file
+type SkippedRow = { line: number; reason: string } & Record<string, string | number>;
+function skippedRow(row: ImportLeadRow, reason: string): SkippedRow {
+  return { line: row.line, reason, ...rowValues(row) };
+}
+
+interface ImportReport {
+  added: number;
+  filled: number;     // stores that existed without a phone and got the phone from the file
+  ignored: number;    // existing website, phone used by another client, or dropped in the file
+  skippedRows: SkippedRow[];
 }
 
 function mapLead(row: any): Lead {
@@ -223,7 +193,13 @@ export default function AdminLeads() {
   });
   const [importModal, setImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importRows, setImportRows] = useState<ImportLeadRow[]>([]);
+  // Smart import: every sheet of the file as text, the analysis of the chosen one, and the column mapping
+  // the user can correct in the review table. The rows to upload are derived from these.
+  const [importSheets, setImportSheets] = useState<{ name: string; matrix: string[][] }[]>([]);
+  const [importSheet, setImportSheet] = useState('');
+  const [importAnalysis, setImportAnalysis] = useState<SheetAnalysis | null>(null);
+  const [importMapping, setImportMapping] = useState<ColumnMapping>({});
+  const [importReport, setImportReport] = useState<ImportReport | null>(null);
   const [importError, setImportError] = useState('');
   const [importing, setImporting] = useState(false);
   // Which save is in flight, so its button is disabled and double clicks are ignored.
@@ -240,7 +216,27 @@ export default function AdminLeads() {
   const [importType, setImportType] = useState<'salla' | 'software'>('software');
   const [importDataQuality, setImportDataQuality] = useState<LeadDataQuality>('normal');
   const [importProgress, setImportProgress] = useState(0);
-  const [duplicateImportCount, setDuplicateImportCount] = useState(0);
+
+  // Rows ready to upload + rows dropped in the browser (no name, or the same website / phone twice in the file)
+  const importParsed = useMemo(() => {
+    if (!importAnalysis) return { rows: [] as ImportLeadRow[], rejected: [] as SkippedRow[], total: 0 };
+    const { rows: built, rejected } = buildImportRows(importAnalysis.dataRows, importMapping, importAnalysis.firstLine);
+    const skipped: SkippedRow[] = rejected.map(r => ({ line: r.line, reason: r.reason, ...r.values }));
+    const seenWebsites = new Set<string>();
+    const seenPhones = new Set<string>();
+    const rows = built.filter(row => {
+      const websiteKey = normalizeWebsite(row.website || '');
+      row.websiteKey = websiteKey;
+      const phoneKey = (row.phone || '').replace(/\D/g, '').slice(-9);
+      if (websiteKey && seenWebsites.has(websiteKey)) { skipped.push(skippedRow(row, 'Same website twice in the file')); return false; }
+      if (phoneKey.length >= 7 && seenPhones.has(phoneKey)) { skipped.push(skippedRow(row, 'Same phone twice in the file')); return false; }
+      if (websiteKey) seenWebsites.add(websiteKey);
+      if (phoneKey.length >= 7) seenPhones.add(phoneKey);
+      return true;
+    });
+    return { rows, rejected: skipped, total: built.length + rejected.length };
+  }, [importAnalysis, importMapping]);
+  const importRows = importParsed.rows;
   const [editingCustomerNumberId, setEditingCustomerNumberId] = useState<string | null>(null);
   const [editingCustomerNumber, setEditingCustomerNumber] = useState('');
   const [page, setPage] = useState(0);
@@ -541,67 +537,121 @@ export default function AdminLeads() {
     setAddModal(false);
   };
 
+  const resetImport = () => {
+    setImportFile(null);
+    setImportSheets([]);
+    setImportSheet('');
+    setImportAnalysis(null);
+    setImportMapping({});
+    setImportReport(null);
+    setImportProgress(0);
+    setImportError('');
+  };
+
+  // Analyses one sheet: header row, then which column is which field (the user can correct it after)
+  const chooseImportSheet = (sheets: { name: string; matrix: string[][] }[], name: string) => {
+    const sheet = sheets.find(s => s.name === name);
+    setImportSheet(name);
+    setImportReport(null);
+    if (!sheet || !countRows(sheet.matrix)) {
+      setImportAnalysis(null);
+      setImportMapping({});
+      setImportError('This sheet is empty.');
+      return;
+    }
+    const analysis = analyzeMatrix(sheet.matrix);
+    setImportAnalysis(analysis);
+    setImportMapping(analysis.mapping);
+    setImportError('');
+  };
+
   const handleImportFile = async (file: File | undefined) => {
     if (!file) return;
+    resetImport();
     setImportFile(file);
-    setImportError('');
     try {
-      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
-      const parsedRows: ImportLeadRow[] = rows
-        .map(row => ({
-          customerNumber: parseCustomerNumber(readImportValue(row, ['customer number', 'customer no', 'number', 'رقم العميل', 'الرقم'])),
-          website: readImportValue(row, ['website', 'web site', 'site', 'url', 'رابط الموقع', 'الموقع']),
-          quantity: parseQuantity(readImportValue(row, ['quantity', 'qty', 'الكمية'])),
-          name: readImportValue(row, ['name', 'full name', 'client name', 'الاسم']),
-          phone: cleanPhone(readImportValue(row, ['phone', 'phone number', 'mobile', 'رقم الهاتف'])),
-          company: readImportValue(row, ['company', 'الشركة']),
-          region: normalizeCountry(readImportValue(row, ['country', 'region', 'الدولة', 'المنطقة'])),
-          source: readImportValue(row, ['source', 'المصدر']) || 'Excel Import',
-          notes: readImportValue(row, ['notes', 'ملاحظات']),
-        }))
-        .filter(row => row.name); // phone is optional
-      // Duplicates inside the file: same website OR same phone (last 9 digits) → keep the first row only.
-      // Duplicates of clients already in the system are skipped by import_leads on the server.
-      const seenWebsites = new Set<string>();
-      const seenPhones = new Set<string>();
-      const parsed = parsedRows.filter(row => {
-        const websiteKey = normalizeWebsite(row.website || '');
-        row.websiteKey = websiteKey;
-        const phoneKey = (row.phone || '').replace(/\D/g, '').slice(-9);
-        if (websiteKey && seenWebsites.has(websiteKey)) return false;
-        if (phoneKey.length >= 7 && seenPhones.has(phoneKey)) return false;
-        if (websiteKey) seenWebsites.add(websiteKey);
-        if (phoneKey.length >= 7) seenPhones.add(phoneKey);
-        return true;
-      });
-      setDuplicateImportCount(parsedRows.length - parsed.length);
-      if (!parsed.length) {
-        setImportError('No valid rows found. Name is required.');
-        setImportRows([]);
-        return;
-      }
-      setImportRows(parsed);
+      // raw: CSV cells stay as written (0533… keeps its 0). Excel cells are turned to text by sheetToMatrix,
+      // which writes long numbers in full (966533672708, not 9.66534E+11).
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', raw: true });
+      const sheets = workbook.SheetNames.map(name => ({ name, matrix: sheetToMatrix(workbook.Sheets[name], XLSX.utils) }));
+      setImportSheets(sheets);
+      // the sheet with the most rows is the one with the clients
+      const biggest = sheets.reduce((best, s) => (countRows(s.matrix) > countRows(best.matrix) ? s : best), sheets[0]);
+      chooseImportSheet(sheets, biggest?.name ?? '');
     } catch {
       setImportError('Could not read this file. Use .xlsx, .xls, or .csv.');
-      setImportRows([]);
+      setImportSheets([]);
+      setImportAnalysis(null);
+      setImportMapping({});
     }
   };
 
+  // One column per field: giving a column to a field takes it away from the field that had it
+  const setImportColumn = (field: ImportField, column: number | undefined) => {
+    setImportMapping(prev => {
+      const next: ColumnMapping = { ...prev };
+      if (column !== undefined) {
+        for (const f of IMPORT_FIELDS) if (next[f] === column) delete next[f];
+        next[field] = column;
+      } else {
+        delete next[field];
+      }
+      return next;
+    });
+  };
+
+  // Which rows of a batch import_leads will skip: website already in the system, phone used by another
+  // client, or customer number taken. Only used to list the skipped rows; the server is what decides.
+  const findExisting = async (batch: ImportLeadRow[]) => {
+    const sites = new Map<string, string>(); // website_key → phone of the existing client ('' = none)
+    const phones = new Set<string>();
+    const numbers = new Set<number>();
+    const chunks = <T,>(list: T[]) => {
+      const out: T[][] = [];
+      for (let i = 0; i < list.length; i += 100) out.push(list.slice(i, i + 100));
+      return out;
+    };
+    const keys = [...new Set(batch.map(r => r.websiteKey || '').filter(Boolean))];
+    const phoneKeys = [...new Set(batch.map(r => phoneKeyOf(r.phone)).filter(Boolean))];
+    const custNumbers = [...new Set(batch.map(r => r.customerNumber ?? 0).filter(Boolean))];
+    const fail = (error: unknown) => { if (error) throw error; };
+    await Promise.all([
+      ...chunks(keys).map(async list => {
+        const { data, error } = await supabase.from('leads').select('website_key, phone').in('website_key', list);
+        fail(error);
+        data?.forEach(d => sites.set(d.website_key, d.phone ?? ''));
+      }),
+      ...chunks(phoneKeys).map(async list => {
+        const { data, error } = await supabase.from('leads').select('phone_key').in('phone_key', list);
+        fail(error);
+        data?.forEach(d => phones.add(d.phone_key));
+      }),
+      ...chunks(custNumbers).map(async list => {
+        const { data, error } = await supabase.from('leads').select('customer_number').in('customer_number', list);
+        fail(error);
+        data?.forEach(d => numbers.add(Number(d.customer_number)));
+      }),
+    ]);
+    return { sites, phones, numbers };
+  };
+
   const handleImport = async () => {
-    if (!importRows.length) return;
+    if (!importRows.length || importMapping.name === undefined) return;
     setImporting(true);
     setImportError('');
     setImportProgress(0);
     const batchSize = 500;
     let added = 0;
     let skipped = 0;
+    let listComplete = true;
+    const skippedRows: SkippedRow[] = [...importParsed.rejected];
 
     // import_leads (019) inserts on the server and skips any row that already exists:
     // same website, same phone, or same customer number. One duplicate never stops the import.
     for (let start = 0; start < importRows.length; start += batchSize) {
-      const batch = importRows.slice(start, start + batchSize).map(row => ({
+      const rows = importRows.slice(start, start + batchSize);
+      const existing = await findExisting(rows).catch(() => null);
+      const batch = rows.map(row => ({
         ...(row.customerNumber ? { customer_number: row.customerNumber } : {}),
         website: row.website || null,
         website_key: row.websiteKey || null,
@@ -617,7 +667,7 @@ export default function AdminLeads() {
         p_rows: batch, p_is_salla: importType === 'salla', p_data_quality: importDataQuality,
       });
       if (error) {
-        setImportError(t('Import stopped at row {n}: {msg}', { n: start + 1, msg: error.message }));
+        setImportError(t('Import stopped at row {n}: {msg}', { n: rows[0]?.line ?? start + 1, msg: error.message }));
         setImporting(false);
         if (added) await loadData(0);
         return;
@@ -625,34 +675,56 @@ export default function AdminLeads() {
       const res = (Array.isArray(data) ? data[0] : data) as { inserted?: number; skipped?: number } | null;
       added += Number(res?.inserted ?? 0);
       skipped += Number(res?.skipped ?? 0);
-      setImportProgress(Math.round(((start + batch.length) / importRows.length) * 90));
+      if (!existing) listComplete = false;
+      else for (const row of rows) {
+        const sitePhone = row.websiteKey ? existing.sites.get(row.websiteKey) : undefined;
+        const phoneTaken = !!row.phone && existing.phones.has(phoneKeyOf(row.phone));
+        if (sitePhone !== undefined) {
+          // an existing store without a phone gets the phone below, so it is not "ignored"
+          if (sitePhone || !row.phone || phoneTaken) skippedRows.push(skippedRow(row, 'Website already in the system'));
+        } else if (phoneTaken) {
+          skippedRows.push(skippedRow(row, 'Phone already used by another client'));
+        } else if (row.customerNumber && existing.numbers.has(row.customerNumber)) {
+          skippedRows.push(skippedRow(row, 'Customer number already used'));
+        }
+      }
+      setImportProgress(Math.round(((start + rows.length) / importRows.length) * 90));
     }
 
     // Stores that already exist (same website) are skipped above, so fill their phone if it was empty
+    let filled = 0;
     const withPhone = importRows
       .filter(r => r.phone && r.websiteKey)
       .map(r => ({ website_key: r.websiteKey, phone: r.phone }));
     for (let start = 0; start < withPhone.length; start += batchSize) {
-      const { error } = await supabase.rpc('fill_missing_phones', { rows: withPhone.slice(start, start + batchSize) });
+      const { data, error } = await supabase.rpc('fill_missing_phones', { rows: withPhone.slice(start, start + batchSize) });
       if (error) {
         setImportError(t('Leads were imported, but updating phones of existing stores failed: {msg}', { msg: error.message }));
         setImporting(false);
         await loadData(0);
         return;
       }
+      filled += Number(data ?? 0);
     }
 
     setImportProgress(100);
     setImporting(false);
-    toast(t('Imported {a} new clients · {b} already in the system were skipped', {
-      a: added.toLocaleString('en-US'), b: (skipped + duplicateImportCount).toLocaleString('en-US'),
-    }));
+    skippedRows.sort((a, b) => a.line - b.line);
+    setImportReport({
+      added,
+      filled,
+      ignored: Math.max(0, skipped - filled) + importParsed.rejected.length,
+      skippedRows: listComplete ? skippedRows : importParsed.rejected,
+    });
     await loadData(0);
-    setImportFile(null);
-    setImportRows([]);
-    setImportProgress(0);
-    setDuplicateImportCount(0);
-    setImportModal(false);
+  };
+
+  const downloadSkippedRows = () => {
+    if (!importReport?.skippedRows.length) return;
+    exportRowsToExcel(
+      importReport.skippedRows.map(({ line, reason, ...rest }) => ({ [t('Row')]: line, [t('Reason')]: t(reason), ...rest })),
+      'skipped-import-rows',
+    );
   };
 
   if (firstLoad) {
@@ -1008,24 +1080,130 @@ export default function AdminLeads() {
             </svg>
             <p className="text-[#a0a0a0] text-sm">{importFile?.name || t('Choose an Excel or CSV file')}</p>
             <p className="text-[#4a4a4a] text-xs mt-1">{t('.xlsx, .xls, .csv supported')}</p>
-            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => handleImportFile(e.target.files?.[0])} />
+            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => { handleImportFile(e.target.files?.[0]); e.target.value = ''; }} />
           </label>
-          {importRows.length > 0 && (
-            <p className="text-[#dfff03] text-xs">
-              {t('{a} valid rows ready to import · {b} with a phone number.', {
-                a: importRows.length.toLocaleString('en-US'),
-                b: importRows.filter(r => r.phone).length.toLocaleString('en-US'),
-              })}
-            </p>
+          {importSheets.length > 1 && !importReport && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-[#a0a0a0]">{t('Sheet:')}</span>
+              <select
+                value={importSheet}
+                onChange={e => chooseImportSheet(importSheets, e.target.value)}
+                disabled={importing}
+                className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1.5 text-white focus:outline-none focus:border-[#dfff03]/60"
+              >
+                {importSheets.map(s => (
+                  <option key={s.name} value={s.name}>{s.name} ({countRows(s.matrix).toLocaleString('en-US')} {t('rows')})</option>
+                ))}
+              </select>
+            </div>
           )}
-          {duplicateImportCount > 0 && <p className="text-[#ffc832] text-xs">{t('{n} duplicate rows in the file (same website or phone) were skipped automatically.', { n: duplicateImportCount.toLocaleString('en-US') })}</p>}
+          {importAnalysis && !importReport && (() => {
+            const samples = (field: ImportField) => {
+              const col = importMapping[field];
+              if (col === undefined) return [] as string[];
+              const out: string[] = [];
+              for (const row of importAnalysis.dataRows) {
+                const v = row[col];
+                if (v && !out.includes(v)) out.push(v);
+                if (out.length === 2) break;
+              }
+              return out;
+            };
+            const withPhone = importRows.filter(r => r.phone).length;
+            const phoneMissing = importParsed.total > 0 && withPhone === 0 && hasPhoneLikeColumn(importAnalysis.dataRows);
+            return (
+              <div className="space-y-2">
+                <div className="text-white text-xs font-medium">
+                  {t('Check the columns before importing')}
+                  <span className="text-[#6b6b6b] font-normal">
+                    {' · '}{importAnalysis.headerRow >= 0 ? t('Header row: {n}', { n: importAnalysis.headerRow + 1 }) : t('No header row — columns found from their content')}
+                  </span>
+                </div>
+                <div className="border border-[#2a2a2a] rounded-lg overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-[#1a1a1a] text-[#a0a0a0]">
+                      <tr>
+                        <th className="text-start font-medium px-3 py-2">{t('Field')}</th>
+                        <th className="text-start font-medium px-3 py-2">{t('Detected column')}</th>
+                        <th className="text-start font-medium px-3 py-2">{t('Sample values')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {IMPORT_FIELDS.map(field => {
+                        const values = samples(field);
+                        const missingName = field === 'name' && importMapping.name === undefined;
+                        return (
+                          <tr key={field} className="border-t border-[#2a2a2a]">
+                            <td className={`px-3 py-1.5 whitespace-nowrap ${missingName ? 'text-[#ff6464]' : 'text-white'}`}>
+                              {t(IMPORT_FIELD_LABELS[field])}{field === 'name' ? ' *' : ''}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              <select
+                                value={importMapping[field] ?? ''}
+                                onChange={e => setImportColumn(field, e.target.value === '' ? undefined : Number(e.target.value))}
+                                disabled={importing}
+                                className={`w-full min-w-[9rem] bg-[#1a1a1a] border rounded px-2 py-1 text-white focus:outline-none focus:border-[#dfff03]/60 ${missingName || (field === 'phone' && phoneMissing) ? 'border-[#ff6464]' : 'border-[#2a2a2a]'}`}
+                              >
+                                <option value="">{t('(Ignore)')}</option>
+                                {importAnalysis.columns.map(c => (
+                                  <option key={c.index} value={c.index}>{c.label.startsWith('Column ') ? `${t('Column')} ${c.label.slice(7)}` : c.label}</option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-3 py-1.5 text-[#a0a0a0] max-w-[14rem] truncate" dir="auto" title={values.join(' · ')}>
+                              {values.length ? values.join('، ') : <span className="text-[#4a4a4a]">—</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-[#dfff03] text-xs">
+                  {t('{n} rows found · {m} with a phone · {k} without a phone', {
+                    n: importRows.length.toLocaleString('en-US'),
+                    m: withPhone.toLocaleString('en-US'),
+                    k: (importRows.length - withPhone).toLocaleString('en-US'),
+                  })}
+                </p>
+                {importParsed.rejected.length > 0 && (
+                  <p className="text-[#ffc832] text-xs">
+                    {t('{n} rows will be skipped (no name, or the same website / phone twice in the file).', { n: importParsed.rejected.length.toLocaleString('en-US') })}
+                  </p>
+                )}
+                {phoneMissing && (
+                  <p className="bg-[#ff6464]/10 border border-[#ff6464]/40 text-[#ff6464] text-sm font-medium rounded-lg px-3 py-2">
+                    {t('The phone column was not recognized — pick it from the list before importing.')}
+                  </p>
+                )}
+                {importMapping.name === undefined && (
+                  <p className="text-[#ff6464] text-xs">{t('Pick the name column to enable the import.')}</p>
+                )}
+              </div>
+            );
+          })()}
           {importing && (
             <div className="space-y-1">
               <div className="flex justify-between text-xs text-[#a0a0a0]"><span>{t('Uploading customers')}</span><span>{importProgress}%</span></div>
               <div className="h-1.5 bg-[#262626] rounded-full overflow-hidden"><div className="h-full bg-[#dfff03] transition-all" style={{ width: `${importProgress}%` }} /></div>
             </div>
           )}
-          {importRows.length > 0 && (
+          {importReport && (
+            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 space-y-1.5 text-sm">
+              <div className="text-white font-medium mb-2">{t('Import finished')}</div>
+              <div className="text-[#dfff03]">{t('Added: {n} new clients', { n: importReport.added.toLocaleString('en-US') })}</div>
+              <div className="text-white">{t('Phone filled for {n} clients that had no phone', { n: importReport.filled.toLocaleString('en-US') })}</div>
+              <div className="text-[#ffc832]">{t('Ignored {n} rows (existing website or phone already used)', { n: importReport.ignored.toLocaleString('en-US') })}</div>
+              {importReport.skippedRows.length > 0 && (
+                <div className="pt-2">
+                  <Button variant="secondary" size="sm" onClick={downloadSkippedRows}>
+                    {t('Download skipped rows')} ({importReport.skippedRows.length.toLocaleString('en-US')})
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+          {importRows.length > 0 && !importReport && (
             <div className="bg-[#dfff03]/5 border border-[#dfff03]/20 rounded-lg p-3 text-xs">
               <div className="text-white font-medium">{t('Import settings')}</div>
               <div className="text-[#a0a0a0] mt-1">
@@ -1040,18 +1218,26 @@ export default function AdminLeads() {
             </div>
           )}
           {importError && <p className="text-[#ff6464] text-xs">{t(importError)}</p>}
-          <div className="bg-[#1a1a1a] rounded-lg p-3 text-xs text-[#6b6b6b]">
-            <p className="font-medium text-[#a0a0a0] mb-1">{t('Expected columns:')}</p>
-            <p>{t('Customer Number (optional) · Website (optional) · Quantity · Name (required) · Phone (optional) · Company · Country · Source · Notes')}</p>
-            <p className="mt-1">{t('If two rows use the same website, only the first row is imported.')}</p>
-            <p className="mt-1">{t('If a store already exists without a phone and the sheet has one, the phone is added to it.')}</p>
-            <p className="mt-1 text-[#dfff03]">{t('The selected client type and data quality above apply to every imported row.')}</p>
-          </div>
+          {!importAnalysis && (
+            <div className="bg-[#1a1a1a] rounded-lg p-3 text-xs text-[#6b6b6b]">
+              <p className="font-medium text-[#a0a0a0] mb-1">{t('Columns are found automatically')}</p>
+              <p>{t('Any column names and any order, Arabic or English, with or without a header row. You can check and correct them before importing.')}</p>
+              <p className="mt-1">{t('If two rows use the same website, only the first row is imported.')}</p>
+              <p className="mt-1">{t('If a store already exists without a phone and the sheet has one, the phone is added to it.')}</p>
+              <p className="mt-1 text-[#dfff03]">{t('The selected client type and data quality above apply to every imported row.')}</p>
+            </div>
+          )}
           <div className="flex gap-2">
-            <Button variant="primary" disabled={!importRows.length || importing} onClick={handleImport}>
-              {importing ? t('Importing...') : t('Import Leads')}
-            </Button>
-            <Button variant="ghost" onClick={() => setImportModal(false)}>{t('Cancel')}</Button>
+            {importReport ? (
+              <Button variant="primary" onClick={() => { resetImport(); setImportModal(false); }}>{t('Done')}</Button>
+            ) : (
+              <>
+                <Button variant="primary" disabled={!importRows.length || importMapping.name === undefined || importing} onClick={handleImport}>
+                  {importing ? t('Importing...') : t('Import Leads')}
+                </Button>
+                <Button variant="ghost" disabled={importing} onClick={() => setImportModal(false)}>{t('Cancel')}</Button>
+              </>
+            )}
           </div>
         </div>
       </Modal>

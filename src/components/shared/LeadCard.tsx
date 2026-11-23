@@ -11,6 +11,7 @@ import { REGION_OPTIONS } from './DistributeLeadsModal';
 import WhatsAppButton from './WhatsAppButton';
 import { websiteCategoryLabel } from './WebsiteChecks';
 import { usePermissions } from '../../hooks/usePermissions';
+import { LeadTypeBadges, LeadTypeChecklist, useLeadTypes } from './LeadTypes';
 
 type Role = 'admin' | 'manager' | 'sales' | 'telesales' | 'sales_telesales';
 
@@ -29,6 +30,7 @@ export interface LeadCardLead {
   website_check_note: string | null;
   website_checked_at: string | null;
   is_salla_store: boolean | null;
+  lead_types?: string[] | null;
   status: string;
   source: string | null;
   data_quality: 'high' | 'medium' | 'normal' | null;
@@ -105,6 +107,12 @@ export default function LeadCard({ leadId, role, onClose }: { leadId: string; ro
   const [commentError, setCommentError] = useState('');
   const [rechecking, setRechecking] = useState(false);
   const [recheckMsg, setRecheckMsg] = useState('');
+  // Client types (set_lead_types). get_lead_card may not return lead_types, so it is read from leads when missing.
+  const { types: allTypes } = useLeadTypes();
+  const [leadTypes, setLeadTypes] = useState<string[] | null>(null);
+  const [typesDraft, setTypesDraft] = useState<string[] | null>(null);
+  const [typesSaving, setTypesSaving] = useState(false);
+  const [typesError, setTypesError] = useState('');
 
   const fmtDateTime = (iso: string | null | undefined) =>
     iso ? new Date(iso).toLocaleString(dateLocale(lang), { dateStyle: 'medium', timeStyle: 'short' }) : '—';
@@ -114,9 +122,30 @@ export default function LeadCard({ leadId, role, onClose }: { leadId: string; ro
     setError('');
     const { data: card, error: rpcError } = await supabase.rpc('get_lead_card', { p_lead_id: leadId });
     if (rpcError) setError(rpcError.message);
-    else setData(card as LeadCardData);
+    else {
+      const cardData = card as LeadCardData;
+      setData(cardData);
+      if (Array.isArray(cardData?.lead?.lead_types)) setLeadTypes(cardData.lead.lead_types);
+      else {
+        const { data: row } = await supabase.from('leads').select('lead_types').eq('id', leadId).maybeSingle();
+        // no row = RLS hides this lead from a direct read (e.g. sales): the types are just not shown
+        setLeadTypes(Array.isArray(row?.lead_types) ? row.lead_types as string[] : null);
+      }
+    }
     setLoading(false);
   }, [leadId]);
+
+  async function saveTypes() {
+    if (!data?.lead || !typesDraft || typesSaving) return;
+    setTypesSaving(true);
+    setTypesError('');
+    const { error: rpcError } = await supabase.rpc('set_lead_types', { p_lead_id: data.lead.id, p_types: typesDraft });
+    setTypesSaving(false);
+    if (rpcError) { setTypesError(rpcError.message); return; }
+    setTypesDraft(null);
+    setSaveMsg(t('Saved'));
+    await load(true);
+  }
 
   useEffect(() => {
     setEditing(false);
@@ -124,6 +153,9 @@ export default function LeadCard({ leadId, role, onClose }: { leadId: string; ro
     setSaveError('');
     setSaveMsg('');
     setRecheckMsg('');
+    setLeadTypes(null);
+    setTypesDraft(null);
+    setTypesError('');
     void load();
   }, [load]);
 
@@ -275,7 +307,6 @@ export default function LeadCard({ leadId, role, onClose }: { leadId: string; ro
                     ['Company', lead.company || '—'],
                     ['Country', lead.region ? t(lead.region) : '—'],
                     ['Website', <WebsiteLink url={lead.website ?? undefined} className="break-all" />],
-                    ['Salla Store', lead.is_salla_store ? t('Yes') : t('No')],
                     ['Source', lead.source || '—'],
                     ['Data Quality', t(lead.data_quality ?? 'normal')],
                     ['Follow-up date', lead.callback_date ? String(lead.callback_date).slice(0, 10) : '—'],
@@ -341,6 +372,31 @@ export default function LeadCard({ leadId, role, onClose }: { leadId: string; ro
                   </div>
                 </div>
               )}
+
+              {/* Client types */}
+              <section className="space-y-2 rounded border border-[#2a2a2a] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs uppercase tracking-wider text-[#6b6b6b]">{t('Client types')}</div>
+                  {data.can_edit && can('leads.edit') && leadTypes !== null && typesDraft === null && (
+                    <Button size="sm" variant="secondary" onClick={() => { setTypesDraft(leadTypes); setTypesError(''); }}>{t('Edit types')}</Button>
+                  )}
+                </div>
+                {typesDraft === null ? (
+                  leadTypes !== null
+                    ? <LeadTypeBadges codes={leadTypes} types={allTypes} max={20} />
+                    : <span className="text-sm text-white">{lead.is_salla_store ? t('Salla Store') : '—'}</span>
+                ) : (
+                  <div className="space-y-2">
+                    <LeadTypeChecklist types={allTypes} value={typesDraft} onChange={setTypesDraft} disabled={typesSaving} />
+                    {typesDraft.length === 0 && <p className="text-xs text-[#6b6b6b]">{t('No type chosen: the client is saved as "Other".')}</p>}
+                    {typesError && <div role="alert" className="rounded border border-[#ff6464]/30 bg-[#ff6464]/10 p-2 text-sm text-[#ff8888]">{t(typesError)}</div>}
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="sm" disabled={typesSaving} onClick={() => { setTypesDraft(null); setTypesError(''); }}>{t('Cancel')}</Button>
+                      <Button size="sm" disabled={typesSaving} onClick={() => void saveTypes()}>{typesSaving ? t('Saving…') : t('Save')}</Button>
+                    </div>
+                  </div>
+                )}
+              </section>
 
               {/* Website status */}
               <section className="space-y-2 rounded border border-[#2a2a2a] p-4">

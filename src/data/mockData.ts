@@ -60,6 +60,7 @@ export interface Lead {
   region?: string;
   source?: string;
   isSallaStore?: boolean;
+  leadTypes?: string[];
   /** Tag (064): where this client came from, e.g. a discovery search. */
   tag?: string;
   /** 070: latest "تواصلت" mark on the client, and who made it */

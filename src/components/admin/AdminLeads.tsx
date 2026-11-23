@@ -27,6 +27,7 @@ import { useLeadCard } from '../shared/AppOverlays';
 import WebsiteChecks, { WEBSITE_REASON_FILTER_OPTIONS, WEBSITE_STATUS_FILTER_OPTIONS, websiteCategoryLabel } from '../shared/WebsiteChecks';
 import WhatsAppButton from '../shared/WhatsAppButton';
 import { usePermissions } from '../../hooks/usePermissions';
+import { BulkLeadTypesModal, LeadTypeBadges, LeadTypeChecklist, LeadTypeFilter, LeadTypesManagerModal, applyLeadTypeFilter, useLeadTypeLabel, useLeadTypes } from '../shared/LeadTypes';
 
 const HISTORY_FILTER_OPTIONS = [
   { value: '', label: 'All clients' },
@@ -44,12 +45,6 @@ const STATUS_OPTIONS = [
   { value: 'Call Back Later', label: 'Call Back Later' },
   { value: 'Converted', label: 'Converted' },
   { value: 'No Answer', label: 'No Answer' },
-];
-
-const TYPE_FILTER_OPTIONS = [
-  { value: '', label: 'All Types' },
-  { value: 'software', label: 'Software' },
-  { value: 'salla', label: 'Salla Store' },
 ];
 
 const PHONE_FILTER_OPTIONS = [
@@ -104,6 +99,7 @@ function mapLead(row: any): Lead {
     region: row.region ?? undefined,
     source: row.source ?? undefined,
     isSallaStore: row.is_salla_store ?? false,
+    leadTypes: Array.isArray(row.lead_types) ? row.lead_types : [],
     tag: row.tag ?? undefined,
     contactedAt: row.contacted_at ?? undefined,
     contactedBy: row.contacted_by ?? undefined,
@@ -148,7 +144,13 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
   const [statusFilter, setStatusFilter] = usePersistentState('leads.status', '');
   const [regionFilter, setRegionFilter] = usePersistentState('leads.region', '');
   const [phoneFilter, setPhoneFilter] = usePersistentState('leads.phone', '');
-  const [typeFilter, setTypeFilter] = usePersistentState('leads.type', '');
+  // Client types (lead_types text[]): any of the chosen (overlaps) or all of them together (contains)
+  const [typeFilter, setTypeFilter] = usePersistentState<string[]>('leads.types', []);
+  const [typeMatchAll, setTypeMatchAll] = usePersistentState('leads.typesMatchAll', false);
+  const { types: leadTypes, error: leadTypesError, reload: reloadLeadTypes } = useLeadTypes();
+  const typeLabel = useLeadTypeLabel(leadTypes);
+  const [bulkTypesModal, setBulkTypesModal] = useState(false);
+  const [typesManager, setTypesManager] = useState(false);
   const [qualityFilter, setQualityFilter] = usePersistentState('leads.quality', '');
   const [assignmentFilter, setAssignmentFilter] = usePersistentState('leads.assignment', '');
   const [websiteFilter, setWebsiteFilter] = usePersistentState('leads.website', '');
@@ -166,9 +168,9 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
         .map(r => ({ value: r.tag, label: `${r.tag} (${r.leads})` })));
     });
   }, []);
-  const hasFilters = !!(search.trim() || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || assignmentFilter || websiteFilter || websiteReasonFilter || historyFilter || tagFilter || contactFilter);
+  const hasFilters = !!(search.trim() || statusFilter || regionFilter || phoneFilter || typeFilter.length || qualityFilter || assignmentFilter || websiteFilter || websiteReasonFilter || historyFilter || tagFilter || contactFilter);
   const clearFilters = () => {
-    setSearch(''); setStatusFilter(''); setRegionFilter(''); setPhoneFilter(''); setTypeFilter('');
+    setSearch(''); setStatusFilter(''); setRegionFilter(''); setPhoneFilter(''); setTypeFilter([]);
     setQualityFilter(''); setAssignmentFilter(''); setWebsiteFilter(''); setWebsiteReasonFilter(''); setHistoryFilter(''); setTagFilter(''); setContactFilter('');
   };
   const { confirm, confirmUi } = useConfirm();
@@ -185,7 +187,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
     website: '',
     region: '',
     source: '',
-    isSallaStore: false,
+    leadTypes: ['custom'] as string[],
     dataQuality: 'normal' as LeadDataQuality,
     quantity: 0,
   });
@@ -211,7 +213,8 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
       setBusy('');
     }
   };
-  const [importType, setImportType] = useState<'salla' | 'software'>('software');
+  // Types given to every imported client (nothing chosen = custom)
+  const [importTypes, setImportTypes] = useState<string[]>(['custom']);
   const [importDataQuality, setImportDataQuality] = useState<LeadDataQuality>('normal');
   const [importProgress, setImportProgress] = useState(0);
 
@@ -267,7 +270,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
     if (regionFilter) q = q.eq('region', regionFilter);
     if (phoneFilter === 'missing') q = q.is('phone', null);
     if (phoneFilter === 'has') q = q.not('phone', 'is', null);
-    if (typeFilter) q = q.eq('is_salla_store', typeFilter === 'salla');
+    q = applyLeadTypeFilter(q, typeFilter, typeMatchAll);
     if (tagFilter === '__none__') q = q.is('tag', null);
     else if (tagFilter) q = q.eq('tag', tagFilter);
     if (contactFilter === 'yes') q = q.not('contacted_at', 'is', null);
@@ -289,7 +292,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
     const managerIds = loadedUsers.filter(user => user.role === 'manager').map(user => user.id);
 
     const q = debouncedSearch.replace(/[%,()]/g, ' ').trim();
-    const otherFilters = Boolean(q || statusFilter || regionFilter || phoneFilter || typeFilter || qualityFilter || websiteFilter || websiteReasonFilter || historyFilter || tagFilter || contactFilter);
+    const otherFilters = Boolean(q || statusFilter || regionFilter || phoneFilter || typeFilter.length || qualityFilter || websiteFilter || websiteReasonFilter || historyFilter || tagFilter || contactFilter);
     // With no filters (or only "Not distributed") the total comes from get_leads_counts, so skip the slow count.
     const countFromRpc = !otherFilters && (assignmentFilter === '' || assignmentFilter === 'unassigned');
 
@@ -337,7 +340,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
   useEffect(() => {
     loadData(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter, qualityFilter, assignmentFilter, websiteFilter, websiteReasonFilter, historyFilter, tagFilter, contactFilter]);
+  }, [debouncedSearch, statusFilter, regionFilter, phoneFilter, typeFilter.join(','), typeMatchAll, qualityFilter, assignmentFilter, websiteFilter, websiteReasonFilter, historyFilter, tagFilter, contactFilter]);
 
   // Live updates: when anyone changes a lead or a user, this page refreshes by itself
   useRealtimeRefresh(['leads', 'users'], () => loadData(page, true));
@@ -482,6 +485,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
         NAME: row.name,
         PHONE: row.phone ?? '',
         WEBSITE: row.website ?? '',
+        TYPES: (Array.isArray(row.lead_types) ? row.lead_types as string[] : []).map(typeLabel).join('، '),
         SALLA: row.is_salla_store ? 'Yes' : 'No',
         TAG: row.tag ?? '',
         CONTACTED: row.contacted_at ? String(row.contacted_at).slice(0, 10) : '',
@@ -515,7 +519,8 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
           region: newLead.region || null,
           source: newLead.source || 'Manual',
           quantity: newLead.quantity,
-          is_salla_store: newLead.isSallaStore,
+          lead_types: newLead.leadTypes.length ? newLead.leadTypes : ['custom'],
+          is_salla_store: newLead.leadTypes.includes('salla'),
           data_quality: newLead.dataQuality,
           status: 'New',
         },
@@ -531,7 +536,8 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
       return;
     }
     await loadData(0);
-    setNewLead({ name: '', phone: '', company: '', website: '', region: '', source: '', isSallaStore: false, dataQuality: 'normal', quantity: 0 });
+    void reloadLeadTypes();
+    setNewLead({ name: '', phone: '', company: '', website: '', region: '', source: '', leadTypes: ['custom'], dataQuality: 'normal', quantity: 0 });
     setAddModal(false);
   };
 
@@ -643,6 +649,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
     let skipped = 0;
     let listComplete = true;
     const skippedRows: SkippedRow[] = [...importParsed.rejected];
+    const chosenImportTypes = importTypes.length ? importTypes : ['custom'];
 
     // import_leads (019) inserts on the server and skips any row that already exists:
     // same website, same phone, or same customer number. One duplicate never stops the import.
@@ -662,7 +669,8 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
         quantity: row.quantity || 0,
       }));
       const { data, error } = await supabase.rpc('import_leads', {
-        p_rows: batch, p_is_salla: importType === 'salla', p_data_quality: importDataQuality,
+        p_rows: batch, p_is_salla: chosenImportTypes.includes('salla'), p_data_quality: importDataQuality,
+        p_types: chosenImportTypes,
       });
       if (error) {
         setImportError(t('Import stopped at row {n}: {msg}', { n: rows[0]?.line ?? start + 1, msg: error.message }));
@@ -715,6 +723,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
       skippedRows: listComplete ? skippedRows : importParsed.rejected,
     });
     await loadData(0);
+    void reloadLeadTypes();
   };
 
   const downloadSkippedRows = () => {
@@ -736,6 +745,11 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
           {t(errorMsg)}
         </div>
       )}
+      {leadTypesError && (
+        <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg p-3 anim-banner">
+          {t('Could not load client types: {msg}', { msg: leadTypesError })}
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-white text-2xl font-bold">{t('Leads')}</h1>
@@ -744,6 +758,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setTypesManager(true)}>{t('Client types')}</Button>
           <Button variant="secondary" size="sm" onClick={() => setImportModal(true)}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -775,7 +790,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
         <SearchInput value={search} onChange={setSearch} placeholder="Search name, phone, company..." />
         <Select value={statusFilter} onChange={setStatusFilter} options={STATUS_OPTIONS} className="w-40" />
         <Select value={regionFilter} onChange={setRegionFilter} options={REGION_OPTIONS} className="w-48" />
-        <Select value={typeFilter} onChange={setTypeFilter} options={TYPE_FILTER_OPTIONS} className="w-36" />
+        <LeadTypeFilter types={leadTypes} value={typeFilter} onChange={setTypeFilter} matchAll={typeMatchAll} onMatchAllChange={setTypeMatchAll} />
         <Select value={contactFilter} onChange={setContactFilter} options={CONTACT_FILTER_OPTIONS} className="w-44" />
         {(tagOptions.length > 0 || tagFilter) && (
           <Select value={tagFilter} onChange={setTagFilter} className="w-44"
@@ -802,6 +817,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
         <div className="sticky top-14 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-[#dfff03]/30 bg-[#161616]/95 px-3 py-2 shadow-lg backdrop-blur anim-banner">
           <span className="text-sm text-[#dfff03]">{t('{n} selected', { n: selected.length })}</span>
           <Button variant="primary" size="sm" onClick={() => setAssignModal(true)}>{t('Assign {n} Selected', { n: selected.length })}</Button>
+          <Button variant="secondary" size="sm" onClick={() => setBulkTypesModal(true)}>{t('Edit types')}</Button>
           {can('leads.delete') && <Button variant="danger" size="sm" disabled={busy === 'delete'} onClick={() => runBusy('delete', handleDeleteSelected)}>{t('Delete {n}', { n: selected.length })}</Button>}
           <Button variant="ghost" size="sm" className="ms-auto" onClick={() => setSelected([])}>{t('Clear selection')}</Button>
         </div>
@@ -810,7 +826,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
       {/* Table */}
       <div className={loading ? 'opacity-60 pointer-events-none transition-opacity' : 'transition-opacity'}>
         <Card>
-          <Table headers={['', 'Code', 'Name', 'Contacted', 'Phone', 'Website', 'Website Status', 'Salla', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
+          <Table headers={['', 'Code', 'Name', 'Contacted', 'Phone', 'Website', 'Website Status', 'Type', 'Quality', 'Status', 'Assigned To', 'Updated', '']}>
             <tr className="border-b border-[#262626]">
               <td className="py-3 px-4">
                 <input
@@ -872,11 +888,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
                       <div className="mt-1 text-[10px] text-[#6b6b6b]" title={t(websiteCategoryLabel(lead.websiteCheckCategory))}>{t(websiteCategoryLabel(lead.websiteCheckCategory))}</div>
                     )}
                   </Td>
-                  <Td>
-                    <span className={lead.isSallaStore ? 'text-[#dfff03] text-xs' : 'text-[#6b6b6b] text-xs'}>
-                      {lead.isSallaStore ? t('Yes') : t('No')}
-                    </span>
-                  </Td>
+                  <Td><LeadTypeBadges codes={lead.leadTypes} types={leadTypes} /></Td>
                   <Td><span className="text-[#a0a0a0] text-xs">{t(lead.dataQuality ?? 'normal')}</span></Td>
                   <Td><StatusBadge status={lead.status} /></Td>
                   <Td>
@@ -952,6 +964,20 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
         </div>
       </Modal>
 
+      <BulkLeadTypesModal
+        open={bulkTypesModal}
+        onClose={() => setBulkTypesModal(false)}
+        leadIds={selected}
+        types={leadTypes}
+        onDone={() => { setSelected([]); void loadData(page); void reloadLeadTypes(); }}
+      />
+      <LeadTypesManagerModal
+        open={typesManager}
+        onClose={() => setTypesManager(false)}
+        types={leadTypes}
+        onChanged={() => void reloadLeadTypes()}
+      />
+
       <DistributeLeadsModal
         open={distributeModal}
         onClose={() => setDistributeModal(false)}
@@ -1010,15 +1036,10 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white placeholder-[#4a4a4a] focus:outline-none focus:border-[#dfff03]/60"
             />
           </div>
-          <label className="flex items-center gap-2 text-sm text-[#d0d0d0]">
-            <input
-              type="checkbox"
-              checked={newLead.isSallaStore}
-              onChange={e => setNewLead(prev => ({ ...prev, isSallaStore: e.target.checked }))}
-              className="accent-[#dfff03]"
-            />
-            {t('Salla store')}
-          </label>
+          <div>
+            <label className="block text-xs text-[#a0a0a0] mb-1">{t('Client types')}</label>
+            <LeadTypeChecklist types={leadTypes} value={newLead.leadTypes} onChange={next => setNewLead(prev => ({ ...prev, leadTypes: next }))} />
+          </div>
           <div>
             <label className="block text-xs text-[#a0a0a0] mb-1">{t('Data Quality')}</label>
             <select
@@ -1042,23 +1063,9 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
       <Modal open={importModal} onClose={() => setImportModal(false)} title="Import Leads from Excel">
         <div className="space-y-4">
           <div>
-            <label className="block text-xs text-[#a0a0a0] mb-2">{t('Client type for this import')}</label>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { value: 'software' as const, label: 'Software', description: 'Regular software client' },
-                { value: 'salla' as const, label: 'Salla Store', description: 'Salla store client' },
-              ].map(option => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setImportType(option.value)}
-                  className={`text-start rounded-lg border p-3 transition-colors ${importType === option.value ? 'border-[#dfff03] bg-[#dfff03]/5' : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]'}`}
-                >
-                  <div className="text-white text-sm font-medium">{t(option.label)}</div>
-                  <div className="text-[#6b6b6b] text-xs mt-1">{t(option.description)}</div>
-                </button>
-              ))}
-            </div>
+            <label className="block text-xs text-[#a0a0a0] mb-2">{t('Client types for this import')}</label>
+            <LeadTypeChecklist types={leadTypes} value={importTypes} onChange={setImportTypes} disabled={importing} />
+            {importTypes.length === 0 && <p className="mt-1 text-[11px] text-[#6b6b6b]">{t('Nothing chosen: clients are imported as custom software.')}</p>}
           </div>
           <div>
             <label className="block text-xs text-[#a0a0a0] mb-1">{t('Data quality for this import')}</label>
@@ -1205,7 +1212,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
             <div className="bg-[#dfff03]/5 border border-[#dfff03]/20 rounded-lg p-3 text-xs">
               <div className="text-white font-medium">{t('Import settings')}</div>
               <div className="text-[#a0a0a0] mt-1">
-                {t('Type:')} <span className="text-[#dfff03]">{importType === 'salla' ? t('Salla Store') : t('Software')}</span>
+                {t('Type:')} <span className="text-[#dfff03]">{(importTypes.length ? importTypes : ['custom']).map(typeLabel).join('، ')}</span>
                 {' · '}
                 {t('Data quality:')}{' '}
                 <span className="text-[#dfff03]">

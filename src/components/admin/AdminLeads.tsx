@@ -60,6 +60,13 @@ const REGION_FORM_OPTIONS = [
 ];
 
 // Keeps digits and a leading +. A dash or empty cell becomes '' (no phone).
+// Import country: the first option keeps the country written in the sheet
+const FROM_SHEET = '__from_sheet__';
+const IMPORT_COUNTRY_OPTIONS = [
+  { value: FROM_SHEET, label: 'From the sheet (each row keeps its country)' },
+  ...REGION_OPTIONS.slice(1),
+];
+
 function cleanPhone(value: string): string {
   return value.replace(/[^\d+]/g, '');
 }
@@ -217,6 +224,9 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
   const [importTypes, setImportTypes] = useState<string[]>(['custom']);
   const [importDataQuality, setImportDataQuality] = useState<LeadDataQuality>('normal');
   const [importProgress, setImportProgress] = useState(0);
+  // Country for this import: FROM_SHEET keeps each row's own country; otherwise it fills empty rows (or all rows when forced)
+  const [importCountry, setImportCountry] = useState(FROM_SHEET);
+  const [forceCountry, setForceCountry] = useState(false);
 
   // Rows ready to upload + rows dropped in the browser (no name, or the same website / phone twice in the file)
   const importParsed = useMemo(() => {
@@ -641,6 +651,10 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
 
   const handleImport = async () => {
     if (!importRows.length || importMapping.name === undefined) return;
+    // The chosen country is applied here, so changing it after the file is read needs no re-upload
+    const rowsToSend = importCountry === FROM_SHEET
+      ? importRows
+      : importRows.map(r => (forceCountry || !r.region ? { ...r, region: importCountry } : r));
     setImporting(true);
     setImportError('');
     setImportProgress(0);
@@ -653,8 +667,8 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
 
     // import_leads (019) inserts on the server and skips any row that already exists:
     // same website, same phone, or same customer number. One duplicate never stops the import.
-    for (let start = 0; start < importRows.length; start += batchSize) {
-      const rows = importRows.slice(start, start + batchSize);
+    for (let start = 0; start < rowsToSend.length; start += batchSize) {
+      const rows = rowsToSend.slice(start, start + batchSize);
       const existing = await findExisting(rows).catch(() => null);
       const batch = rows.map(row => ({
         ...(row.customerNumber ? { customer_number: row.customerNumber } : {}),
@@ -694,7 +708,7 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
           skippedRows.push(skippedRow(row, 'Customer number already used'));
         }
       }
-      setImportProgress(Math.round(((start + rows.length) / importRows.length) * 90));
+      setImportProgress(Math.round(((start + rows.length) / rowsToSend.length) * 90));
     }
 
     // Stores that already exist (same website) are skipped above, so fill their phone if it was empty
@@ -1079,6 +1093,23 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
               <option value="normal">Normal (عادية)</option>
             </select>
           </div>
+          <div>
+            <label className="block text-xs text-[#a0a0a0] mb-1">{t('Country for this import')}</label>
+            <select
+              value={importCountry}
+              onChange={e => setImportCountry(e.target.value)}
+              disabled={importing}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-[#dfff03]/60"
+            >
+              {IMPORT_COUNTRY_OPTIONS.map(o => <option key={o.value} value={o.value}>{t(o.label)}</option>)}
+            </select>
+            {importCountry !== FROM_SHEET && (
+              <label className="mt-2 flex items-center gap-2 text-xs text-[#a0a0a0] cursor-pointer">
+                <input type="checkbox" checked={forceCountry} onChange={e => setForceCountry(e.target.checked)} disabled={importing} className="accent-[#dfff03]" />
+                {t('Apply the country to all rows, even rows that have a country in the sheet')}
+              </label>
+            )}
+          </div>
           <label className="block border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#dfff03]/30 transition-colors cursor-pointer">
             <svg className="w-10 h-10 text-[#4a4a4a] mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -1171,6 +1202,30 @@ export default function AdminLeads({ userId: myId }: { userId: string }) {
                     k: (importRows.length - withPhone).toLocaleString('en-US'),
                   })}
                 </p>
+                {(() => {
+                  const noCountry = importRows.filter(r => !r.region).length;
+                  const countryName = t(IMPORT_COUNTRY_OPTIONS.find(o => o.value === importCountry)?.label ?? importCountry);
+                  if (importCountry !== FROM_SHEET) {
+                    return (
+                      <p className="text-[#a0a0a0] text-xs">
+                        {t('Country:')} <span className="text-[#dfff03]">{countryName}</span>
+                        {' · '}{forceCountry ? t('applied to all rows') : t('applied to empty rows only')}
+                      </p>
+                    );
+                  }
+                  return (
+                    <>
+                      <p className="text-[#a0a0a0] text-xs">
+                        {t('Country: from each row · {n} rows without a country', { n: noCountry.toLocaleString('en-US') })}
+                      </p>
+                      {noCountry > 0 && (
+                        <p className="bg-[#ffc832]/10 border border-[#ffc832]/40 text-[#ffc832] text-xs rounded-lg px-3 py-2">
+                          {t('{n} rows without a country — choose a country from the list to set it for them.', { n: noCountry.toLocaleString('en-US') })}
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
                 {importParsed.rejected.length > 0 && (
                   <p className="text-[#ffc832] text-xs">
                     {t('{n} rows will be skipped (no name, or the same website / phone twice in the file).', { n: importParsed.rejected.length.toLocaleString('en-US') })}
